@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36414.22
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS-HU-Model", "WMS-HU-Model\WMS-HU-Model.csproj", "{1ACE8FDF-7736-4304-9C8B-12FFC5222E76}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS", "WMS\WMS.csproj", "{C4446A36-2038-461F-A1F2-632312754B5B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1ACE8FDF-7736-4304-9C8B-12FFC5222E76}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1ACE8FDF-7736-4304-9C8B-12FFC5222E76}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1ACE8FDF-7736-4304-9C8B-12FFC5222E76}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1ACE8FDF-7736-4304-9C8B-12FFC5222E76}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4446A36-2038-461F-A1F2-632312754B5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4446A36-2038-461F-A1F2-632312754B5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4446A36-2038-461F-A1F2-632312754B5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4446A36-2038-461F-A1F2-632312754B5B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {46B1B7CD-EE88-4988-92B9-4E71472DD8A2}
+	EndGlobalSection
+EndGlobal

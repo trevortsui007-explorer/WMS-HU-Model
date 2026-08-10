@@ -79,18 +79,27 @@
     <Compile Include="Models\MasterData\CreateLocationRequest.cs" />
     <Compile Include="Models\MasterData\LocationDto.cs" />
     <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
+    <Compile Include="Models\Putaway\PalletPutawayStatusDto.cs" />
+    <Compile Include="Models\Putaway\PutawayBoxRequest.cs" />
+    <Compile Include="Models\Putaway\PutawayCommand.cs" />
+    <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
+    <Compile Include="Models\Putaway\PutawayResultDto.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IHuRepository.cs" />
     <Compile Include="Repositories\ILocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuLocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuRepository.cs" />
     <Compile Include="Repositories\Impl\LocationRepository.cs" />
+    <Compile Include="Repositories\IPutawayRepository.cs" />
+    <Compile Include="Repositories\Impl\PutawayRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IHuService.cs" />
     <Compile Include="Services\ILocationService.cs" />
     <Compile Include="Services\Impl\HuLocationService.cs" />
     <Compile Include="Services\Impl\HuService.cs" />
     <Compile Include="Services\Impl\LocationService.cs" />
+    <Compile Include="Services\Impl\PutawayService.cs" />
+    <Compile Include="Services\IPutawayService.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

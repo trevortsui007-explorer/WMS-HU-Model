@@ -84,14 +84,21 @@
     <Compile Include="Models\Putaway\PutawayCommand.cs" />
     <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
     <Compile Include="Models\Putaway\PutawayResultDto.cs" />
+    <Compile Include="Models\Repack\BoxRepackStatusDto.cs" />
+    <Compile Include="Models\Repack\TransferInnerCommand.cs" />
+    <Compile Include="Models\Repack\TransferInnerPersistenceResult.cs" />
+    <Compile Include="Models\Repack\TransferInnerRequest.cs" />
+    <Compile Include="Models\Repack\TransferInnerResultDto.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IHuRepository.cs" />
     <Compile Include="Repositories\ILocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuLocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuRepository.cs" />
     <Compile Include="Repositories\Impl\LocationRepository.cs" />
+    <Compile Include="Repositories\Impl\RepackRepository.cs" />
     <Compile Include="Repositories\IPutawayRepository.cs" />
     <Compile Include="Repositories\Impl\PutawayRepository.cs" />
+    <Compile Include="Repositories\IRepackRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IHuService.cs" />
     <Compile Include="Services\ILocationService.cs" />
@@ -99,7 +106,9 @@
     <Compile Include="Services\Impl\HuService.cs" />
     <Compile Include="Services\Impl\LocationService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />
+    <Compile Include="Services\Impl\RepackService.cs" />
     <Compile Include="Services\IPutawayService.cs" />
+    <Compile Include="Services\IRepackService.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

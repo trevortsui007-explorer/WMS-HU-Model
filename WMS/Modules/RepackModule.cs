@@ -17,11 +17,14 @@ namespace WMS.Modules
             IHuRepository huRepository = new HuRepository();
             IHuLocationRepository huLocationRepository = new HuLocationRepository();
             IRepackRepository repackRepository = new RepackRepository();
+            ILocationRepository locationRepository = new LocationRepository();
 
-            _service = new RepackService(
-                huRepository,
-                huLocationRepository,
-                repackRepository);
+            _service =
+                new RepackService(
+                    huRepository,
+                    locationRepository,
+                    huLocationRepository,
+                    repackRepository);
 
             //----------------------------------------------------
             // 查询外箱
@@ -55,6 +58,40 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
+            });
+
+            //----------------------------------------------------
+            // 内包箱拆箱转移 -> 到货架
+            //----------------------------------------------------
+            Post("/unpack-inner", _ =>
+            {
+                UnpackInnerRequest request = this.Bind<UnpackInnerRequest>();
+
+                OperationResult<UnpackInnerResultDto> result = _service.UnpackInner(request);
+
+                if (!result.IsSuccess)
+                {
+                    return Response.AsJson(ApiResult.Fail(result.Message));
+                }
+
+                return Response.AsJson(ApiResult.Success(result.Data, result.Message));
+            });
+
+            //----------------------------------------------------
+            // 内包箱装箱转移 -> 到箱子
+            //----------------------------------------------------
+            Post("/pack-inner", _ =>
+            {
+                PackInnerRequest request = this.Bind<PackInnerRequest>();
+
+                OperationResult<PackInnerResultDto> result = _service.PackInner(request);
+
+                if (!result.IsSuccess)
+                {
+                    return Response.AsJson(ApiResult.Fail(result.Message));
+                }
+
+                return Response.AsJson(ApiResult.Success(result.Data, result.Message));
             });
         }
     }

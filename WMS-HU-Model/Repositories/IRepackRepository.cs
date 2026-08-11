@@ -8,13 +8,24 @@ namespace WMS_HU_Model.Repositories
             long boxHuId);
 
 
-        TransferInnerResultDto
-            GetTransferByRequestId(
-                string requestId);
+        TransferInnerResultDto GetTransferByRequestId(
+            string requestId);
+
+        TransferInnerPersistenceResult ExecuteTransferInner(
+            TransferInnerCommand command);
 
 
-        TransferInnerPersistenceResult
-            ExecuteTransferInner(
-                TransferInnerCommand command);
+        UnpackInnerResultDto GetUnpackByRequestId(
+            string requestId);
+
+        UnpackInnerPersistenceResult ExecuteUnpackInner(
+            UnpackInnerCommand command);
+
+
+        PackInnerResultDto GetPackByRequestId(
+            string requestId);
+
+        PackInnerPersistenceResult ExecutePackInner(
+            PackInnerCommand command);
     }
 }

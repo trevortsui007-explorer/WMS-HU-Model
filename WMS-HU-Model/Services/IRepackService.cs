@@ -13,5 +13,15 @@ namespace WMS_HU_Model.Services
         OperationResult<TransferInnerResultDto>
             TransferInner(
                 TransferInnerRequest request);
+
+
+        OperationResult<UnpackInnerResultDto>
+            UnpackInner(
+                UnpackInnerRequest request);
+
+
+        OperationResult<PackInnerResultDto>
+            PackInner(
+                PackInnerRequest request);
     }
 }

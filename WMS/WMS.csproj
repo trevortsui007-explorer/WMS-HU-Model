@@ -81,6 +81,7 @@
     <Compile Include="Modules\HuLocationModule.cs" />
     <Compile Include="Modules\HuModule.cs" />
     <Compile Include="Modules\LocationModule.cs" />
+    <Compile Include="Modules\OutboundModule.cs" />
     <Compile Include="Modules\PutawayModule.cs" />
     <Compile Include="Modules\RepackModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -1,6 +1,8 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.Repack;
 
@@ -12,8 +14,8 @@ namespace WMS_HU_Model.Repositories
         {
             const string boxSql = @"
 SELECT
-    h.Id,
-    h.HUCode,
+    h.Id AS BoxHuId,
+    h.HUCode AS BoxHuCode,
     h.PlantCode,
     h.LifecycleStatus,
     h.IsHold,
@@ -56,56 +58,27 @@ AND innerHU.LifecycleStatus = 'ACTIVE'
 ORDER BY innerHU.HUCode;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
+            BoxRepackStatusDto result =
+                DbExecutor.QueryFirstOrDefault<BoxRepackStatusDto>(
+                    boxSql,
+                    new { BoxHUId = boxHuId });
+
+            if (result == null)
+                return null;
+
+            List<InnerPackRow> innerPacks = DbExecutor.Query<InnerPackRow>(
+                innerSql,
+                new { BoxHUId = boxHuId });
+
+            foreach (InnerPackRow innerPack in innerPacks)
             {
-                conn.Open();
-
-                BoxRepackStatusDto result = null;
-
-                using (SqlCommand cmd = new SqlCommand(boxSql, conn))
-                {
-                    cmd.Parameters.Add("@BoxHUId", SqlDbType.BigInt)
-                        .Value = boxHuId;
-
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        if (!reader.Read())
-                            return null;
-
-                        result = new BoxRepackStatusDto();
-
-                        result.BoxHuId = Convert.ToInt64(reader["Id"]);
-                        result.BoxHuCode = Convert.ToString(reader["HUCode"]);
-                        result.PlantCode = Convert.ToString(reader["PlantCode"]);
-                        result.LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]);
-                        result.IsHold = Convert.ToBoolean(reader["IsHold"]);
-                        result.LocationCode = DbString(reader["LocationCode"]);
-                        result.WarehouseCode = DbString(reader["WarehouseCode"]);
-                        result.ZoneCode = DbString(reader["ZoneCode"]);
-                    }
-                }
-
-                using (SqlCommand cmd = new SqlCommand(innerSql, conn))
-                {
-                    cmd.Parameters.Add("@BoxHUId", SqlDbType.BigInt)
-                        .Value = boxHuId;
-
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            string innerCode = Convert.ToString(reader["HUCode"]);
-
-                            result.InnerPackCodes.Add(innerCode);
-                            result.TotalQty += Convert.ToDecimal(reader["Qty"]);
-                        }
-                    }
-                }
-
-                result.InnerPackCount = result.InnerPackCodes.Count;
-
-                return result;
+                result.InnerPackCodes.Add(innerPack.HuCode);
+                result.TotalQty += innerPack.Qty;
             }
+
+            result.InnerPackCount = result.InnerPackCodes.Count;
+
+            return result;
         }
 
         public UnpackInnerResultDto GetUnpackByRequestId(string requestId)
@@ -140,34 +113,18 @@ WHERE op.OperationType = 'UNPACK_INNER'
   AND op.RequestId = @RequestId;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = requestId;
-                conn.Open();
+            UnpackInnerResultDto result =
+                DbExecutor.QueryFirstOrDefault<UnpackInnerResultDto>(
+                    sql,
+                    new { RequestId = requestId });
 
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read()) return null;
+            if (result == null)
+                return null;
 
-                    UnpackInnerResultDto result = new UnpackInnerResultDto
-                    {
-                        OperationNo = Convert.ToString(reader["OperationNo"]),
-                        MoveLogId = Convert.ToInt64(reader["MoveLogId"]),
-                        SourceBoxHuCode = Convert.ToString(reader["SourceBoxHUCode"]),
-                        InnerHuCode = Convert.ToString(reader["InnerHUCode"]),
-                        FromLocationCode = DbString(reader["FromLocationCode"]),
-                        ToLocationCode = Convert.ToString(reader["ToLocationCode"]),
-                        SourceRemainingInnerCount = Convert.ToInt32(reader["SourceRemainingInnerCount"]),
-                        IsDuplicate = true,
-                        OperationTime = Convert.ToDateTime(reader["OperationTime"])
-                    };
+            result.IsDuplicate = true;
+            result.IsSourceEmpty = result.SourceRemainingInnerCount == 0;
 
-                    result.IsSourceEmpty = result.SourceRemainingInnerCount == 0;
-
-                    return result;
-                }
-            }
+            return result;
         }
 
         public UnpackInnerPersistenceResult ExecuteUnpackInner(UnpackInnerCommand command)
@@ -314,7 +271,7 @@ WHERE l.Id = @LocationId;";
                                 targetWarehouseCode = Convert.ToString(reader["WarehouseCode"]);
                                 targetZoneCode = Convert.ToString(reader["ZoneCode"]);
                                 targetPlantPolicy = Convert.ToString(reader["PlantPolicy"]);
-                                dedicatedPlantCode = DbString(reader["DedicatedPlantCode"]);
+                                dedicatedPlantCode = DbParameterValue.StringOrNull(reader["DedicatedPlantCode"]);
 
                                 if (status != "ACTIVE")
                                 {
@@ -421,7 +378,7 @@ WHERE Id = @RelationId
                         {
                             cmd.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                             cmd.Parameters.Add("@RelationId", SqlDbType.BigInt).Value = relationId;
 
                             if (cmd.ExecuteNonQuery() != 1)
@@ -454,12 +411,12 @@ VALUES
                             cmd.Parameters.Add("@HUId", SqlDbType.BigInt).Value = command.InnerHuId;
                             cmd.Parameters.Add("@FromLocationId", SqlDbType.BigInt).Value = sourceLocationId;
                             cmd.Parameters.Add("@ToLocationId", SqlDbType.BigInt).Value = command.ToLocationId;
-                            cmd.Parameters.Add("@ScannedLocationCode", SqlDbType.VarChar, 100).Value = DbValue(command.ScannedLocationCode);
-                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbValue(command.BusinessNo);
+                            cmd.Parameters.Add("@ScannedLocationCode", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.ScannedLocationCode);
+                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
                             cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                             cmd.Parameters.Add("@MoveTime", SqlDbType.DateTime2).Value = now;
-                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbValue(command.Remark);
+                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                             moveLogId = Convert.ToInt64(cmd.ExecuteScalar());
                         }
@@ -484,7 +441,7 @@ VALUES
                             cmd.Parameters.Add("@LocationSince", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@MoveLogId", SqlDbType.BigInt).Value = moveLogId;
                             cmd.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -561,36 +518,15 @@ INNER JOIN dbo.WMS_Location toLoc ON toLoc.Id = moveLog.ToLocationId
 WHERE op.OperationType = 'PACK_INNER'
   AND op.RequestId = @RequestId;";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
+            PackInnerResultDto result =
+                DbExecutor.QueryFirstOrDefault<PackInnerResultDto>(
+                    sql,
+                    new { RequestId = requestId });
 
-                using (SqlCommand cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = requestId;
+            if (result != null)
+                result.IsDuplicate = true;
 
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        if (!reader.Read())
-                        {
-                            return null;
-                        }
-
-                        return new PackInnerResultDto
-                        {
-                            OperationNo = Convert.ToString(reader["OperationNo"]),
-                            MoveLogId = Convert.ToInt64(reader["MoveLogId"]),
-                            TargetBoxHuCode = Convert.ToString(reader["TargetBoxHUCode"]),
-                            InnerHuCode = Convert.ToString(reader["InnerHUCode"]),
-                            FromLocationCode = DbString(reader["FromLocationCode"]),
-                            ToLocationCode = Convert.ToString(reader["ToLocationCode"]),
-                            TargetInnerCount = Convert.ToInt32(reader["TargetInnerCount"]),
-                            IsDuplicate = true,
-                            OperationTime = Convert.ToDateTime(reader["OperationTime"])
-                        };
-                    }
-                }
-            }
+            return result;
         }
 
         public PackInnerPersistenceResult ExecutePackInner(PackInnerCommand command)
@@ -708,7 +644,7 @@ VALUES
                             cmd.Parameters.Add("@InnerHUId", SqlDbType.BigInt).Value = command.InnerHuId;
                             cmd.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -737,11 +673,11 @@ VALUES
                             cmd.Parameters.Add("@FromLocationId", SqlDbType.BigInt).Value = innerLocationId;
                             cmd.Parameters.Add("@ToLocationId", SqlDbType.BigInt).Value = boxLocationId;
                             cmd.Parameters.Add("@ToLocationCode", SqlDbType.VarChar, 100).Value = boxLocationCode;
-                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbValue(command.BusinessNo);
+                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
                             cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                             cmd.Parameters.Add("@MoveTime", SqlDbType.DateTime2).Value = now;
-                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbValue(command.Remark);
+                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                             moveLogId = Convert.ToInt64(cmd.ExecuteScalar());
                         }
@@ -849,30 +785,19 @@ WHERE cl.HUId = @HUId;";
     string remark,
     DateTime operationTime)
         {
-            const string sql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
-(
-    OperationNo, OperationType, HUId, RelatedHUId, BusinessNo, RequestId, Operator, OperationTime, Remark
-)
-VALUES
-(
-    @OperationNo, @OperationType, @HUId, @RelatedHUId, @BusinessNo, @RequestId, @Operator, @OperationTime, @Remark
-);";
-
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50).Value = operationNo;
-                cmd.Parameters.Add("@OperationType", SqlDbType.VarChar, 30).Value = operationType;
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt).Value = huId;
-                cmd.Parameters.Add("@RelatedHUId", SqlDbType.BigInt).Value = relatedHuId;
-                cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbValue(businessNo);
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = DbValue(requestId);
-                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(operatorCode);
-                cmd.Parameters.Add("@OperationTime", SqlDbType.DateTime2).Value = operationTime;
-                cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbValue(remark);
-
-                cmd.ExecuteNonQuery();
-            }
+            HuOperationLogWriter.Insert(
+                conn,
+                tran,
+                operationNo,
+                operationType,
+                huId,
+                relatedHuId,
+                businessNo,
+                requestId,
+                operatorCode,
+                operationTime,
+                detailJson: null,
+                remark: remark);
         }
 
         public TransferInnerResultDto GetTransferByRequestId(string requestId)
@@ -938,37 +863,18 @@ WHERE op.OperationType = 'REPACK_TRANSFER'
 AND op.RequestId = @RequestId;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = requestId;
+            TransferInnerResultDto result =
+                DbExecutor.QueryFirstOrDefault<TransferInnerResultDto>(
+                    sql,
+                    new { RequestId = requestId });
 
-                conn.Open();
+            if (result == null)
+                return null;
 
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
+            result.IsSourceEmpty = result.SourceRemainingInnerCount == 0;
+            result.IsDuplicate = true;
 
-                    TransferInnerResultDto dto = new TransferInnerResultDto();
-
-                    dto.OperationNo = Convert.ToString(reader["OperationNo"]);
-                    dto.MoveLogId = Convert.ToInt64(reader["MoveLogId"]);
-                    dto.InnerHuCode = Convert.ToString(reader["InnerHUCode"]);
-                    dto.SourceBoxHuCode = Convert.ToString(reader["SourceBoxHUCode"]);
-                    dto.TargetBoxHuCode = Convert.ToString(reader["TargetBoxHUCode"]);
-                    dto.FromLocationCode = DbString(reader["FromLocationCode"]);
-                    dto.ToLocationCode = Convert.ToString(reader["ToLocationCode"]);
-                    dto.SourceRemainingInnerCount = Convert.ToInt32(reader["SourceRemainingInnerCount"]);
-                    dto.TargetInnerCount = Convert.ToInt32(reader["TargetInnerCount"]);
-                    dto.IsSourceEmpty = dto.SourceRemainingInnerCount == 0;
-                    dto.IsDuplicate = true;
-                    dto.OperationTime = Convert.ToDateTime(reader["OperationTime"]);
-
-                    return dto;
-                }
-            }
+            return result;
         }
 
         public TransferInnerPersistenceResult ExecuteTransferInner(TransferInnerCommand command)
@@ -1167,7 +1073,7 @@ AND IsActive = 1;
                                 .Value = command.OperationNo;
 
                             cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                                .Value = DbValue(command.Operator);
+                                .Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.Parameters.Add("@RelationId", SqlDbType.BigInt)
                                 .Value = sourceRelationId;
@@ -1221,7 +1127,7 @@ VALUES
                                 .Value = command.OperationNo;
 
                             cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                                .Value = DbValue(command.Operator);
+                                .Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -1282,19 +1188,19 @@ VALUES
                                 .Value = targetLocationCode;
 
                             cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                                .Value = DbValue(command.BusinessNo);
+                                .Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
 
                             cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
                                 .Value = command.RequestId;
 
                             cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                                .Value = DbValue(command.Operator);
+                                .Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.Parameters.Add("@MoveTime", SqlDbType.DateTime2)
                                 .Value = now;
 
                             cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                                .Value = DbValue(command.Remark);
+                                .Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                             moveLogId = Convert.ToInt64(cmd.ExecuteScalar());
                         }
@@ -1342,19 +1248,19 @@ VALUES
                                 .Value = command.TargetBoxHuId;
 
                             cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                                .Value = DbValue(command.BusinessNo);
+                                .Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
 
                             cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
                                 .Value = command.RequestId;
 
                             cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                                .Value = DbValue(command.Operator);
+                                .Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.Parameters.Add("@OperationTime", SqlDbType.DateTime2)
                                 .Value = now;
 
                             cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                                .Value = DbValue(command.Remark);
+                                .Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -1455,20 +1361,17 @@ INNER JOIN dbo.WMS_Location l
 WHERE cl.HUId = @BoxHUId;
 ";
 
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@BoxHUId", SqlDbType.BigInt)
-                    .Value = boxHuId;
+            BoxLocationRow row = DbExecutor.QueryFirstOrDefault<BoxLocationRow>(
+                conn,
+                tran,
+                sql,
+                new { BoxHUId = boxHuId });
 
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        throw new InvalidOperationException("外箱没有直接货位，无法执行Repack。");
+            if (row == null)
+                throw new InvalidOperationException("外箱没有直接货位，无法执行Repack。");
 
-                    locationId = Convert.ToInt64(reader["LocationId"]);
-                    locationCode = Convert.ToString(reader["LocationCode"]);
-                }
-            }
+            locationId = row.LocationId;
+            locationCode = row.LocationCode;
         }
 
         private static int CountInner(SqlConnection conn, SqlTransaction tran, long boxHuId)
@@ -1484,23 +1387,23 @@ AND h.HUType = 'INNER_PACK'
 AND h.LifecycleStatus = 'ACTIVE';
 ";
 
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@BoxHUId", SqlDbType.BigInt)
-                    .Value = boxHuId;
-
-                return Convert.ToInt32(cmd.ExecuteScalar());
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                conn,
+                tran,
+                sql,
+                new { BoxHUId = boxHuId });
         }
 
-        private static object DbValue(string value)
+        private class InnerPackRow
         {
-            return string.IsNullOrWhiteSpace(value) ? (object)DBNull.Value : value;
+            public string HuCode { get; set; }
+            public decimal Qty { get; set; }
         }
 
-        private static string DbString(object value)
+        private class BoxLocationRow
         {
-            return value == DBNull.Value ? null : Convert.ToString(value);
+            public long LocationId { get; set; }
+            public string LocationCode { get; set; }
         }
     }
 }

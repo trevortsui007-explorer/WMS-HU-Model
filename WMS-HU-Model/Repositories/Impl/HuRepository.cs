@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.HU;
 
@@ -9,7 +10,7 @@ namespace WMS_HU_Model.Repositories
 {
     public class HuRepository : IHuRepository
     {
-        #region Query HU
+        #region 查询 HU
 
         /// <summary>
         /// 根据 HUCode 查询 HU
@@ -36,22 +37,9 @@ LEFT JOIN dbo.WMS_PackageSpec ps
 WHERE h.HUCode = @HUCode;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@HUCode", SqlDbType.VarChar, 100)
-                    .Value = huCode;
-
-                conn.Open();
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
-
-                    return MapHu(reader);
-                }
-            }
+            return DbExecutor.QueryFirstOrDefault<HuDto>(
+                sql,
+                new { HUCode = huCode });
         }
 
         /// <summary>
@@ -65,21 +53,9 @@ FROM dbo.WMS_HU
 WHERE HUCode = @HUCode;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@HUCode", SqlDbType.VarChar, 100)
-                    .Value = huCode;
-
-                conn.Open();
-
-                object value = cmd.ExecuteScalar();
-
-                if (value == null || value == DBNull.Value)
-                    return null;
-
-                return Convert.ToInt64(value);
-            }
+            return DbExecutor.ExecuteScalar<long?>(
+                sql,
+                new { HUCode = huCode });
         }
 
         /// <summary>
@@ -93,21 +69,9 @@ FROM dbo.WMS_HU
 WHERE Id = @HUId;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                conn.Open();
-
-                object value = cmd.ExecuteScalar();
-
-                if (value == null || value == DBNull.Value)
-                    return null;
-
-                return Convert.ToString(value);
-            }
+            return DbExecutor.ExecuteScalar<string>(
+                sql,
+                new { HUId = huId });
         }
 
         /// <summary>
@@ -121,21 +85,9 @@ FROM dbo.WMS_HU
 WHERE Id = @HUId;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                conn.Open();
-
-                object value = cmd.ExecuteScalar();
-
-                if (value == null || value == DBNull.Value)
-                    return null;
-
-                return Convert.ToString(value);
-            }
+            return DbExecutor.ExecuteScalar<string>(
+                sql,
+                new { HUId = huId });
         }
 
         /// <summary>
@@ -150,26 +102,14 @@ WHERE PackageSpecCode = @PackageSpecCode
 AND IsActive = 1;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@PackageSpecCode", SqlDbType.VarChar, 30)
-                    .Value = packageSpecCode;
-
-                conn.Open();
-
-                object value = cmd.ExecuteScalar();
-
-                if (value == null || value == DBNull.Value)
-                    return null;
-
-                return Convert.ToInt64(value);
-            }
+            return DbExecutor.ExecuteScalar<long?>(
+                sql,
+                new { PackageSpecCode = packageSpecCode });
         }
 
         #endregion
 
-        #region Create HU
+        #region 创建 HU
 
         /// <summary>
         /// 创建 HU
@@ -255,33 +195,23 @@ VALUES
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
 ";
 
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@HUCode", SqlDbType.VarChar, 100)
-                    .Value = request.HuCode;
+            DynamicParameters parameters = new DynamicParameters();
+            parameters.Add("@HUCode", request.HuCode, DbType.AnsiString, size: 100);
+            parameters.Add("@HUType", request.HuType, DbType.AnsiString, size: 30);
+            parameters.Add("@PlantCode", request.PlantCode, DbType.AnsiString, size: 20);
+            parameters.Add("@PackageSpecId", packageSpecId, DbType.Int64);
+            parameters.Add("@SourceSystem", DbParameterValue.StringOrNull(request.SourceSystem), DbType.AnsiString, size: 30);
+            parameters.Add("@SourceEntityId", DbParameterValue.StringOrNull(request.SourceEntityId), DbType.AnsiString, size: 100);
+            parameters.Add("@SourceBusinessNo", DbParameterValue.StringOrNull(request.SourceBusinessNo), DbType.AnsiString, size: 100);
+            parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
+            parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
-                cmd.Parameters.Add("@HUType", SqlDbType.VarChar, 30)
-                    .Value = request.HuType;
-
-                cmd.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20)
-                    .Value = request.PlantCode;
-
-                AddNullableLong(cmd, "@PackageSpecId", packageSpecId);
-                AddNullableString(cmd, "@SourceSystem", SqlDbType.VarChar, 30, request.SourceSystem);
-                AddNullableString(cmd, "@SourceEntityId", SqlDbType.VarChar, 100, request.SourceEntityId);
-                AddNullableString(cmd, "@SourceBusinessNo", SqlDbType.VarChar, 100, request.SourceBusinessNo);
-                AddNullableString(cmd, "@Remark", SqlDbType.NVarChar, 500, request.Remark);
-                AddNullableString(cmd, "@CreateUser", SqlDbType.VarChar, 50, request.Operator);
-
-                object result = cmd.ExecuteScalar();
-
-                return Convert.ToInt64(result);
-            }
+            return DbExecutor.ExecuteScalar<long>(conn, tran, sql, parameters);
         }
 
         #endregion
 
-        #region Relation Query
+        #region 关系查询
 
         /// <summary>
         /// 判断子 HU 是否已经存在有效父 HU
@@ -295,18 +225,9 @@ WHERE ChildHUId = @ChildHUId
 AND IsActive = 1;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@ChildHUId", SqlDbType.BigInt)
-                    .Value = childHuId;
-
-                conn.Open();
-
-                int count = Convert.ToInt32(cmd.ExecuteScalar());
-
-                return count > 0;
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                sql,
+                new { ChildHUId = childHuId }) > 0;
         }
 
         /// <summary>
@@ -337,22 +258,9 @@ WHERE r.ChildHUId = @ChildHUId
 AND r.IsActive = 1;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@ChildHUId", SqlDbType.BigInt)
-                    .Value = childHuId;
-
-                conn.Open();
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
-
-                    return MapHu(reader);
-                }
-            }
+            return DbExecutor.QueryFirstOrDefault<HuDto>(
+                sql,
+                new { ChildHUId = childHuId });
         }
 
         /// <summary>
@@ -423,26 +331,18 @@ SELECT
 OPTION (MAXRECURSION 100);
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@ParentHUId", SqlDbType.BigInt)
-                    .Value = parentHuId;
-
-                cmd.Parameters.Add("@ChildHUId", SqlDbType.BigInt)
-                    .Value = childHuId;
-
-                conn.Open();
-
-                int result = Convert.ToInt32(cmd.ExecuteScalar());
-
-                return result == 1;
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                sql,
+                new
+                {
+                    ParentHUId = parentHuId,
+                    ChildHUId = childHuId
+                }) == 1;
         }
 
         #endregion
 
-        #region Attach HU
+        #region 建立 HU 关系
 
         /// <summary>
         /// 建立 Parent -> Child 包装关系
@@ -496,21 +396,13 @@ VALUES
 );
 ";
 
-                        using (SqlCommand cmd = new SqlCommand(relationSql, conn, tran))
-                        {
-                            cmd.Parameters.Add("@ParentHUId", SqlDbType.BigInt)
-                                .Value = parentHuId;
+                        DynamicParameters relationParameters = new DynamicParameters();
+                        relationParameters.Add("@ParentHUId", parentHuId, DbType.Int64);
+                        relationParameters.Add("@ChildHUId", childHuId, DbType.Int64);
+                        relationParameters.Add("@OperationNo", operationNo, DbType.AnsiString, size: 50);
+                        relationParameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
-                            cmd.Parameters.Add("@ChildHUId", SqlDbType.BigInt)
-                                .Value = childHuId;
-
-                            cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50)
-                                .Value = operationNo;
-
-                            AddNullableString(cmd, "@CreateUser", SqlDbType.VarChar, 50, request.Operator);
-
-                            cmd.ExecuteNonQuery();
-                        }
+                        DbExecutor.Execute(conn, tran, relationSql, relationParameters);
 
                         InsertOperationLog(
                             conn: conn,
@@ -559,20 +451,16 @@ WHERE ChildHUId = @ChildHUId
 AND IsActive = 1;
 ";
 
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@ChildHUId", SqlDbType.BigInt)
-                    .Value = childHuId;
-
-                int count = Convert.ToInt32(cmd.ExecuteScalar());
-
-                return count > 0;
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                conn,
+                tran,
+                sql,
+                new { ChildHUId = childHuId }) > 0;
         }
 
         #endregion
 
-        #region Add Item
+        #region 增加库存明细
 
         /// <summary>
         /// 给 HU 增加库存明细
@@ -637,41 +525,24 @@ VALUES
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
 ";
 
-                        long itemId;
+                        DynamicParameters parameters = new DynamicParameters();
+                        parameters.Add("@HUId", huId, DbType.Int64);
+                        parameters.Add("@MaterialCode", request.MaterialCode, DbType.AnsiString, size: 50);
+                        parameters.Add("@MaterialRevision", DbParameterValue.StringOrNull(request.MaterialRevision), DbType.AnsiString, size: 30);
+                        parameters.Add("@BatchNo", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 100);
+                        parameters.Add("@SAPBatchNo", DbParameterValue.StringOrNull(request.SapBatchNo), DbType.AnsiString, size: 100);
+                        parameters.Add("@ProductionOrderNo", DbParameterValue.StringOrNull(request.ProductionOrderNo), DbType.AnsiString, size: 50);
+                        parameters.Add("@CustomerCode", DbParameterValue.StringOrNull(request.CustomerCode), DbType.AnsiString, size: 50);
+                        parameters.Add("@SalesOrderNo", DbParameterValue.StringOrNull(request.SalesOrderNo), DbType.AnsiString, size: 50);
+                        parameters.Add("@SalesOrderItem", DbParameterValue.StringOrNull(request.SalesOrderItem), DbType.AnsiString, size: 30);
+                        parameters.Add("@DateCode", DbParameterValue.StringOrNull(request.DateCode), DbType.AnsiString, size: 50);
+                        parameters.Add("@Qty", request.Qty, DbType.Decimal, precision: 18, scale: 4);
+                        parameters.Add("@Uom", request.Uom, DbType.AnsiString, size: 20);
+                        parameters.Add("@StockStatus", request.StockStatus, DbType.AnsiString, size: 20);
+                        parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
+                        parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
-                        using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-                        {
-                            cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                                .Value = huId;
-
-                            cmd.Parameters.Add("@MaterialCode", SqlDbType.VarChar, 50)
-                                .Value = request.MaterialCode;
-
-                            AddNullableString(cmd, "@MaterialRevision", SqlDbType.VarChar, 30, request.MaterialRevision);
-                            AddNullableString(cmd, "@BatchNo", SqlDbType.VarChar, 100, request.BatchNo);
-                            AddNullableString(cmd, "@SAPBatchNo", SqlDbType.VarChar, 100, request.SapBatchNo);
-                            AddNullableString(cmd, "@ProductionOrderNo", SqlDbType.VarChar, 50, request.ProductionOrderNo);
-                            AddNullableString(cmd, "@CustomerCode", SqlDbType.VarChar, 50, request.CustomerCode);
-                            AddNullableString(cmd, "@SalesOrderNo", SqlDbType.VarChar, 50, request.SalesOrderNo);
-                            AddNullableString(cmd, "@SalesOrderItem", SqlDbType.VarChar, 30, request.SalesOrderItem);
-                            AddNullableString(cmd, "@DateCode", SqlDbType.VarChar, 50, request.DateCode);
-
-                            SqlParameter qtyParameter = cmd.Parameters.Add("@Qty", SqlDbType.Decimal);
-                            qtyParameter.Precision = 18;
-                            qtyParameter.Scale = 4;
-                            qtyParameter.Value = request.Qty;
-
-                            cmd.Parameters.Add("@Uom", SqlDbType.VarChar, 20)
-                                .Value = request.Uom;
-
-                            cmd.Parameters.Add("@StockStatus", SqlDbType.VarChar, 20)
-                                .Value = request.StockStatus;
-
-                            AddNullableString(cmd, "@Remark", SqlDbType.NVarChar, 500, request.Remark);
-                            AddNullableString(cmd, "@CreateUser", SqlDbType.VarChar, 50, request.Operator);
-
-                            itemId = Convert.ToInt64(cmd.ExecuteScalar());
-                        }
+                        long itemId = DbExecutor.ExecuteScalar<long>(conn, tran, sql, parameters);
 
                         InsertOperationLog(
                             conn: conn,
@@ -701,7 +572,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
 
         #endregion
 
-        #region HU Tree
+        #region HU 树查询
 
         /// <summary>
         /// 查询指定 HU 为根节点的当前有效包装树
@@ -778,43 +649,14 @@ ORDER BY
 OPTION (MAXRECURSION 100);
 ";
 
-            List<HuTreeFlatRow> list = new List<HuTreeFlatRow>();
-
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@RootHUId", SqlDbType.BigInt)
-                    .Value = rootHuId;
-
-                conn.Open();
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        HuTreeFlatRow row = new HuTreeFlatRow
-                        {
-                            HuId = Convert.ToInt64(reader["HUId"]),
-                            ParentHuId = DbLong(reader["ParentHUId"]),
-                            HuCode = Convert.ToString(reader["HUCode"]),
-                            HuType = Convert.ToString(reader["HUType"]),
-                            PlantCode = Convert.ToString(reader["PlantCode"]),
-                            LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]),
-                            IsHold = Convert.ToBoolean(reader["IsHold"]),
-                            LevelNo = Convert.ToInt32(reader["LevelNo"])
-                        };
-
-                        list.Add(row);
-                    }
-                }
-            }
-
-            return list;
+            return DbExecutor.Query<HuTreeFlatRow>(
+                sql,
+                new { RootHUId = rootHuId });
         }
 
         #endregion
 
-        #region Items
+        #region 库存明细
 
         /// <summary>
         /// 获取指定 HU 当前有效库存明细
@@ -839,45 +681,14 @@ AND IsActive = 1
 ORDER BY Id;
 ";
 
-            List<HuItemDto> list = new List<HuItemDto>();
-
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                conn.Open();
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        HuItemDto item = new HuItemDto
-                        {
-                            Id = Convert.ToInt64(reader["Id"]),
-                            MaterialCode = Convert.ToString(reader["MaterialCode"]),
-                            MaterialRevision = DbString(reader["MaterialRevision"]),
-                            BatchNo = DbString(reader["BatchNo"]),
-                            SapBatchNo = DbString(reader["SAPBatchNo"]),
-                            ProductionOrderNo = DbString(reader["ProductionOrderNo"]),
-                            DateCode = DbString(reader["DateCode"]),
-                            Qty = Convert.ToDecimal(reader["Qty"]),
-                            Uom = Convert.ToString(reader["Uom"]),
-                            StockStatus = Convert.ToString(reader["StockStatus"])
-                        };
-
-                        list.Add(item);
-                    }
-                }
-            }
-
-            return list;
+            return DbExecutor.Query<HuItemDto>(
+                sql,
+                new { HUId = huId });
         }
 
         #endregion
 
-        #region Operation Log
+        #region 操作日志
 
         /// <summary>
         /// HU统一操作流水
@@ -899,134 +710,22 @@ ORDER BY Id;
             string detailJson,
             string remark)
         {
-            const string sql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
-(
-    OperationNo,
-    OperationType,
-    HUId,
-    RelatedHUId,
-    BusinessNo,
-    RequestId,
-    DetailJson,
-    Operator,
-    OperationTime,
-    Remark
-)
-VALUES
-(
-    @OperationNo,
-    @OperationType,
-    @HUId,
-    @RelatedHUId,
-    @BusinessNo,
-    @RequestId,
-    @DetailJson,
-    @Operator,
-    SYSDATETIME(),
-    @Remark
-);
-";
-
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50)
-                    .Value = operationNo;
-
-                cmd.Parameters.Add("@OperationType", SqlDbType.VarChar, 30)
-                    .Value = operationType;
-
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                AddNullableLong(cmd, "@RelatedHUId", relatedHuId);
-                AddNullableString(cmd, "@BusinessNo", SqlDbType.VarChar, 100, businessNo);
-                AddNullableString(cmd, "@RequestId", SqlDbType.VarChar, 100, requestId);
-                AddNullableString(cmd, "@DetailJson", SqlDbType.NVarChar, -1, detailJson);
-                AddNullableString(cmd, "@Operator", SqlDbType.VarChar, 50, operatorCode);
-                AddNullableString(cmd, "@Remark", SqlDbType.NVarChar, 500, remark);
-
-                cmd.ExecuteNonQuery();
-            }
+            HuOperationLogWriter.Insert(
+                conn,
+                tran,
+                operationNo,
+                operationType,
+                huId,
+                relatedHuId,
+                businessNo,
+                requestId,
+                operatorCode,
+                operationTime: null,
+                detailJson: detailJson,
+                remark: remark);
         }
 
         #endregion
 
-        #region Mapper
-
-        private static HuDto MapHu(IDataRecord reader)
-        {
-            HuDto entity = new HuDto
-            {
-                Id = Convert.ToInt64(reader["Id"]),
-                HuCode = Convert.ToString(reader["HUCode"]),
-                HuType = Convert.ToString(reader["HUType"]),
-                PlantCode = Convert.ToString(reader["PlantCode"]),
-                PackageSpecCode = DbString(reader["PackageSpecCode"]),
-                LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]),
-                IsHold = Convert.ToBoolean(reader["IsHold"]),
-                HoldReason = DbString(reader["HoldReason"]),
-                SourceSystem = DbString(reader["SourceSystem"]),
-                SourceEntityId = DbString(reader["SourceEntityId"]),
-                SourceBusinessNo = DbString(reader["SourceBusinessNo"]),
-                Remark = DbString(reader["Remark"])
-            };
-
-            return entity;
-        }
-
-        #endregion
-
-        #region SQL Parameter Helper
-
-        private static void AddNullableString(
-            SqlCommand cmd,
-            string parameterName,
-            SqlDbType dbType,
-            int size,
-            string value)
-        {
-            SqlParameter parameter;
-
-            if (size == -1)
-                parameter = cmd.Parameters.Add(parameterName, dbType, -1);
-            else
-                parameter = cmd.Parameters.Add(parameterName, dbType, size);
-
-            parameter.Value = string.IsNullOrWhiteSpace(value)
-                ? (object)DBNull.Value
-                : value;
-        }
-
-        private static void AddNullableLong(SqlCommand cmd, string parameterName, long? value)
-        {
-            SqlParameter parameter = cmd.Parameters.Add(parameterName, SqlDbType.BigInt);
-
-            parameter.Value = value.HasValue
-                ? (object)value.Value
-                : DBNull.Value;
-        }
-
-        #endregion
-
-        #region DB Value Helper
-
-        private static string DbString(object value)
-        {
-            if (value == null || value == DBNull.Value)
-                return null;
-
-            return Convert.ToString(value);
-        }
-
-        private static long? DbLong(object value)
-        {
-            if (value == null || value == DBNull.Value)
-                return null;
-
-            return Convert.ToInt64(value);
-        }
-
-        #endregion
     }
 }

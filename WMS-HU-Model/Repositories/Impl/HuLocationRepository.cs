@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.HU;
 
@@ -139,135 +140,9 @@ WHERE h.Id = @HUId
 OPTION (MAXRECURSION 20);
 ";
 
-            using (SqlConnection conn =
-                DbConnectionFactory.Create())
-
-            using (SqlCommand cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add(
-                    "@HUId",
-                    SqlDbType.BigInt)
-                    .Value = huId;
-
-                conn.Open();
-
-                using (SqlDataReader reader =
-                    cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
-
-                    return MapLocation(reader);
-                }
-            }
-        }
-        private static HuLocationDto MapLocation(
-    IDataRecord reader)
-        {
-            HuLocationDto dto = new HuLocationDto();
-
-            dto.HuId =
-                Convert.ToInt64(
-                    reader["HuId"]);
-
-            dto.HuCode =
-                Convert.ToString(
-                    reader["HUCode"]);
-
-            dto.HuType =
-                Convert.ToString(
-                    reader["HUType"]);
-
-            dto.PlantCode =
-                Convert.ToString(
-                    reader["PlantCode"]);
-
-            dto.DirectLocationId =
-                DbLong(
-                    reader["DirectLocationId"]);
-
-            dto.DirectLocationCode =
-                DbString(
-                    reader["DirectLocationCode"]);
-
-            dto.DirectWarehouseCode =
-                DbString(
-                    reader["DirectWarehouseCode"]);
-
-            dto.DirectZoneCode =
-                DbString(
-                    reader["DirectZoneCode"]);
-
-            dto.DirectLocationSince =
-                DbDateTime(
-                    reader["DirectLocationSince"]);
-
-            dto.EffectiveLocationId =
-                DbLong(
-                    reader["EffectiveLocationId"]);
-
-            dto.EffectiveLocationCode =
-                DbString(
-                    reader["EffectiveLocationCode"]);
-
-            dto.EffectiveWarehouseCode =
-                DbString(
-                    reader["EffectiveWarehouseCode"]);
-
-            dto.EffectiveZoneCode =
-                DbString(
-                    reader["EffectiveZoneCode"]);
-
-            dto.LocationSourceHuId =
-                DbLong(
-                    reader["LocationSourceHuId"]);
-
-            dto.LocationSourceHuCode =
-                DbString(
-                    reader["LocationSourceHuCode"]);
-
-            dto.IsInherited =
-                Convert.ToBoolean(
-                    reader["IsInherited"]);
-
-            dto.LastMoveLogId =
-                DbLong(
-                    reader["LastMoveLogId"]);
-
-            dto.LastMoveNo =
-                DbString(
-                    reader["LastMoveNo"]);
-
-            dto.LastMoveType =
-                DbString(
-                    reader["LastMoveType"]);
-
-            return dto;
-        }
-
-        private static string DbString(
-            object value)
-        {
-            return value == DBNull.Value
-                ? null
-                : Convert.ToString(value);
-        }
-
-        private static long? DbLong(
-            object value)
-        {
-            return value == DBNull.Value
-                ? (long?)null
-                : Convert.ToInt64(value);
-        }
-
-        private static DateTime? DbDateTime(
-            object value)
-        {
-            return value == DBNull.Value
-                ? (DateTime?)null
-                : Convert.ToDateTime(value);
+            return DbExecutor.QueryFirstOrDefault<HuLocationDto>(
+                sql,
+                new { HUId = huId });
         }
 
         public bool WarehouseAllowsPlant(
@@ -289,28 +164,13 @@ AND wp.IsActive = 1
 AND w.IsActive = 1;
 ";
 
-            using (SqlConnection conn =
-                DbConnectionFactory.Create())
-
-            using (SqlCommand cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@WarehouseCode",
-                    warehouseCode);
-
-                cmd.Parameters.AddWithValue(
-                    "@PlantCode",
-                    plantCode);
-
-                conn.Open();
-
-                int count =
-                    Convert.ToInt32(
-                        cmd.ExecuteScalar());
-
-                return count > 0;
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                sql,
+                new
+                {
+                    WarehouseCode = warehouseCode,
+                    PlantCode = plantCode
+                }) > 0;
         }
 
         public int CountDifferentPlantAtLocation(
@@ -331,25 +191,13 @@ AND h.PlantCode <> @PlantCode
 AND h.LifecycleStatus = 'ACTIVE';
 ";
 
-            using (SqlConnection conn =
-                DbConnectionFactory.Create())
-
-            using (SqlCommand cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@LocationId",
-                    locationId);
-
-                cmd.Parameters.AddWithValue(
-                    "@PlantCode",
-                    plantCode);
-
-                conn.Open();
-
-                return Convert.ToInt32(
-                    cmd.ExecuteScalar());
-            }
+            return DbExecutor.ExecuteScalar<int>(
+                sql,
+                new
+                {
+                    LocationId = locationId,
+                    PlantCode = plantCode
+                });
         }
 
         public HuMoveLogDto GetMoveByRequestId(
@@ -361,7 +209,7 @@ AND h.LifecycleStatus = 'ACTIVE';
 
             const string sql = @"
 SELECT TOP 1
-    m.Id,
+    m.Id AS MoveLogId,
     m.MoveNo,
     h.HUCode,
     fromLoc.LocationCode
@@ -392,27 +240,9 @@ INNER JOIN dbo.WMS_Location toLoc
 WHERE m.RequestId = @RequestId;
 ";
 
-            using (SqlConnection conn =
-                DbConnectionFactory.Create())
-
-            using (SqlCommand cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@RequestId",
-                    requestId);
-
-                conn.Open();
-
-                using (SqlDataReader reader =
-                    cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
-
-                    return MapMoveLog(reader);
-                }
-            }
+            return DbExecutor.QueryFirstOrDefault<HuMoveLogDto>(
+                sql,
+                new { RequestId = requestId });
         }
 
         public MovePersistenceResult ExecuteMove(
@@ -438,26 +268,19 @@ FROM dbo.WMS_HU WITH (UPDLOCK, HOLDLOCK)
 WHERE Id = @HUId;
 ";
 
-                        using (SqlCommand lockCmd =
-                            new SqlCommand(
-                                lockHuSql,
-                                conn,
-                                tran))
+                        long? lockValue = DbExecutor.ExecuteScalar<long?>(
+                            conn,
+                            tran,
+                            lockHuSql,
+                            new { HUId = command.HuId });
+
+                        if (!lockValue.HasValue)
                         {
-                            lockCmd.Parameters.AddWithValue(
-                                "@HUId",
-                                command.HuId);
+                            tran.Rollback();
 
-                            object lockValue = lockCmd.ExecuteScalar();
-
-                            if (lockValue == null)
-                            {
-                                tran.Rollback();
-
-                                return
-                                    MovePersistenceResult.Fail(
-                                        "HU不存在。");
-                            }
+                            return
+                                MovePersistenceResult.Fail(
+                                    "HU不存在。");
                         }
 
                         // ------------------------------------------------
@@ -514,30 +337,17 @@ INNER JOIN dbo.WMS_Location l
 WHERE cl.HUId = @HUId;
 ";
 
-                        using (SqlCommand currentCmd =
-                            new SqlCommand(
-                                currentSql,
+                        HuDirectLocationRow currentLocation =
+                            DbExecutor.QueryFirstOrDefault<HuDirectLocationRow>(
                                 conn,
-                                tran))
+                                tran,
+                                currentSql,
+                                new { HUId = command.HuId });
+
+                        if (currentLocation != null)
                         {
-                            currentCmd.Parameters.AddWithValue(
-                                "@HUId",
-                                command.HuId);
-
-                            using (SqlDataReader reader =
-                                currentCmd.ExecuteReader())
-                            {
-                                if (reader.Read())
-                                {
-                                    currentLocationId =
-                                        Convert.ToInt64(
-                                            reader["LocationId"]);
-
-                                    currentLocationCode =
-                                        Convert.ToString(
-                                            reader["LocationCode"]);
-                                }
-                            }
+                            currentLocationId = currentLocation.LocationId;
+                            currentLocationCode = currentLocation.LocationCode;
                         }
 
                         // ------------------------------------------------
@@ -577,69 +387,25 @@ WHERE cl.HUId = @HUId;
                         long moveLogId;
                         DateTime moveTime;
 
-                        const string insertMoveSql = @"
-INSERT INTO dbo.WMS_HU_MoveLog
-(
-    MoveNo,
-    HUId,
-    FromLocationId,
-    ToLocationId,
-    MoveType,
-    ScannedLocationCode,
-    BusinessNo,
-    TaskNo,
-    RequestId,
-    ReasonCode,
-    Operator,
-    Remark
-)
-
-OUTPUT
-    INSERTED.Id,
-    INSERTED.MoveTime
-
-VALUES
-(
-    @MoveNo,
-    @HUId,
-    @FromLocationId,
-    @ToLocationId,
-    @MoveType,
-    @ScannedLocationCode,
-    @BusinessNo,
-    @TaskNo,
-    @RequestId,
-    @ReasonCode,
-    @Operator,
-    @Remark
-);
-";
-
-                        using (SqlCommand insertMoveCmd =
-                            new SqlCommand(
-                                insertMoveSql,
+                        HuMoveLogWriter.HuMoveLogWriteResult insertedMove =
+                            HuMoveLogWriter.InsertWithTime(
                                 conn,
-                                tran))
-                        {
-                            AddMoveParameters(
-                                insertMoveCmd,
-                                command,
-                                currentLocationId);
+                                tran,
+                                command.MoveNo,
+                                command.HuId,
+                                currentLocationId,
+                                command.ToLocationId,
+                                command.MoveType,
+                                command.ScannedLocationCode,
+                                command.BusinessNo,
+                                command.TaskNo,
+                                command.RequestId,
+                                command.ReasonCode,
+                                command.Operator,
+                                command.Remark);
 
-                            using (SqlDataReader reader =
-                                insertMoveCmd.ExecuteReader())
-                            {
-                                reader.Read();
-
-                                moveLogId =
-                                    Convert.ToInt64(
-                                        reader["Id"]);
-
-                                moveTime =
-                                    Convert.ToDateTime(
-                                        reader["MoveTime"]);
-                            }
-                        }
+                        moveLogId = insertedMove.Id;
+                        moveTime = insertedMove.MoveTime;
 
                         // ------------------------------------------------
                         // 7. UPSERT CurrentLocation
@@ -685,105 +451,37 @@ BEGIN
 END;
 ";
 
-                        using (SqlCommand upsertCmd =
-                            new SqlCommand(
-                                upsertSql,
-                                conn,
-                                tran))
-                        {
-                            upsertCmd.Parameters.AddWithValue(
-                                "@HUId",
-                                command.HuId);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LocationId",
-                                command.ToLocationId);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LocationSince",
-                                moveTime);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LastMoveLogId",
-                                moveLogId);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LastMoveNo",
-                                command.MoveNo);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LastMoveType",
-                                command.MoveType);
-
-                            upsertCmd.Parameters.AddWithValue(
-                                "@LastOperator",
-                                DbValue(command.Operator));
-
-                            upsertCmd.ExecuteNonQuery();
-                        }
+                        DbExecutor.Execute(
+                            conn,
+                            tran,
+                            upsertSql,
+                            new
+                            {
+                                HUId = command.HuId,
+                                LocationId = command.ToLocationId,
+                                LocationSince = moveTime,
+                                LastMoveLogId = moveLogId,
+                                LastMoveNo = command.MoveNo,
+                                LastMoveType = command.MoveType,
+                                LastOperator = DbParameterValue.StringOrNull(command.Operator)
+                            });
 
                         // ------------------------------------------------
                         // 8. 写统一HU OperationLog
                         // ------------------------------------------------
-                        const string operationSql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
-(
-    OperationNo,
-    OperationType,
-    HUId,
-    BusinessNo,
-    RequestId,
-    Operator,
-    Remark
-)
-VALUES
-(
-    @OperationNo,
-    'MOVE',
-    @HUId,
-    @BusinessNo,
-    @RequestId,
-    @Operator,
-    @Remark
-);
-";
-
-                        using (SqlCommand operationCmd =
-                            new SqlCommand(
-                                operationSql,
-                                conn,
-                                tran))
-                        {
-                            operationCmd.Parameters.AddWithValue(
-                                "@OperationNo",
-                                command.MoveNo);
-
-                            operationCmd.Parameters.AddWithValue(
-                                "@HUId",
-                                command.HuId);
-
-                            operationCmd.Parameters.AddWithValue(
-                                "@BusinessNo",
-                                DbValue(
-                                    command.BusinessNo));
-
-                            operationCmd.Parameters.AddWithValue(
-                                "@RequestId",
-                                DbValue(
-                                    command.RequestId));
-
-                            operationCmd.Parameters.AddWithValue(
-                                "@Operator",
-                                DbValue(
-                                    command.Operator));
-
-                            operationCmd.Parameters.AddWithValue(
-                                "@Remark",
-                                DbValue(
-                                    command.Remark));
-
-                            operationCmd.ExecuteNonQuery();
-                        }
+                        HuOperationLogWriter.Insert(
+                            conn,
+                            tran,
+                            command.MoveNo,
+                            "MOVE",
+                            command.HuId,
+                            relatedHuId: null,
+                            businessNo: command.BusinessNo,
+                            requestId: command.RequestId,
+                            operatorCode: command.Operator,
+                            operationTime: null,
+                            detailJson: null,
+                            remark: command.Remark);
 
                         tran.Commit();
 
@@ -826,77 +524,6 @@ VALUES
                     }
                 }
             }
-        }
-
-        private static void AddMoveParameters(
-    SqlCommand cmd,
-    HuMoveCommand command,
-    long? fromLocationId)
-        {
-            cmd.Parameters.AddWithValue(
-                "@MoveNo",
-                command.MoveNo);
-
-            cmd.Parameters.AddWithValue(
-                "@HUId",
-                command.HuId);
-
-            cmd.Parameters.AddWithValue(
-                "@FromLocationId",
-                fromLocationId.HasValue
-                    ? (object)fromLocationId.Value
-                    : DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@ToLocationId",
-                command.ToLocationId);
-
-            cmd.Parameters.AddWithValue(
-                "@MoveType",
-                command.MoveType);
-
-            cmd.Parameters.AddWithValue(
-                "@ScannedLocationCode",
-                DbValue(
-                    command.ScannedLocationCode));
-
-            cmd.Parameters.AddWithValue(
-                "@BusinessNo",
-                DbValue(
-                    command.BusinessNo));
-
-            cmd.Parameters.AddWithValue(
-                "@TaskNo",
-                DbValue(
-                    command.TaskNo));
-
-            cmd.Parameters.AddWithValue(
-                "@RequestId",
-                DbValue(
-                    command.RequestId));
-
-            cmd.Parameters.AddWithValue(
-                "@ReasonCode",
-                DbValue(
-                    command.ReasonCode));
-
-            cmd.Parameters.AddWithValue(
-                "@Operator",
-                DbValue(
-                    command.Operator));
-
-            cmd.Parameters.AddWithValue(
-                "@Remark",
-                DbValue(
-                    command.Remark));
-        }
-
-        private static object DbValue(
-            string value)
-        {
-            return string.IsNullOrWhiteSpace(value)
-                ? (object)DBNull.Value
-                : value;
         }
 
         public List<HuMoveLogDto> GetMoveLogs(
@@ -943,100 +570,13 @@ ORDER BY
     m.Id DESC;
 ";
 
-            List<HuMoveLogDto> list = new List<HuMoveLogDto>();
-
-            using (SqlConnection conn =
-                DbConnectionFactory.Create())
-
-            using (SqlCommand cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@Top",
-                    top);
-
-                cmd.Parameters.AddWithValue(
-                    "@HUId",
-                    huId);
-
-                conn.Open();
-
-                using (SqlDataReader reader =
-                    cmd.ExecuteReader())
+            return DbExecutor.Query<HuMoveLogDto>(
+                sql,
+                new
                 {
-                    while (reader.Read())
-                    {
-                        list.Add(
-                            MapMoveLog(reader));
-                    }
-                }
-            }
-
-            return list;
-        }
-
-        private static HuMoveLogDto MapMoveLog(
-    IDataRecord reader)
-        {
-            HuMoveLogDto dto = new HuMoveLogDto();
-
-            dto.Id =
-                Convert.ToInt64(
-                    reader["Id"]);
-
-            dto.MoveNo =
-                Convert.ToString(
-                    reader["MoveNo"]);
-
-            dto.HuCode =
-                Convert.ToString(
-                    reader["HUCode"]);
-
-            dto.FromLocationCode =
-                DbString(
-                    reader["FromLocationCode"]);
-
-            dto.ToLocationCode =
-                Convert.ToString(
-                    reader["ToLocationCode"]);
-
-            dto.MoveType =
-                Convert.ToString(
-                    reader["MoveType"]);
-
-            dto.ScannedLocationCode =
-                DbString(
-                    reader["ScannedLocationCode"]);
-
-            dto.BusinessNo =
-                DbString(
-                    reader["BusinessNo"]);
-
-            dto.TaskNo =
-                DbString(
-                    reader["TaskNo"]);
-
-            dto.RequestId =
-                DbString(
-                    reader["RequestId"]);
-
-            dto.ReasonCode =
-                DbString(
-                    reader["ReasonCode"]);
-
-            dto.Operator =
-                DbString(
-                    reader["Operator"]);
-
-            dto.MoveTime =
-                Convert.ToDateTime(
-                    reader["MoveTime"]);
-
-            dto.Remark =
-                DbString(
-                    reader["Remark"]);
-
-            return dto;
+                    Top = top,
+                    HUId = huId
+                });
         }
 
         private static HuMoveResultDto GetMoveByRequestIdInternal(
@@ -1069,81 +609,17 @@ INNER JOIN dbo.WMS_Location toLoc
 WHERE m.RequestId = @RequestId;
 ";
 
-            using (SqlCommand cmd =
-                new SqlCommand(
-                    sql,
-                    conn,
-                    tran))
-            {
-                cmd.Parameters.Add(
-                    "@RequestId",
-                    SqlDbType.VarChar,
-                    100)
-                    .Value = requestId;
+            return DbExecutor.QueryFirstOrDefault<HuMoveResultDto>(
+                conn,
+                tran,
+                sql,
+                new { RequestId = requestId });
+        }
 
-                using (SqlDataReader reader =
-                    cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                    {
-                        return null;
-                    }
-
-                    HuMoveResultDto result = new HuMoveResultDto();
-
-                    result.MoveLogId =
-                        Convert.ToInt64(
-                            reader["Id"]);
-
-                    result.MoveNo =
-                        Convert.ToString(
-                            reader["MoveNo"]);
-
-                    result.HuCode =
-                        Convert.ToString(
-                            reader["HUCode"]);
-
-                    if (reader["FromLocationCode"] ==
-                        DBNull.Value)
-                    {
-                        result.FromLocationCode =
-                            null;
-                    }
-                    else
-                    {
-                        result.FromLocationCode =
-                            Convert.ToString(
-                                reader["FromLocationCode"]);
-                    }
-
-                    result.ToLocationCode =
-                        Convert.ToString(
-                            reader["ToLocationCode"]);
-
-                    result.MoveType =
-                        Convert.ToString(
-                            reader["MoveType"]);
-
-                    result.MoveTime =
-                        Convert.ToDateTime(
-                            reader["MoveTime"]);
-
-                    if (reader["Operator"] ==
-                        DBNull.Value)
-                    {
-                        result.Operator =
-                            null;
-                    }
-                    else
-                    {
-                        result.Operator =
-                            Convert.ToString(
-                                reader["Operator"]);
-                    }
-
-                    return result;
-                }
-            }
+        private class HuDirectLocationRow
+        {
+            public long LocationId { get; set; }
+            public string LocationCode { get; set; }
         }
     }
 }

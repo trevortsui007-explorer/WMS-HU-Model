@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.MasterData;
 
@@ -13,8 +13,6 @@ namespace WMS_HU_Model.Repositories
             string warehouseCode,
             string zoneCode)
         {
-            var list = new List<LocationDto>();
-
             const string sql = @"
 SELECT
     l.Id,
@@ -74,33 +72,17 @@ ORDER BY
     l.LocationCode;
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@WarehouseCode",
-                    string.IsNullOrWhiteSpace(warehouseCode)
-                        ? (object)DBNull.Value
-                        : warehouseCode);
-
-                cmd.Parameters.AddWithValue(
-                    "@ZoneCode",
-                    string.IsNullOrWhiteSpace(zoneCode)
-                        ? (object)DBNull.Value
-                        : zoneCode);
-
-                conn.Open();
-
-                using (var reader = cmd.ExecuteReader())
+            return DbExecutor.Query<LocationDto>(
+                sql,
+                new
                 {
-                    while (reader.Read())
-                    {
-                        list.Add(Map(reader));
-                    }
-                }
-            }
-
-            return list;
+                    WarehouseCode = string.IsNullOrWhiteSpace(warehouseCode)
+                        ? null
+                        : warehouseCode,
+                    ZoneCode = string.IsNullOrWhiteSpace(zoneCode)
+                        ? null
+                        : zoneCode
+                });
         }
 
         public LocationDto GetByCode(
@@ -156,27 +138,13 @@ WHERE
 AND l.LocationCode = @LocationCode;
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@WarehouseCode",
-                    warehouseCode);
-
-                cmd.Parameters.AddWithValue(
-                    "@LocationCode",
-                    locationCode);
-
-                conn.Open();
-
-                using (var reader = cmd.ExecuteReader())
+            return DbExecutor.QueryFirstOrDefault<LocationDto>(
+                sql,
+                new
                 {
-                    if (!reader.Read())
-                        return null;
-
-                    return Map(reader);
-                }
-            }
+                    WarehouseCode = warehouseCode,
+                    LocationCode = locationCode
+                });
         }
 
         public long? GetWarehouseId(string warehouseCode)
@@ -188,11 +156,9 @@ WHERE WarehouseCode = @WarehouseCode
 AND IsActive = 1;
 ";
 
-            return ExecuteScalarLong(
+            return DbExecutor.ExecuteScalar<long?>(
                 sql,
-                new SqlParameter(
-                    "@WarehouseCode",
-                    warehouseCode));
+                new { WarehouseCode = warehouseCode });
         }
 
         public long? GetZoneId(
@@ -207,27 +173,13 @@ AND ZoneCode = @ZoneCode
 AND IsActive = 1;
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@WarehouseId",
-                    warehouseId);
-
-                cmd.Parameters.AddWithValue(
-                    "@ZoneCode",
-                    zoneCode);
-
-                conn.Open();
-
-                var value = cmd.ExecuteScalar();
-
-                if (value == null ||
-                    value == DBNull.Value)
-                    return null;
-
-                return Convert.ToInt64(value);
-            }
+            return DbExecutor.ExecuteScalar<long?>(
+                sql,
+                new
+                {
+                    WarehouseId = warehouseId,
+                    ZoneCode = zoneCode
+                });
         }
 
         public long? GetLocationId(
@@ -241,27 +193,13 @@ WHERE WarehouseId = @WarehouseId
 AND LocationCode = @LocationCode;
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@WarehouseId",
-                    warehouseId);
-
-                cmd.Parameters.AddWithValue(
-                    "@LocationCode",
-                    locationCode);
-
-                conn.Open();
-
-                var value = cmd.ExecuteScalar();
-
-                if (value == null ||
-                    value == DBNull.Value)
-                    return null;
-
-                return Convert.ToInt64(value);
-            }
+            return DbExecutor.ExecuteScalar<long?>(
+                sql,
+                new
+                {
+                    WarehouseId = warehouseId,
+                    LocationCode = locationCode
+                });
         }
 
         public bool Exists(
@@ -340,21 +278,13 @@ VALUES
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                AddParameters(
-                    cmd,
+            return DbExecutor.ExecuteScalar<long>(
+                sql,
+                CreateParameters(
                     warehouseId,
                     zoneId,
                     parentLocationId,
-                    request);
-
-                conn.Open();
-
-                return Convert.ToInt64(
-                    cmd.ExecuteScalar());
-            }
+                    request));
         }
 
         public bool Update(
@@ -394,357 +324,81 @@ SET
 WHERE Id = @LocationId;
 ";
 
-            using (var conn = DbConnectionFactory.Create())
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue(
-                    "@LocationId",
-                    locationId);
+            DynamicParameters parameters = CreateParameters(
+                zoneId,
+                parentLocationId,
+                request);
 
-                cmd.Parameters.AddWithValue(
-                    "@ZoneId",
-                    zoneId);
+            parameters.Add("@LocationId", locationId, DbType.Int64);
 
-                cmd.Parameters.AddWithValue(
-                    "@ParentLocationId",
-                    (object)parentLocationId
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@LocationName",
-                    (object)request.LocationName
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@LocationLevel",
-                    request.LocationLevel);
-
-                cmd.Parameters.AddWithValue(
-                    "@LocationTypeCode",
-                    request.LocationTypeCode);
-
-                cmd.Parameters.AddWithValue(
-                    "@ManageMode",
-                    request.ManageMode);
-
-                cmd.Parameters.AddWithValue(
-                    "@IsScannable",
-                    request.IsScannable);
-
-                cmd.Parameters.AddWithValue(
-                    "@ScanCode",
-                    (object)request.ScanCode
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@CapacityMode",
-                    request.CapacityMode);
-
-                cmd.Parameters.AddWithValue(
-                    "@CapacityQty",
-                    (object)request.CapacityQty
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@MaxWeightKg",
-                    (object)request.MaxWeightKg
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@PlantPolicy",
-                    request.PlantPolicy);
-
-                cmd.Parameters.AddWithValue(
-                    "@DedicatedPlantCode",
-                    (object)request.DedicatedPlantCode
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@AllowMixedMaterial",
-                    request.AllowMixedMaterial);
-
-                cmd.Parameters.AddWithValue(
-                    "@AllowMixedBatch",
-                    request.AllowMixedBatch);
-
-                cmd.Parameters.AddWithValue(
-                    "@AllowMixedOrder",
-                    request.AllowMixedOrder);
-
-                cmd.Parameters.AddWithValue(
-                    "@PutawayPriority",
-                    request.PutawayPriority);
-
-                cmd.Parameters.AddWithValue(
-                    "@PickingPriority",
-                    request.PickingPriority);
-
-                cmd.Parameters.AddWithValue(
-                    "@RouteSequence",
-                    request.RouteSequence);
-
-                cmd.Parameters.AddWithValue(
-                    "@MasterStatus",
-                    request.MasterStatus);
-
-                cmd.Parameters.AddWithValue(
-                    "@Remark",
-                    (object)request.Remark
-                    ?? DBNull.Value);
-
-                cmd.Parameters.AddWithValue(
-                    "@ModifyUser",
-                    (object)request.Operator
-                    ?? DBNull.Value);
-
-                conn.Open();
-
-                return cmd.ExecuteNonQuery() > 0;
-            }
+            return DbExecutor.Execute(sql, parameters) > 0;
         }
 
-        private static void AddParameters(
-            SqlCommand cmd,
+        private static DynamicParameters CreateParameters(
             long warehouseId,
             long zoneId,
             long? parentLocationId,
             CreateLocationRequest request)
         {
-            cmd.Parameters.AddWithValue(
-                "@WarehouseId",
-                warehouseId);
+            DynamicParameters parameters = new DynamicParameters();
+            parameters.Add("@WarehouseId", warehouseId, DbType.Int64);
+            parameters.Add("@ZoneId", zoneId, DbType.Int64);
+            parameters.Add("@LocationCode", request.LocationCode, DbType.AnsiString, size: 100);
+            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 200);
+            parameters.Add("@ParentLocationId", parentLocationId, DbType.Int64);
+            parameters.Add("@LocationLevel", request.LocationLevel, DbType.AnsiString, size: 20);
+            parameters.Add("@LocationTypeCode", request.LocationTypeCode, DbType.AnsiString, size: 30);
+            parameters.Add("@ManageMode", request.ManageMode, DbType.AnsiString, size: 30);
+            parameters.Add("@IsVirtual", request.IsVirtual, DbType.Boolean);
+            parameters.Add("@IsScannable", request.IsScannable, DbType.Boolean);
+            parameters.Add("@ScanCode", DbParameterValue.StringOrNull(request.ScanCode), DbType.AnsiString, size: 100);
+            parameters.Add("@CapacityMode", request.CapacityMode, DbType.AnsiString, size: 30);
+            parameters.Add("@CapacityQty", request.CapacityQty, DbType.Decimal, precision: 18, scale: 4);
+            parameters.Add("@MaxWeightKg", request.MaxWeightKg, DbType.Decimal, precision: 18, scale: 4);
+            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 20);
+            parameters.Add("@DedicatedPlantCode", DbParameterValue.StringOrNull(request.DedicatedPlantCode), DbType.AnsiString, size: 20);
+            parameters.Add("@AllowMixedMaterial", request.AllowMixedMaterial, DbType.Boolean);
+            parameters.Add("@AllowMixedBatch", request.AllowMixedBatch, DbType.Boolean);
+            parameters.Add("@AllowMixedOrder", request.AllowMixedOrder, DbType.Boolean);
+            parameters.Add("@PutawayPriority", request.PutawayPriority, DbType.Int32);
+            parameters.Add("@PickingPriority", request.PickingPriority, DbType.Int32);
+            parameters.Add("@RouteSequence", request.RouteSequence, DbType.Int32);
+            parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
+            parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
-            cmd.Parameters.AddWithValue(
-                "@ZoneId",
-                zoneId);
-
-            cmd.Parameters.AddWithValue(
-                "@LocationCode",
-                request.LocationCode);
-
-            cmd.Parameters.AddWithValue(
-                "@LocationName",
-                (object)request.LocationName
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@ParentLocationId",
-                (object)parentLocationId
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@LocationLevel",
-                request.LocationLevel);
-
-            cmd.Parameters.AddWithValue(
-                "@LocationTypeCode",
-                request.LocationTypeCode);
-
-            cmd.Parameters.AddWithValue(
-                "@ManageMode",
-                request.ManageMode);
-
-            cmd.Parameters.AddWithValue(
-                "@IsVirtual",
-                request.IsVirtual);
-
-            cmd.Parameters.AddWithValue(
-                "@IsScannable",
-                request.IsScannable);
-
-            cmd.Parameters.AddWithValue(
-                "@ScanCode",
-                (object)request.ScanCode
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@CapacityMode",
-                request.CapacityMode);
-
-            cmd.Parameters.AddWithValue(
-                "@CapacityQty",
-                (object)request.CapacityQty
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@MaxWeightKg",
-                (object)request.MaxWeightKg
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@PlantPolicy",
-                request.PlantPolicy);
-
-            cmd.Parameters.AddWithValue(
-                "@DedicatedPlantCode",
-                (object)request.DedicatedPlantCode
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@AllowMixedMaterial",
-                request.AllowMixedMaterial);
-
-            cmd.Parameters.AddWithValue(
-                "@AllowMixedBatch",
-                request.AllowMixedBatch);
-
-            cmd.Parameters.AddWithValue(
-                "@AllowMixedOrder",
-                request.AllowMixedOrder);
-
-            cmd.Parameters.AddWithValue(
-                "@PutawayPriority",
-                request.PutawayPriority);
-
-            cmd.Parameters.AddWithValue(
-                "@PickingPriority",
-                request.PickingPriority);
-
-            cmd.Parameters.AddWithValue(
-                "@RouteSequence",
-                request.RouteSequence);
-
-            cmd.Parameters.AddWithValue(
-                "@Remark",
-                (object)request.Remark
-                ?? DBNull.Value);
-
-            cmd.Parameters.AddWithValue(
-                "@CreateUser",
-                (object)request.Operator
-                ?? DBNull.Value);
+            return parameters;
         }
 
-        private static long? ExecuteScalarLong(
-            string sql,
-            SqlParameter parameter)
+        private static DynamicParameters CreateParameters(
+            long zoneId,
+            long? parentLocationId,
+            UpdateLocationRequest request)
         {
-            using (var conn =
-                DbConnectionFactory.Create())
+            DynamicParameters parameters = new DynamicParameters();
+            parameters.Add("@ZoneId", zoneId, DbType.Int64);
+            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 200);
+            parameters.Add("@ParentLocationId", parentLocationId, DbType.Int64);
+            parameters.Add("@LocationLevel", request.LocationLevel, DbType.AnsiString, size: 20);
+            parameters.Add("@LocationTypeCode", request.LocationTypeCode, DbType.AnsiString, size: 30);
+            parameters.Add("@ManageMode", request.ManageMode, DbType.AnsiString, size: 30);
+            parameters.Add("@IsScannable", request.IsScannable, DbType.Boolean);
+            parameters.Add("@ScanCode", DbParameterValue.StringOrNull(request.ScanCode), DbType.AnsiString, size: 100);
+            parameters.Add("@CapacityMode", request.CapacityMode, DbType.AnsiString, size: 30);
+            parameters.Add("@CapacityQty", request.CapacityQty, DbType.Decimal, precision: 18, scale: 4);
+            parameters.Add("@MaxWeightKg", request.MaxWeightKg, DbType.Decimal, precision: 18, scale: 4);
+            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 20);
+            parameters.Add("@DedicatedPlantCode", DbParameterValue.StringOrNull(request.DedicatedPlantCode), DbType.AnsiString, size: 20);
+            parameters.Add("@AllowMixedMaterial", request.AllowMixedMaterial, DbType.Boolean);
+            parameters.Add("@AllowMixedBatch", request.AllowMixedBatch, DbType.Boolean);
+            parameters.Add("@AllowMixedOrder", request.AllowMixedOrder, DbType.Boolean);
+            parameters.Add("@PutawayPriority", request.PutawayPriority, DbType.Int32);
+            parameters.Add("@PickingPriority", request.PickingPriority, DbType.Int32);
+            parameters.Add("@RouteSequence", request.RouteSequence, DbType.Int32);
+            parameters.Add("@MasterStatus", request.MasterStatus, DbType.AnsiString, size: 20);
+            parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
+            parameters.Add("@ModifyUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
-            using (var cmd =
-                new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.Add(parameter);
-
-                conn.Open();
-
-                var value = cmd.ExecuteScalar();
-
-                if (value == null ||
-                    value == DBNull.Value)
-                    return null;
-
-                return Convert.ToInt64(value);
-            }
-        }
-
-        private static LocationDto Map(
-            IDataRecord reader)
-        {
-            return new LocationDto
-            {
-                Id =
-                    Convert.ToInt64(reader["Id"]),
-
-                WarehouseCode =
-                    reader["WarehouseCode"].ToString(),
-
-                WarehouseName =
-                    reader["WarehouseName"].ToString(),
-
-                ZoneCode =
-                    reader["ZoneCode"].ToString(),
-
-                ZoneName =
-                    reader["ZoneName"].ToString(),
-
-                LocationCode =
-                    reader["LocationCode"].ToString(),
-
-                LocationName =
-                    DbString(reader["LocationName"]),
-
-                ParentLocationCode =
-                    DbString(reader["ParentLocationCode"]),
-
-                LocationLevel =
-                    reader["LocationLevel"].ToString(),
-
-                LocationTypeCode =
-                    reader["LocationTypeCode"].ToString(),
-
-                ManageMode =
-                    reader["ManageMode"].ToString(),
-
-                IsVirtual =
-                    Convert.ToBoolean(reader["IsVirtual"]),
-
-                IsScannable =
-                    Convert.ToBoolean(reader["IsScannable"]),
-
-                ScanCode =
-                    DbString(reader["ScanCode"]),
-
-                CapacityMode =
-                    reader["CapacityMode"].ToString(),
-
-                CapacityQty =
-                    DbDecimal(reader["CapacityQty"]),
-
-                MaxWeightKg =
-                    DbDecimal(reader["MaxWeightKg"]),
-
-                PlantPolicy =
-                    reader["PlantPolicy"].ToString(),
-
-                DedicatedPlantCode =
-                    DbString(reader["DedicatedPlantCode"]),
-
-                AllowMixedMaterial =
-                    Convert.ToBoolean(
-                        reader["AllowMixedMaterial"]),
-
-                AllowMixedBatch =
-                    Convert.ToBoolean(
-                        reader["AllowMixedBatch"]),
-
-                AllowMixedOrder =
-                    Convert.ToBoolean(
-                        reader["AllowMixedOrder"]),
-
-                PutawayPriority =
-                    Convert.ToInt32(
-                        reader["PutawayPriority"]),
-
-                PickingPriority =
-                    Convert.ToInt32(
-                        reader["PickingPriority"]),
-
-                RouteSequence =
-                    Convert.ToInt32(
-                        reader["RouteSequence"]),
-
-                MasterStatus =
-                    reader["MasterStatus"].ToString(),
-
-                Remark =
-                    DbString(reader["Remark"])
-            };
-        }
-
-        private static string DbString(object value)
-        {
-            return value == DBNull.Value
-                ? null
-                : value.ToString();
-        }
-
-        private static decimal? DbDecimal(object value)
-        {
-            return value == DBNull.Value
-                ? (decimal?)null
-                : Convert.ToDecimal(value);
+            return parameters;
         }
     }
 }

@@ -8,7 +8,7 @@ namespace WMS_HU_Model.Repositories
     /// </summary>
     public interface IHuRepository
     {
-        #region 基础查询 (Basic Queries)
+        #region 基础查询
 
         /// <summary>
         /// 根据 HU 编码获取 HU 详细信息
@@ -42,7 +42,7 @@ namespace WMS_HU_Model.Repositories
 
         #endregion
 
-        #region 校验与逻辑约束 (Validation & Constraints)
+        #region 校验与逻辑约束
 
         /// <summary>
         /// 检查子 HU 是否已经绑定了活跃的父 HU
@@ -56,7 +56,7 @@ namespace WMS_HU_Model.Repositories
 
         #endregion
 
-        #region 数据写入与变更 (Data Operations)
+        #region 数据写入与变更
 
         /// <summary>
         /// 创建一个新的 HU 处理单元
@@ -75,7 +75,7 @@ namespace WMS_HU_Model.Repositories
 
         #endregion
 
-        #region 层级与树状结构查询 (Tree & Item Queries)
+        #region 层级与库存明细查询
 
         /// <summary>
         /// 获取以 rootHuId 为根节点的展平树状结构数据

@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.Outbound;
 using WMS_HU_Model.Rules;
@@ -170,51 +171,18 @@ ORDER BY
     BoxHUId ASC;
 ";
 
-            List<OutboundQueueItemDto> list = new List<OutboundQueueItemDto>();
-
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
-            {
-                AddQueueParameters(
-                    cmd,
+            return DbExecutor.Query<OutboundQueueItemDto>(
+                sql,
+                new
+                {
                     query.WarehouseCode,
                     query.PlantCode,
                     query.MaterialCode,
-                    query.MaterialRevision,
-                    query.BatchNo,
-                    query.ProductionOrderNo);
-
-                cmd.Parameters.Add("@Top", SqlDbType.Int)
-                    .Value = query.Top;
-
-                conn.Open();
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        OutboundQueueItemDto dto = new OutboundQueueItemDto
-                        {
-                            QueueSequence = Convert.ToInt32(reader["QueueSequence"]),
-                            BoxHuId = Convert.ToInt64(reader["BoxHUId"]),
-                            BoxHuCode = Convert.ToString(reader["BoxHUCode"]),
-                            PlantCode = Convert.ToString(reader["PlantCode"]),
-                            WarehouseCode = Convert.ToString(reader["WarehouseCode"]),
-                            LocationCode = Convert.ToString(reader["LocationCode"]),
-                            MaterialCode = Convert.ToString(reader["MaterialCode"]),
-                            MaterialRevision = DbString(reader["MaterialRevision"]),
-                            InnerPackCount = Convert.ToInt32(reader["InnerPackCount"]),
-                            TotalQty = Convert.ToDecimal(reader["TotalQty"]),
-                            Uom = Convert.ToString(reader["Uom"]),
-                            FifoTime = Convert.ToDateTime(reader["FifoTime"])
-                        };
-
-                        list.Add(dto);
-                    }
-                }
-            }
-
-            return list;
+                    MaterialRevision = DbParameterValue.StringOrNull(query.MaterialRevision),
+                    BatchNo = DbParameterValue.StringOrNull(query.BatchNo),
+                    ProductionOrderNo = DbParameterValue.StringOrNull(query.ProductionOrderNo),
+                    query.Top
+                });
         }
 
         public PickResultDto GetPickByRequestId(string requestId)
@@ -222,11 +190,7 @@ ORDER BY
             if (string.IsNullOrWhiteSpace(requestId))
                 return null;
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
-                return GetPickByRequestIdInternal(conn, null, requestId);
-            }
+            return GetPickByRequestIdInternal(null, null, requestId);
         }
 
         public PickPersistenceResult ExecutePickNext(PickNextCommand command)
@@ -371,22 +335,17 @@ ORDER BY
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
-
-                return ReadCandidates(
-                    conn,
-                    null,
-                    request.WarehouseCode,
-                    request.PlantCode,
-                    request.MaterialCode,
-                    request.MaterialRevision,
-                    request.BatchNo,
-                    request.ProductionOrderNo,
-                    request.Uom,
-                    false);
-            }
+            return ReadCandidates(
+                null,
+                null,
+                request.WarehouseCode,
+                request.PlantCode,
+                request.MaterialCode,
+                request.MaterialRevision,
+                request.BatchNo,
+                request.ProductionOrderNo,
+                request.Uom,
+                false);
         }
 
         public PickBatchResultDto GetPickBatchByRequestId(string requestId)
@@ -394,11 +353,7 @@ ORDER BY
             if (string.IsNullOrWhiteSpace(requestId))
                 return null;
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
-                return GetPickBatchByRequestIdInternal(conn, null, requestId);
-            }
+            return GetPickBatchByRequestIdInternal(null, null, requestId);
         }
 
         public bool IsRequestIdUsedByOtherOperation(string requestId)
@@ -406,11 +361,7 @@ ORDER BY
             if (string.IsNullOrWhiteSpace(requestId))
                 return false;
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
-                return IsRequestIdUsedByOtherOperationInternal(conn, null, requestId);
-            }
+            return IsRequestIdUsedByOtherOperationInternal(null, null, requestId);
         }
 
         public PickBatchPersistenceResult ExecutePickBatch(PickBatchCommand command)
@@ -933,43 +884,18 @@ ORDER BY
     box.Id ASC;
 ";
 
-            List<OutboundPickCandidateDto> list = new List<OutboundPickCandidateDto>();
-
-            using (SqlCommand cmd = CreateCommand(sql, conn, tran))
-            {
-                AddBatchFilterParameters(
-                    cmd,
+            return Query<OutboundPickCandidateDto>(
+                conn,
+                tran,
+                sql,
+                CreateBatchFilterParameters(
                     warehouseCode,
                     plantCode,
                     materialCode,
                     materialRevision,
                     batchNo,
                     productionOrderNo,
-                    uom);
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        OutboundPickCandidateDto dto = new OutboundPickCandidateDto
-                        {
-                            BoxHuId = Convert.ToInt64(reader["BoxHUId"]),
-                            BoxHuCode = Convert.ToString(reader["BoxHUCode"]),
-                            PlantCode = Convert.ToString(reader["PlantCode"]),
-                            LocationId = Convert.ToInt64(reader["LocationId"]),
-                            LocationCode = Convert.ToString(reader["LocationCode"]),
-                            FifoTime = Convert.ToDateTime(reader["FifoTime"]),
-                            InnerPackCount = Convert.ToInt32(reader["InnerPackCount"]),
-                            Qty = Convert.ToDecimal(reader["Qty"]),
-                            Uom = Convert.ToString(reader["Uom"])
-                        };
-
-                        list.Add(dto);
-                    }
-                }
-            }
-
-            return list;
+                    uom));
         }
 
         private static PickResultDto GetPickByRequestIdInternal(
@@ -1021,41 +947,16 @@ GROUP BY
     moveLog.MoveTime;
 ";
 
-            using (SqlCommand cmd = CreateCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = requestId;
+            PickResultDto result = QueryFirstOrDefault<PickResultDto>(
+                conn,
+                tran,
+                sql,
+                new { RequestId = requestId });
 
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
+            if (result != null)
+                result.IsDuplicate = true;
 
-                    PickResultDto result = MapPickResult(reader);
-                    result.IsDuplicate = true;
-
-                    return result;
-                }
-            }
-        }
-
-        private static PickResultDto MapPickResult(IDataRecord reader)
-        {
-            return new PickResultDto
-            {
-                OperationNo = Convert.ToString(reader["OperationNo"]),
-                MoveLogId = Convert.ToInt64(reader["MoveLogId"]),
-                BoxHuCode = Convert.ToString(reader["BoxHUCode"]),
-                PlantCode = Convert.ToString(reader["PlantCode"]),
-                MaterialCode = Convert.ToString(reader["MaterialCode"]),
-                FromLocationCode = DbString(reader["FromLocationCode"]),
-                ToLocationCode = Convert.ToString(reader["ToLocationCode"]),
-                InnerPackCount = Convert.ToInt32(reader["InnerPackCount"]),
-                TotalQty = Convert.ToDecimal(reader["TotalQty"]),
-                Uom = Convert.ToString(reader["Uom"]),
-                FifoTime = Convert.ToDateTime(reader["FifoTime"]),
-                PickTime = Convert.ToDateTime(reader["PickTime"])
-            };
+            return result;
         }
 
         private static PickBatchResultDto GetPickBatchByRequestIdInternal(
@@ -1083,38 +984,30 @@ INNER JOIN dbo.WMS_Warehouse w
 WHERE b.RequestId = @RequestId;
 ";
 
-            long pickBatchId;
-            PickBatchResultDto result;
+            PickBatchHeaderRow header = QueryFirstOrDefault<PickBatchHeaderRow>(
+                conn,
+                tran,
+                headerSql,
+                new { RequestId = requestId });
 
-            using (SqlCommand cmd = CreateCommand(headerSql, conn, tran))
+            if (header == null)
+                return null;
+
+            PickBatchResultDto result = new PickBatchResultDto
             {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = requestId;
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                        return null;
-
-                    pickBatchId = Convert.ToInt64(reader["Id"]);
-
-                    result = new PickBatchResultDto
-                    {
-                        PickBatchNo = Convert.ToString(reader["PickBatchNo"]),
-                        RequestId = Convert.ToString(reader["RequestId"]),
-                        WarehouseCode = Convert.ToString(reader["WarehouseCode"]),
-                        PlantCode = Convert.ToString(reader["PlantCode"]),
-                        MaterialCode = Convert.ToString(reader["MaterialCode"]),
-                        RequiredQty = Convert.ToDecimal(reader["RequiredQty"]),
-                        PickedQty = Convert.ToDecimal(reader["PickedQty"]),
-                        DifferenceQty = Convert.ToDecimal(reader["DifferenceQty"]),
-                        Uom = Convert.ToString(reader["Uom"]),
-                        ResultType = Convert.ToString(reader["ResultType"]),
-                        PickTime = Convert.ToDateTime(reader["PickTime"]),
-                        IsDuplicate = true
-                    };
-                }
-            }
+                PickBatchNo = header.PickBatchNo,
+                RequestId = header.RequestId,
+                WarehouseCode = header.WarehouseCode,
+                PlantCode = header.PlantCode,
+                MaterialCode = header.MaterialCode,
+                RequiredQty = header.RequiredQty,
+                PickedQty = header.PickedQty,
+                DifferenceQty = header.DifferenceQty,
+                Uom = header.Uom,
+                ResultType = header.ResultType,
+                PickTime = header.PickTime,
+                IsDuplicate = true
+            };
 
             const string detailSql = @"
 SELECT
@@ -1138,32 +1031,11 @@ WHERE d.PickBatchId = @PickBatchId
 ORDER BY d.SequenceNo;
 ";
 
-            using (SqlCommand cmd = CreateCommand(detailSql, conn, tran))
-            {
-                cmd.Parameters.Add("@PickBatchId", SqlDbType.BigInt)
-                    .Value = pickBatchId;
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        PickBatchItemResultDto item = new PickBatchItemResultDto
-                        {
-                            SequenceNo = Convert.ToInt32(reader["SequenceNo"]),
-                            BoxHuCode = Convert.ToString(reader["BoxHUCode"]),
-                            FromLocationCode = Convert.ToString(reader["FromLocationCode"]),
-                            ToLocationCode = Convert.ToString(reader["ToLocationCode"]),
-                            BoxQty = Convert.ToDecimal(reader["BoxQty"]),
-                            Uom = Convert.ToString(reader["Uom"]),
-                            FifoTime = Convert.ToDateTime(reader["FifoTime"]),
-                            MoveLogId = Convert.ToInt64(reader["MoveLogId"]),
-                            OperationNo = Convert.ToString(reader["OperationNo"])
-                        };
-
-                        result.Boxes.Add(item);
-                    }
-                }
-            }
+            result.Boxes = Query<PickBatchItemResultDto>(
+                conn,
+                tran,
+                detailSql,
+                new { PickBatchId = header.Id });
 
             result.BoxCount = result.Boxes.Count;
 
@@ -1196,13 +1068,11 @@ SELECT
     END;
 ";
 
-            using (SqlCommand cmd = CreateCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = requestId;
-
-                return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
-            }
+            return ExecuteScalar<int>(
+                conn,
+                tran,
+                sql,
+                new { RequestId = requestId }) == 1;
         }
 
         private static void ReadOutboundStaging(
@@ -1229,26 +1099,23 @@ AND z.ZoneCode = 'STAGING'
 AND l.MasterStatus = 'ACTIVE';
 ";
 
-            using (SqlCommand cmd = CreateCommand(sql, conn, tran))
+            OutboundStagingRow row = QueryFirstOrDefault<OutboundStagingRow>(
+                conn,
+                tran,
+                sql,
+                new { WarehouseCode = warehouseCode });
+
+            if (row == null)
             {
-                cmd.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30)
-                    .Value = warehouseCode;
-
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                    {
-                        throw new InvalidOperationException(
-                            "仓库[" +
-                            warehouseCode +
-                            "]未配置可用的OUTBOUND-STAGING货位。");
-                    }
-
-                    warehouseId = Convert.ToInt64(reader["WarehouseId"]);
-                    locationId = Convert.ToInt64(reader["LocationId"]);
-                    locationCode = Convert.ToString(reader["LocationCode"]);
-                }
+                throw new InvalidOperationException(
+                    "仓库[" +
+                    warehouseCode +
+                    "]未配置可用的OUTBOUND-STAGING货位。");
             }
+
+            warehouseId = row.WarehouseId;
+            locationId = row.LocationId;
+            locationCode = row.LocationCode;
         }
 
         private static long InsertMoveLog(
@@ -1266,75 +1133,22 @@ AND l.MasterStatus = 'ACTIVE';
             DateTime moveTime,
             string remark)
         {
-            const string sql = @"
-INSERT INTO dbo.WMS_HU_MoveLog
-(
-    MoveNo,
-    HUId,
-    FromLocationId,
-    ToLocationId,
-    MoveType,
-    ScannedLocationCode,
-    BusinessNo,
-    RequestId,
-    Operator,
-    MoveTime,
-    Remark
-)
-OUTPUT INSERTED.Id
-VALUES
-(
-    @MoveNo,
-    @HUId,
-    @FromLocationId,
-    @ToLocationId,
-    @MoveType,
-    @ScannedLocationCode,
-    @BusinessNo,
-    @RequestId,
-    @Operator,
-    @MoveTime,
-    @Remark
-);
-";
-
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50)
-                    .Value = moveNo;
-
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                cmd.Parameters.Add("@FromLocationId", SqlDbType.BigInt)
-                    .Value = fromLocationId;
-
-                cmd.Parameters.Add("@ToLocationId", SqlDbType.BigInt)
-                    .Value = toLocationId;
-
-                cmd.Parameters.Add("@MoveType", SqlDbType.VarChar, 30)
-                    .Value = moveType;
-
-                cmd.Parameters.Add("@ScannedLocationCode", SqlDbType.VarChar, 100)
-                    .Value = DbValue(scannedLocationCode);
-
-                cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                    .Value = DbValue(businessNo);
-
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = DbValue(requestId);
-
-                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                    .Value = DbValue(operatorCode);
-
-                cmd.Parameters.Add("@MoveTime", SqlDbType.DateTime2)
-                    .Value = moveTime;
-
-                cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                    .Value = DbValue(remark);
-
-                return Convert.ToInt64(cmd.ExecuteScalar());
-            }
+            return HuMoveLogWriter.Insert(
+                conn,
+                tran,
+                moveNo,
+                huId,
+                fromLocationId,
+                toLocationId,
+                moveType,
+                scannedLocationCode,
+                businessNo,
+                taskNo: null,
+                requestId: requestId,
+                reasonCode: null,
+                operatorCode: operatorCode,
+                moveTime: moveTime,
+                remark: remark);
         }
 
         private static bool UpdateCurrentLocation(
@@ -1363,34 +1177,21 @@ WHERE HUId = @HUId
 AND LocationId = @ExpectedFromLocationId;
 ";
 
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@ToLocationId", SqlDbType.BigInt)
-                    .Value = toLocationId;
-
-                cmd.Parameters.Add("@LocationSince", SqlDbType.DateTime2)
-                    .Value = moveTime;
-
-                cmd.Parameters.Add("@MoveLogId", SqlDbType.BigInt)
-                    .Value = moveLogId;
-
-                cmd.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50)
-                    .Value = moveNo;
-
-                cmd.Parameters.Add("@MoveType", SqlDbType.VarChar, 30)
-                    .Value = moveType;
-
-                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                    .Value = DbValue(operatorCode);
-
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                cmd.Parameters.Add("@ExpectedFromLocationId", SqlDbType.BigInt)
-                    .Value = expectedFromLocationId;
-
-                return cmd.ExecuteNonQuery() == 1;
-            }
+            return DbExecutor.Execute(
+                conn,
+                tran,
+                sql,
+                new
+                {
+                    ToLocationId = toLocationId,
+                    LocationSince = moveTime,
+                    MoveLogId = moveLogId,
+                    MoveNo = moveNo,
+                    MoveType = moveType,
+                    Operator = DbParameterValue.StringOrNull(operatorCode),
+                    HUId = huId,
+                    ExpectedFromLocationId = expectedFromLocationId
+                }) == 1;
         }
 
         private static void InsertOperationLog(
@@ -1405,59 +1206,19 @@ AND LocationId = @ExpectedFromLocationId;
             DateTime operationTime,
             string remark)
         {
-            const string sql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
-(
-    OperationNo,
-    OperationType,
-    HUId,
-    BusinessNo,
-    RequestId,
-    Operator,
-    OperationTime,
-    Remark
-)
-VALUES
-(
-    @OperationNo,
-    @OperationType,
-    @HUId,
-    @BusinessNo,
-    @RequestId,
-    @Operator,
-    @OperationTime,
-    @Remark
-);
-";
-
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50)
-                    .Value = operationNo;
-
-                cmd.Parameters.Add("@OperationType", SqlDbType.VarChar, 30)
-                    .Value = operationType;
-
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                    .Value = DbValue(businessNo);
-
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = DbValue(requestId);
-
-                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                    .Value = DbValue(operatorCode);
-
-                cmd.Parameters.Add("@OperationTime", SqlDbType.DateTime2)
-                    .Value = operationTime;
-
-                cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                    .Value = DbValue(remark);
-
-                cmd.ExecuteNonQuery();
-            }
+            HuOperationLogWriter.Insert(
+                conn,
+                tran,
+                operationNo,
+                operationType,
+                huId,
+                relatedHuId: null,
+                businessNo: businessNo,
+                requestId: requestId,
+                operatorCode: operatorCode,
+                operationTime: operationTime,
+                detailJson: null,
+                remark: remark);
         }
 
         private static long InsertPickBatchHeader(
@@ -1532,13 +1293,13 @@ VALUES
                     .Value = command.MaterialCode;
 
                 cmd.Parameters.Add("@MaterialRevision", SqlDbType.VarChar, 30)
-                    .Value = DbValue(command.MaterialRevision);
+                    .Value = DbParameterValue.StringOrDbNull(command.MaterialRevision);
 
                 cmd.Parameters.Add("@FilterBatchNo", SqlDbType.VarChar, 100)
-                    .Value = DbValue(command.BatchNo);
+                    .Value = DbParameterValue.StringOrDbNull(command.BatchNo);
 
                 cmd.Parameters.Add("@ProductionOrderNo", SqlDbType.VarChar, 50)
-                    .Value = DbValue(command.ProductionOrderNo);
+                    .Value = DbParameterValue.StringOrDbNull(command.ProductionOrderNo);
 
                 cmd.Parameters.Add("@RequiredQty", SqlDbType.Decimal)
                     .Value = command.RequiredQty;
@@ -1565,16 +1326,16 @@ VALUES
                     .Value = plan.ResultType;
 
                 cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                    .Value = DbValue(command.BusinessNo);
+                    .Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
 
                 cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                    .Value = DbValue(command.Operator);
+                    .Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                 cmd.Parameters.Add("@PickTime", SqlDbType.DateTime2)
                     .Value = pickTime;
 
                 cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                    .Value = DbValue(command.Remark);
+                    .Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                 return Convert.ToInt64(cmd.ExecuteScalar());
             }
@@ -1764,17 +1525,16 @@ VALUES
                 .Value = materialCode;
 
             cmd.Parameters.Add("@MaterialRevision", SqlDbType.VarChar, 30)
-                .Value = DbValue(materialRevision);
+                .Value = DbParameterValue.StringOrDbNull(materialRevision);
 
             cmd.Parameters.Add("@BatchNo", SqlDbType.VarChar, 100)
-                .Value = DbValue(batchNo);
+                .Value = DbParameterValue.StringOrDbNull(batchNo);
 
             cmd.Parameters.Add("@ProductionOrderNo", SqlDbType.VarChar, 50)
-                .Value = DbValue(productionOrderNo);
+                .Value = DbParameterValue.StringOrDbNull(productionOrderNo);
         }
 
-        private static void AddBatchFilterParameters(
-            SqlCommand cmd,
+        private static DynamicParameters CreateBatchFilterParameters(
             string warehouseCode,
             string plantCode,
             string materialCode,
@@ -1783,51 +1543,61 @@ VALUES
             string productionOrderNo,
             string uom)
         {
-            cmd.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30)
-                .Value = warehouseCode;
+            DynamicParameters parameters = new DynamicParameters();
+            parameters.Add("@WarehouseCode", warehouseCode, DbType.AnsiString, size: 30);
+            parameters.Add("@PlantCode", plantCode, DbType.AnsiString, size: 20);
+            parameters.Add("@MaterialCode", materialCode, DbType.AnsiString, size: 50);
+            parameters.Add("@MaterialRevision", DbParameterValue.StringOrNull(materialRevision), DbType.AnsiString, size: 30);
+            parameters.Add("@BatchNo", DbParameterValue.StringOrNull(batchNo), DbType.AnsiString, size: 100);
+            parameters.Add("@ProductionOrderNo", DbParameterValue.StringOrNull(productionOrderNo), DbType.AnsiString, size: 50);
+            parameters.Add("@Uom", uom, DbType.AnsiString, size: 20);
 
-            cmd.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20)
-                .Value = plantCode;
-
-            cmd.Parameters.Add("@MaterialCode", SqlDbType.VarChar, 50)
-                .Value = materialCode;
-
-            cmd.Parameters.Add("@MaterialRevision", SqlDbType.VarChar, 30)
-                .Value = DbValue(materialRevision);
-
-            cmd.Parameters.Add("@BatchNo", SqlDbType.VarChar, 100)
-                .Value = DbValue(batchNo);
-
-            cmd.Parameters.Add("@ProductionOrderNo", SqlDbType.VarChar, 50)
-                .Value = DbValue(productionOrderNo);
-
-            cmd.Parameters.Add("@Uom", SqlDbType.VarChar, 20)
-                .Value = uom;
+            return parameters;
         }
 
-        private static SqlCommand CreateCommand(
-            string sql,
+        private static List<T> Query<T>(
             SqlConnection conn,
-            SqlTransaction tran)
+            SqlTransaction tran,
+            string sql,
+            object param = null)
         {
-            if (tran == null)
-                return new SqlCommand(sql, conn);
-
-            return new SqlCommand(sql, conn, tran);
+            return conn == null
+                ? DbExecutor.Query<T>(sql, param)
+                : DbExecutor.Query<T>(conn, tran, sql, param);
         }
 
-        private static object DbValue(string value)
+        private static T QueryFirstOrDefault<T>(
+            SqlConnection conn,
+            SqlTransaction tran,
+            string sql,
+            object param = null)
         {
-            return string.IsNullOrWhiteSpace(value)
-                ? (object)DBNull.Value
-                : value;
+            return conn == null
+                ? DbExecutor.QueryFirstOrDefault<T>(sql, param)
+                : DbExecutor.QueryFirstOrDefault<T>(conn, tran, sql, param);
         }
 
-        private static string DbString(object value)
+        private static T ExecuteScalar<T>(
+            SqlConnection conn,
+            SqlTransaction tran,
+            string sql,
+            object param = null)
         {
-            return value == DBNull.Value
-                ? null
-                : Convert.ToString(value);
+            return conn == null
+                ? DbExecutor.ExecuteScalar<T>(sql, param)
+                : DbExecutor.ExecuteScalar<T>(conn, tran, sql, param);
+        }
+
+        private class PickBatchHeaderRow : PickBatchResultDto
+        {
+            public long Id { get; set; }
+        }
+
+        private class OutboundStagingRow
+        {
+            public long WarehouseId { get; set; }
+            public long LocationId { get; set; }
+            public string LocationCode { get; set; }
         }
     }
 }

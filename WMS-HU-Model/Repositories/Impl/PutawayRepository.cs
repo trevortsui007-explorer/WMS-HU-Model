@@ -1,6 +1,8 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.Putaway;
 
@@ -12,8 +14,8 @@ namespace WMS_HU_Model.Repositories
         {
             const string palletSql = @"
 SELECT
-    h.Id,
-    h.HUCode,
+    h.Id AS PalletHuId,
+    h.HUCode AS PalletHuCode,
     h.PlantCode,
     l.LocationCode,
     z.ZoneCode
@@ -40,52 +42,22 @@ AND child.LifecycleStatus = 'ACTIVE'
 ORDER BY child.HUCode;
 ";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            {
-                conn.Open();
+            PalletPutawayStatusDto result =
+                DbExecutor.QueryFirstOrDefault<PalletPutawayStatusDto>(
+                    palletSql,
+                    new { PalletHUId = palletHuId });
 
-                PalletPutawayStatusDto result = null;
+            if (result == null)
+                return null;
 
-                using (SqlCommand cmd = new SqlCommand(palletSql, conn))
-                {
-                    cmd.Parameters.Add("@PalletHUId", SqlDbType.BigInt)
-                        .Value = palletHuId;
+            result.RemainingBoxCodes = DbExecutor.Query<string>(
+                boxSql,
+                new { PalletHUId = palletHuId });
 
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        if (!reader.Read())
-                            return null;
+            result.RemainingBoxCount = result.RemainingBoxCodes.Count;
+            result.IsEmpty = result.RemainingBoxCount == 0;
 
-                        result = new PalletPutawayStatusDto();
-
-                        result.PalletHuId = Convert.ToInt64(reader["Id"]);
-                        result.PalletHuCode = Convert.ToString(reader["HUCode"]);
-                        result.PlantCode = Convert.ToString(reader["PlantCode"]);
-                        result.CurrentLocationCode = DbString(reader["LocationCode"]);
-                        result.CurrentZoneCode = DbString(reader["ZoneCode"]);
-                    }
-                }
-
-                using (SqlCommand cmd = new SqlCommand(boxSql, conn))
-                {
-                    cmd.Parameters.Add("@PalletHUId", SqlDbType.BigInt)
-                        .Value = palletHuId;
-
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            string boxCode = Convert.ToString(reader["HUCode"]);
-                            result.RemainingBoxCodes.Add(boxCode);
-                        }
-                    }
-                }
-
-                result.RemainingBoxCount = result.RemainingBoxCodes.Count;
-                result.IsEmpty = result.RemainingBoxCount == 0;
-
-                return result;
-            }
+            return result;
         }
 
         public PutawayResultDto GetByRequestId(string requestId)
@@ -131,43 +103,34 @@ INNER JOIN dbo.WMS_Location toLoc
 WHERE op.OperationType = 'PUTAWAY'
 AND op.RequestId = @RequestId;";
 
-            using (SqlConnection conn = DbConnectionFactory.Create())
-            using (SqlCommand cmd = new SqlCommand(sql, conn))
+            PutawayRequestRow row = DbExecutor.QueryFirstOrDefault<PutawayRequestRow>(
+                sql,
+                new { RequestId = requestId });
+
+            if (row == null)
+                return null;
+
+            PutawayResultDto result = new PutawayResultDto
             {
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = requestId;
+                OperationNo = row.OperationNo,
+                MoveLogId = row.MoveLogId,
+                PalletHuCode = row.PalletHuCode,
+                BoxHuCode = row.BoxHuCode,
+                FromLocationCode = row.FromLocationCode,
+                ToLocationCode = row.ToLocationCode,
+                RemainingBoxCount = row.RemainingBoxCount,
+                PutawayTime = row.PutawayTime,
+                IsDuplicate = true
+            };
 
-                conn.Open();
+            result.IsPalletEmpty = result.RemainingBoxCount == 0;
+            result.IsPalletClosed =
+                string.Equals(
+                    row.PalletLifecycleStatus,
+                    "CLOSED",
+                    StringComparison.OrdinalIgnoreCase);
 
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (!reader.Read())
-                    {
-                        return null;
-                    }
-
-                    PutawayResultDto result = new PutawayResultDto
-                    {
-                        OperationNo = Convert.ToString(reader["OperationNo"]),
-                        MoveLogId = Convert.ToInt64(reader["MoveLogId"]),
-                        PalletHuCode = Convert.ToString(reader["PalletHUCode"]),
-                        BoxHuCode = Convert.ToString(reader["BoxHUCode"]),
-                        FromLocationCode = DbString(reader["FromLocationCode"]),
-                        ToLocationCode = Convert.ToString(reader["ToLocationCode"]),
-                        RemainingBoxCount = Convert.ToInt32(reader["RemainingBoxCount"]),
-                        PutawayTime = Convert.ToDateTime(reader["PutawayTime"]),
-                        IsDuplicate = true
-                    };
-
-                    result.IsPalletEmpty = result.RemainingBoxCount == 0;
-                    result.IsPalletClosed =
-                        string.Equals(
-                            Convert.ToString(reader["PalletLifecycleStatus"]),
-                            "CLOSED",
-                            StringComparison.OrdinalIgnoreCase);
-
-                    return result;
-                }
-            }
+            return result;
         }
 
         public PutawayPersistenceResult ExecutePutaway(PutawayCommand command)
@@ -354,7 +317,7 @@ WHERE l.Id = @LocationId;";
                                 string warehouseCode = Convert.ToString(reader["WarehouseCode"]);
 
                                 targetPlantPolicy = Convert.ToString(reader["PlantPolicy"]);
-                                dedicatedPlantCode = DbString(reader["DedicatedPlantCode"]);
+                                dedicatedPlantCode = DbParameterValue.StringOrNull(reader["DedicatedPlantCode"]);
 
                                 if (masterStatus != "ACTIVE")
                                 {
@@ -474,7 +437,7 @@ AND IsActive = 1;";
                         {
                             cmd.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                             cmd.Parameters.Add("@RelationId", SqlDbType.BigInt).Value = relationId;
 
                             if (cmd.ExecuteNonQuery() != 1)
@@ -526,12 +489,12 @@ VALUES
                             cmd.Parameters.Add("@HUId", SqlDbType.BigInt).Value = command.BoxHuId;
                             cmd.Parameters.Add("@FromLocationId", SqlDbType.BigInt).Value = currentPalletLocationId;
                             cmd.Parameters.Add("@ToLocationId", SqlDbType.BigInt).Value = command.ToLocationId;
-                            cmd.Parameters.Add("@ScannedLocationCode", SqlDbType.VarChar, 100).Value = DbValue(command.ScannedLocationCode);
-                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbValue(command.BusinessNo);
+                            cmd.Parameters.Add("@ScannedLocationCode", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.ScannedLocationCode);
+                            cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
                             cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
-                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                             cmd.Parameters.Add("@MoveTime", SqlDbType.DateTime2).Value = now;
-                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbValue(command.Remark);
+                            cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbParameterValue.StringOrDbNull(command.Remark);
 
                             moveLogId = Convert.ToInt64(cmd.ExecuteScalar());
                         }
@@ -568,7 +531,7 @@ VALUES
                             cmd.Parameters.Add("@LocationSince", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@LastMoveLogId", SqlDbType.BigInt).Value = moveLogId;
                             cmd.Parameters.Add("@LastMoveNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@LastOperator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                            cmd.Parameters.Add("@LastOperator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -645,7 +608,7 @@ AND LifecycleStatus = 'ACTIVE';";
 
                             using (SqlCommand cmd = new SqlCommand(closePalletSql, conn, tran))
                             {
-                                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbValue(command.Operator);
+                                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                                 cmd.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
                                 cmd.Parameters.Add("@PalletHUId", SqlDbType.BigInt).Value = command.PalletHuId;
 
@@ -733,74 +696,24 @@ WHERE HUId = @PalletHUId;";
             string remark,
             DateTime operationTime)
         {
-            const string sql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
-(
-    OperationNo,
-    OperationType,
-    HUId,
-    RelatedHUId,
-    BusinessNo,
-    RequestId,
-    Operator,
-    OperationTime,
-    Remark
-)
-VALUES
-(
-    @OperationNo,
-    @OperationType,
-    @HUId,
-    @RelatedHUId,
-    @BusinessNo,
-    @RequestId,
-    @Operator,
-    @OperationTime,
-    @Remark
-);
-";
-
-            using (SqlCommand cmd = new SqlCommand(sql, conn, tran))
-            {
-                cmd.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50)
-                    .Value = operationNo;
-
-                cmd.Parameters.Add("@OperationType", SqlDbType.VarChar, 30)
-                    .Value = operationType;
-
-                cmd.Parameters.Add("@HUId", SqlDbType.BigInt)
-                    .Value = huId;
-
-                cmd.Parameters.Add("@RelatedHUId", SqlDbType.BigInt)
-                    .Value = relatedHuId;
-
-                cmd.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100)
-                    .Value = DbValue(businessNo);
-
-                cmd.Parameters.Add("@RequestId", SqlDbType.VarChar, 100)
-                    .Value = DbValue(requestId);
-
-                cmd.Parameters.Add("@Operator", SqlDbType.VarChar, 50)
-                    .Value = DbValue(operatorCode);
-
-                cmd.Parameters.Add("@OperationTime", SqlDbType.DateTime2)
-                    .Value = operationTime;
-
-                cmd.Parameters.Add("@Remark", SqlDbType.NVarChar, 500)
-                    .Value = DbValue(remark);
-
-                cmd.ExecuteNonQuery();
-            }
+            HuOperationLogWriter.Insert(
+                conn,
+                tran,
+                operationNo,
+                operationType,
+                huId,
+                relatedHuId,
+                businessNo,
+                requestId,
+                operatorCode,
+                operationTime,
+                detailJson: null,
+                remark: remark);
         }
 
-        private static string DbString(object value)
+        private class PutawayRequestRow : PutawayResultDto
         {
-            return value == DBNull.Value ? null : Convert.ToString(value);
-        }
-
-        private static object DbValue(string value)
-        {
-            return string.IsNullOrWhiteSpace(value) ? (object)DBNull.Value : value;
+            public string PalletLifecycleStatus { get; set; }
         }
     }
 }

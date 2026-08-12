@@ -19,7 +19,7 @@ namespace WMS.Modules
                 new HuService(
                     new HuRepository());
 
-            #region Get HU
+            #region 查询 HU
 
             Get("/{huCode}", args =>
             {
@@ -47,7 +47,7 @@ namespace WMS.Modules
 
             #endregion
 
-            #region Create HU
+            #region 创建 HU
 
             Post("/", _ =>
             {
@@ -72,7 +72,7 @@ namespace WMS.Modules
 
             #endregion
 
-            #region Attach HU
+            #region 建立 HU 关系
 
             Post("/attach", _ =>
             {
@@ -97,7 +97,7 @@ namespace WMS.Modules
 
             #endregion
 
-            #region Add Item
+            #region 增加库存明细
 
             Post("/{huCode}/items", args =>
             {
@@ -129,7 +129,7 @@ namespace WMS.Modules
 
             #endregion
 
-            #region Get HU Tree
+            #region 查询 HU 树
 
             Get("/{huCode}/tree", args =>
             {

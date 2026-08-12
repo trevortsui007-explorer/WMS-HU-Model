@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -40,6 +40,9 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="Dapper">
+      <HintPath>..\packages\Dapper.2.1.79\lib\net461\Dapper.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Nancy, Version=2.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Nancy.2.0.0\lib\net452\Nancy.dll</HintPath>
@@ -60,7 +63,11 @@
     <Folder Include="Sql\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Infrastructure\Database\DbExecutor.cs" />
+    <Compile Include="Infrastructure\Database\DbParameterValue.cs" />
     <Compile Include="Infrastructure\Database\DbConnectionFactory.cs" />
+    <Compile Include="Infrastructure\Database\HuMoveLogWriter.cs" />
+    <Compile Include="Infrastructure\Database\HuOperationLogWriter.cs" />
     <Compile Include="Models\Common\ApiResult.cs" />
     <Compile Include="Models\Common\OperationResult.cs" />
     <Compile Include="Models\HU\AddHuItemRequest.cs" />

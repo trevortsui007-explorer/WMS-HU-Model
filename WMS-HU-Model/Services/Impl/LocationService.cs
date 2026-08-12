@@ -10,13 +10,11 @@ namespace WMS_HU_Model.Services
     {
         private readonly ILocationRepository _repository;
 
-
         public LocationService(
             ILocationRepository repository)
         {
             _repository = repository;
         }
-
 
         public List<LocationDto> GetList(
             string warehouseCode,
@@ -26,7 +24,6 @@ namespace WMS_HU_Model.Services
                 warehouseCode,
                 zoneCode);
         }
-
 
         public OperationResult<LocationDto> Get(
             string warehouseCode,
@@ -47,7 +44,6 @@ namespace WMS_HU_Model.Services
                 .Success(entity);
         }
 
-
         public OperationResult<LocationDto> Create(
             CreateLocationRequest request)
         {
@@ -55,30 +51,25 @@ namespace WMS_HU_Model.Services
                 return OperationResult<LocationDto>
                     .Fail("请求不能为空。");
 
-
             if (string.IsNullOrWhiteSpace(
                 request.WarehouseCode))
                 return OperationResult<LocationDto>
                     .Fail("WarehouseCode不能为空。");
-
 
             if (string.IsNullOrWhiteSpace(
                 request.ZoneCode))
                 return OperationResult<LocationDto>
                     .Fail("ZoneCode不能为空。");
 
-
             if (string.IsNullOrWhiteSpace(
                 request.LocationCode))
                 return OperationResult<LocationDto>
                     .Fail("LocationCode不能为空。");
 
-
             if (string.IsNullOrWhiteSpace(
                 request.LocationTypeCode))
                 return OperationResult<LocationDto>
                     .Fail("LocationTypeCode不能为空。");
-
 
             request.WarehouseCode =
                 request.WarehouseCode
@@ -95,7 +86,6 @@ namespace WMS_HU_Model.Services
                     .Trim()
                     .ToUpperInvariant();
 
-
             if (request.IsScannable &&
                 string.IsNullOrWhiteSpace(
                     request.ScanCode))
@@ -104,14 +94,12 @@ namespace WMS_HU_Model.Services
                     request.LocationCode;
             }
 
-
             if (request.CapacityQty.HasValue &&
                 request.CapacityQty.Value < 0)
             {
                 return OperationResult<LocationDto>
                     .Fail("CapacityQty不能小于0。");
             }
-
 
             if (request.PlantPolicy ==
                 "DEDICATED" &&
@@ -123,7 +111,6 @@ namespace WMS_HU_Model.Services
                     "DEDICATED货位必须指定DedicatedPlantCode。");
             }
 
-
             var warehouseId =
                 _repository.GetWarehouseId(
                     request.WarehouseCode);
@@ -131,7 +118,6 @@ namespace WMS_HU_Model.Services
             if (!warehouseId.HasValue)
                 return OperationResult<LocationDto>
                     .Fail("仓库不存在或已停用。");
-
 
             var zoneId =
                 _repository.GetZoneId(
@@ -142,7 +128,6 @@ namespace WMS_HU_Model.Services
                 return OperationResult<LocationDto>
                     .Fail("区域不存在或已停用。");
 
-
             if (_repository.Exists(
                 warehouseId.Value,
                 request.LocationCode))
@@ -150,7 +135,6 @@ namespace WMS_HU_Model.Services
                 return OperationResult<LocationDto>
                     .Fail("货位编码已存在。");
             }
-
 
             long? parentLocationId = null;
 
@@ -167,26 +151,22 @@ namespace WMS_HU_Model.Services
                         .Fail("父货位不存在。");
             }
 
-
             _repository.Insert(
                 warehouseId.Value,
                 zoneId.Value,
                 parentLocationId,
                 request);
 
-
             var entity =
                 _repository.GetByCode(
                     request.WarehouseCode,
                     request.LocationCode);
-
 
             return OperationResult<LocationDto>
                 .Success(
                     entity,
                     "货位创建成功");
         }
-
 
         public OperationResult<LocationDto> Update(
             string warehouseCode,
@@ -202,7 +182,6 @@ namespace WMS_HU_Model.Services
                 return OperationResult<LocationDto>
                     .Fail("货位不存在。");
 
-
             var warehouseId =
                 _repository.GetWarehouseId(
                     warehouseCode);
@@ -210,7 +189,6 @@ namespace WMS_HU_Model.Services
             if (!warehouseId.HasValue)
                 return OperationResult<LocationDto>
                     .Fail("仓库不存在。");
-
 
             var zoneId =
                 _repository.GetZoneId(
@@ -220,7 +198,6 @@ namespace WMS_HU_Model.Services
             if (!zoneId.HasValue)
                 return OperationResult<LocationDto>
                     .Fail("区域不存在。");
-
 
             long? parentLocationId = null;
 
@@ -237,19 +214,16 @@ namespace WMS_HU_Model.Services
                         .Fail("父货位不存在。");
             }
 
-
             _repository.Update(
                 current.Id,
                 zoneId.Value,
                 parentLocationId,
                 request);
 
-
             var result =
                 _repository.GetByCode(
                     warehouseCode,
                     locationCode);
-
 
             return OperationResult<LocationDto>
                 .Success(

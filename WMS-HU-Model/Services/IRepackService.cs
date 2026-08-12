@@ -9,16 +9,13 @@ namespace WMS_HU_Model.Services
             GetBoxStatus(
                 string boxHuCode);
 
-
         OperationResult<TransferInnerResultDto>
             TransferInner(
                 TransferInnerRequest request);
 
-
         OperationResult<UnpackInnerResultDto>
             UnpackInner(
                 UnpackInnerRequest request);
-
 
         OperationResult<PackInnerResultDto>
             PackInner(

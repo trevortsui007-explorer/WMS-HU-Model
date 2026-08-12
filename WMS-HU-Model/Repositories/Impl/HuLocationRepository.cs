@@ -7,8 +7,7 @@ using WMS_HU_Model.Models.HU;
 
 namespace WMS_HU_Model.Repositories
 {
-    public class HuLocationRepository
-        : IHuLocationRepository
+    public class HuLocationRepository : IHuLocationRepository
     {
         public HuLocationDto GetLocation(
             long huId)
@@ -25,9 +24,7 @@ namespace WMS_HU_Model.Repositories
 
     WHERE h.Id = @HUId
 
-
     UNION ALL
-
 
     SELECT
         parent.Id AS HUId,
@@ -168,8 +165,7 @@ OPTION (MAXRECURSION 20);
         private static HuLocationDto MapLocation(
     IDataRecord reader)
         {
-            HuLocationDto dto =
-                new HuLocationDto();
+            HuLocationDto dto = new HuLocationDto();
 
             dto.HuId =
                 Convert.ToInt64(
@@ -186,7 +182,6 @@ OPTION (MAXRECURSION 20);
             dto.PlantCode =
                 Convert.ToString(
                     reader["PlantCode"]);
-
 
             dto.DirectLocationId =
                 DbLong(
@@ -207,7 +202,6 @@ OPTION (MAXRECURSION 20);
             dto.DirectLocationSince =
                 DbDateTime(
                     reader["DirectLocationSince"]);
-
 
             dto.EffectiveLocationId =
                 DbLong(
@@ -237,7 +231,6 @@ OPTION (MAXRECURSION 20);
                 Convert.ToBoolean(
                     reader["IsInherited"]);
 
-
             dto.LastMoveLogId =
                 DbLong(
                     reader["LastMoveLogId"]);
@@ -253,7 +246,6 @@ OPTION (MAXRECURSION 20);
             return dto;
         }
 
-
         private static string DbString(
             object value)
         {
@@ -262,7 +254,6 @@ OPTION (MAXRECURSION 20);
                 : Convert.ToString(value);
         }
 
-
         private static long? DbLong(
             object value)
         {
@@ -270,7 +261,6 @@ OPTION (MAXRECURSION 20);
                 ? (long?)null
                 : Convert.ToInt64(value);
         }
-
 
         private static DateTime? DbDateTime(
             object value)
@@ -458,8 +448,7 @@ WHERE Id = @HUId;
                                 "@HUId",
                                 command.HuId);
 
-                            object lockValue =
-                                lockCmd.ExecuteScalar();
+                            object lockValue = lockCmd.ExecuteScalar();
 
                             if (lockValue == null)
                             {
@@ -470,7 +459,6 @@ WHERE Id = @HUId;
                                         "HU不存在。");
                             }
                         }
-
 
                         // ------------------------------------------------
                         // 2. 再次检查RequestId
@@ -505,7 +493,6 @@ WHERE Id = @HUId;
                                         existing);
                             }
                         }
-
 
                         // ------------------------------------------------
                         // 3. 读取并锁定当前位置
@@ -553,7 +540,6 @@ WHERE cl.HUId = @HUId;
                             }
                         }
 
-
                         // ------------------------------------------------
                         // 4. ExpectedFrom并发校验
                         // ------------------------------------------------
@@ -571,7 +557,6 @@ WHERE cl.HUId = @HUId;
                             }
                         }
 
-
                         // ------------------------------------------------
                         // 5. 不允许原地移动
                         // ------------------------------------------------
@@ -585,7 +570,6 @@ WHERE cl.HUId = @HUId;
                                 MovePersistenceResult.Fail(
                                     "HU当前已经位于目标货位。");
                         }
-
 
                         // ------------------------------------------------
                         // 6. 插入MoveLog
@@ -657,7 +641,6 @@ VALUES
                             }
                         }
 
-
                         // ------------------------------------------------
                         // 7. UPSERT CurrentLocation
                         // ------------------------------------------------
@@ -674,7 +657,6 @@ SET
     ModifyTime      = SYSDATETIME()
 
 WHERE HUId = @HUId;
-
 
 IF @@ROWCOUNT = 0
 BEGIN
@@ -740,7 +722,6 @@ END;
                             upsertCmd.ExecuteNonQuery();
                         }
 
-
                         // ------------------------------------------------
                         // 8. 写统一HU OperationLog
                         // ------------------------------------------------
@@ -804,12 +785,9 @@ VALUES
                             operationCmd.ExecuteNonQuery();
                         }
 
-
                         tran.Commit();
 
-
-                        HuMoveResultDto result =
-                            new HuMoveResultDto();
+                        HuMoveResultDto result = new HuMoveResultDto();
 
                         result.MoveLogId =
                             moveLogId;
@@ -834,7 +812,6 @@ VALUES
 
                         result.Operator =
                             command.Operator;
-
 
                         return
                             MovePersistenceResult.Success(
@@ -914,7 +891,6 @@ VALUES
                     command.Remark));
         }
 
-
         private static object DbValue(
             string value)
         {
@@ -967,8 +943,7 @@ ORDER BY
     m.Id DESC;
 ";
 
-            List<HuMoveLogDto> list =
-                new List<HuMoveLogDto>();
+            List<HuMoveLogDto> list = new List<HuMoveLogDto>();
 
             using (SqlConnection conn =
                 DbConnectionFactory.Create())
@@ -1003,8 +978,7 @@ ORDER BY
         private static HuMoveLogDto MapMoveLog(
     IDataRecord reader)
         {
-            HuMoveLogDto dto =
-                new HuMoveLogDto();
+            HuMoveLogDto dto = new HuMoveLogDto();
 
             dto.Id =
                 Convert.ToInt64(
@@ -1107,7 +1081,6 @@ WHERE m.RequestId = @RequestId;
                     100)
                     .Value = requestId;
 
-
                 using (SqlDataReader reader =
                     cmd.ExecuteReader())
                 {
@@ -1116,10 +1089,7 @@ WHERE m.RequestId = @RequestId;
                         return null;
                     }
 
-
-                    HuMoveResultDto result =
-                        new HuMoveResultDto();
-
+                    HuMoveResultDto result = new HuMoveResultDto();
 
                     result.MoveLogId =
                         Convert.ToInt64(
@@ -1132,7 +1102,6 @@ WHERE m.RequestId = @RequestId;
                     result.HuCode =
                         Convert.ToString(
                             reader["HUCode"]);
-
 
                     if (reader["FromLocationCode"] ==
                         DBNull.Value)
@@ -1147,7 +1116,6 @@ WHERE m.RequestId = @RequestId;
                                 reader["FromLocationCode"]);
                     }
 
-
                     result.ToLocationCode =
                         Convert.ToString(
                             reader["ToLocationCode"]);
@@ -1159,7 +1127,6 @@ WHERE m.RequestId = @RequestId;
                     result.MoveTime =
                         Convert.ToDateTime(
                             reader["MoveTime"]);
-
 
                     if (reader["Operator"] ==
                         DBNull.Value)
@@ -1173,7 +1140,6 @@ WHERE m.RequestId = @RequestId;
                             Convert.ToString(
                                 reader["Operator"]);
                     }
-
 
                     return result;
                 }

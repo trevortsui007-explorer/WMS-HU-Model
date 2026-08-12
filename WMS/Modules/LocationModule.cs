@@ -19,15 +19,12 @@ namespace WMS.Modules
                 new LocationService(
                     new LocationRepository());
 
-
             // 查询货位列表
             Get("/", _ =>
             {
-                string warehouseCode =
-                    (string)Request.Query["warehouseCode"];
+                string warehouseCode = (string)Request.Query["warehouseCode"];
 
-                string zoneCode =
-                    (string)Request.Query["zoneCode"];
+                string zoneCode = (string)Request.Query["zoneCode"];
 
                 var list =
                     _service.GetList(
@@ -38,15 +35,12 @@ namespace WMS.Modules
                     ApiResult.Success(list));
             });
 
-
             // 查询单个货位
             Get("/{warehouseCode}/{locationCode}", args =>
             {
-                object rawWarehouseCode =
-                    args.warehouseCode;
+                object rawWarehouseCode = args.warehouseCode;
 
-                object rawLocationCode =
-                    args.locationCode;
+                object rawLocationCode = args.locationCode;
 
                 string warehouseCode =
                     Convert.ToString(
@@ -56,12 +50,10 @@ namespace WMS.Modules
                     Convert.ToString(
                         rawLocationCode);
 
-
                 OperationResult<LocationDto> result =
                     _service.Get(
                         warehouseCode,
                         locationCode);
-
 
                 if (!result.IsSuccess)
                 {
@@ -70,21 +62,17 @@ namespace WMS.Modules
                             result.Message));
                 }
 
-
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
             });
 
-
             // 新增货位
             Post("/", _ =>
             {
-                CreateLocationRequest request =
-                    this.Bind<CreateLocationRequest>();
+                CreateLocationRequest request = this.Bind<CreateLocationRequest>();
 
-                var result =
-                    _service.Create(request);
+                var result = _service.Create(request);
 
                 if (!result.IsSuccess)
                 {
@@ -99,15 +87,12 @@ namespace WMS.Modules
                         result.Message));
             });
 
-
             // 修改货位
             Put("/{warehouseCode}/{locationCode}", args =>
             {
-                object rawWarehouseCode =
-                    args.warehouseCode;
+                object rawWarehouseCode = args.warehouseCode;
 
-                object rawLocationCode =
-                    args.locationCode;
+                object rawLocationCode = args.locationCode;
 
                 string warehouseCode =
                     Convert.ToString(
@@ -117,10 +102,7 @@ namespace WMS.Modules
                     Convert.ToString(
                         rawLocationCode);
 
-
-                UpdateLocationRequest request =
-                    this.Bind<UpdateLocationRequest>();
-
+                UpdateLocationRequest request = this.Bind<UpdateLocationRequest>();
 
                 OperationResult<LocationDto> result =
                     _service.Update(
@@ -128,14 +110,12 @@ namespace WMS.Modules
                         locationCode,
                         request);
 
-
                 if (!result.IsSuccess)
                 {
                     return Response.AsJson(
                         ApiResult.Fail(
                             result.Message));
                 }
-
 
                 return Response.AsJson(
                     ApiResult.Success(

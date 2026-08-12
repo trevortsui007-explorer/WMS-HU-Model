@@ -3,9 +3,7 @@
     public class ApiResult
     {
         public int Code { get; set; }
-
         public string Message { get; set; }
-
         public object Data { get; set; }
 
         public static ApiResult Success(object data = null, string message = "success")

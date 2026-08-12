@@ -3,11 +3,8 @@
     public class TransferInnerPersistenceResult
     {
         public bool IsSuccess { get; set; }
-
         public string Message { get; set; }
-
         public TransferInnerResultDto Data { get; set; }
-
 
         public static TransferInnerPersistenceResult Success(
             TransferInnerResultDto data)
@@ -19,7 +16,6 @@
                 Data = data
             };
         }
-
 
         public static TransferInnerPersistenceResult Fail(
             string message)

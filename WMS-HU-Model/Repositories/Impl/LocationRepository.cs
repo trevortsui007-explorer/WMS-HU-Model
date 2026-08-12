@@ -103,7 +103,6 @@ ORDER BY
             return list;
         }
 
-
         public LocationDto GetByCode(
             string warehouseCode,
             string locationCode)
@@ -180,7 +179,6 @@ AND l.LocationCode = @LocationCode;
             }
         }
 
-
         public long? GetWarehouseId(string warehouseCode)
         {
             const string sql = @"
@@ -196,7 +194,6 @@ AND IsActive = 1;
                     "@WarehouseCode",
                     warehouseCode));
         }
-
 
         public long? GetZoneId(
             long warehouseId,
@@ -233,7 +230,6 @@ AND IsActive = 1;
             }
         }
 
-
         public long? GetLocationId(
             long warehouseId,
             string locationCode)
@@ -268,7 +264,6 @@ AND LocationCode = @LocationCode;
             }
         }
 
-
         public bool Exists(
             long warehouseId,
             string locationCode)
@@ -277,7 +272,6 @@ AND LocationCode = @LocationCode;
                 warehouseId,
                 locationCode).HasValue;
         }
-
 
         public long Insert(
             long warehouseId,
@@ -362,7 +356,6 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
                     cmd.ExecuteScalar());
             }
         }
-
 
         public bool Update(
             long locationId,
@@ -510,7 +503,6 @@ WHERE Id = @LocationId;
             }
         }
 
-
         private static void AddParameters(
             SqlCommand cmd,
             long warehouseId,
@@ -623,7 +615,6 @@ WHERE Id = @LocationId;
                 ?? DBNull.Value);
         }
 
-
         private static long? ExecuteScalarLong(
             string sql,
             SqlParameter parameter)
@@ -638,8 +629,7 @@ WHERE Id = @LocationId;
 
                 conn.Open();
 
-                var value =
-                    cmd.ExecuteScalar();
+                var value = cmd.ExecuteScalar();
 
                 if (value == null ||
                     value == DBNull.Value)
@@ -648,7 +638,6 @@ WHERE Id = @LocationId;
                 return Convert.ToInt64(value);
             }
         }
-
 
         private static LocationDto Map(
             IDataRecord reader)
@@ -744,14 +733,12 @@ WHERE Id = @LocationId;
             };
         }
 
-
         private static string DbString(object value)
         {
             return value == DBNull.Value
                 ? null
                 : value.ToString();
         }
-
 
         private static decimal? DbDecimal(object value)
         {

@@ -3,11 +3,8 @@
     public class MovePersistenceResult
     {
         public bool IsSuccess { get; set; }
-
         public string Message { get; set; }
-
         public HuMoveResultDto Data { get; set; }
-
 
         public static MovePersistenceResult Success(
             HuMoveResultDto data)
@@ -19,7 +16,6 @@
                 Data = data
             };
         }
-
 
         public static MovePersistenceResult Fail(
             string message)

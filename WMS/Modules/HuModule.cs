@@ -19,13 +19,11 @@ namespace WMS.Modules
                 new HuService(
                     new HuRepository());
 
-
             #region Get HU
 
             Get("/{huCode}", args =>
             {
-                object rawHuCode =
-                    args.huCode;
+                object rawHuCode = args.huCode;
 
                 string huCode =
                     Convert.ToString(
@@ -49,13 +47,11 @@ namespace WMS.Modules
 
             #endregion
 
-
             #region Create HU
 
             Post("/", _ =>
             {
-                CreateHuRequest request =
-                    this.Bind<CreateHuRequest>();
+                CreateHuRequest request = this.Bind<CreateHuRequest>();
 
                 OperationResult<HuDto> result =
                     _service.Create(
@@ -76,13 +72,11 @@ namespace WMS.Modules
 
             #endregion
 
-
             #region Attach HU
 
             Post("/attach", _ =>
             {
-                AttachHuRequest request =
-                    this.Bind<AttachHuRequest>();
+                AttachHuRequest request = this.Bind<AttachHuRequest>();
 
                 OperationResult<bool> result =
                     _service.Attach(
@@ -103,20 +97,17 @@ namespace WMS.Modules
 
             #endregion
 
-
             #region Add Item
 
             Post("/{huCode}/items", args =>
             {
-                object rawHuCode =
-                    args.huCode;
+                object rawHuCode = args.huCode;
 
                 string huCode =
                     Convert.ToString(
                         rawHuCode);
 
-                AddHuItemRequest request =
-                    this.Bind<AddHuItemRequest>();
+                AddHuItemRequest request = this.Bind<AddHuItemRequest>();
 
                 OperationResult<HuItemDto> result =
                     _service.AddItem(
@@ -138,13 +129,11 @@ namespace WMS.Modules
 
             #endregion
 
-
             #region Get HU Tree
 
             Get("/{huCode}/tree", args =>
             {
-                object rawHuCode =
-                    args.huCode;
+                object rawHuCode = args.huCode;
 
                 string huCode =
                     Convert.ToString(

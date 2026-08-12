@@ -3,11 +3,8 @@
     public class PackInnerPersistenceResult
     {
         public bool IsSuccess { get; set; }
-
         public string Message { get; set; }
-
         public PackInnerResultDto Data { get; set; }
-
 
         public static PackInnerPersistenceResult Success(
             PackInnerResultDto data)
@@ -19,7 +16,6 @@
                 Data = data
             };
         }
-
 
         public static PackInnerPersistenceResult Fail(
             string message)

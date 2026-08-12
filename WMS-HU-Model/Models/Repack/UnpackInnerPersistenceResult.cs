@@ -3,11 +3,8 @@
     public class UnpackInnerPersistenceResult
     {
         public bool IsSuccess { get; set; }
-
         public string Message { get; set; }
-
         public UnpackInnerResultDto Data { get; set; }
-
 
         public static UnpackInnerPersistenceResult Success(
             UnpackInnerResultDto data)
@@ -19,7 +16,6 @@
                 Data = data
             };
         }
-
 
         public static UnpackInnerPersistenceResult Fail(
             string message)

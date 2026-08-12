@@ -3,11 +3,8 @@
     public class PutawayPersistenceResult
     {
         public bool IsSuccess { get; set; }
-
         public string Message { get; set; }
-
         public PutawayResultDto Data { get; set; }
-
 
         public static PutawayPersistenceResult Success(
             PutawayResultDto data)
@@ -19,7 +16,6 @@
                 Data = data
             };
         }
-
 
         public static PutawayPersistenceResult Fail(
             string message)

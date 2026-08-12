@@ -7,34 +7,25 @@ using WMS_HU_Model.Repositories;
 
 namespace WMS_HU_Model.Services
 {
-    public class HuLocationService
-        : IHuLocationService
+    public class HuLocationService : IHuLocationService
     {
-        private readonly IHuRepository
-            _huRepository;
+        private readonly IHuRepository _huRepository;
 
-        private readonly ILocationRepository
-            _locationRepository;
+        private readonly ILocationRepository _locationRepository;
 
-        private readonly IHuLocationRepository
-            _huLocationRepository;
-
+        private readonly IHuLocationRepository _huLocationRepository;
 
         public HuLocationService(
             IHuRepository huRepository,
             ILocationRepository locationRepository,
             IHuLocationRepository huLocationRepository)
         {
-            _huRepository =
-                huRepository;
+            _huRepository = huRepository;
 
-            _locationRepository =
-                locationRepository;
+            _locationRepository = locationRepository;
 
-            _huLocationRepository =
-                huLocationRepository;
+            _huLocationRepository = huLocationRepository;
         }
-
 
         /// <summary>
         /// 查询HU当前位置
@@ -55,17 +46,14 @@ namespace WMS_HU_Model.Services
                         "HUCode不能为空。");
             }
 
-
             string normalizedHuCode =
                 huCode
                     .Trim()
                     .ToUpperInvariant();
 
-
             HuDto hu =
                 _huRepository.GetByCode(
                     normalizedHuCode);
-
 
             if (hu == null)
             {
@@ -75,12 +63,10 @@ namespace WMS_HU_Model.Services
                         "HU不存在。");
             }
 
-
             HuLocationDto location =
                 _huLocationRepository
                     .GetLocation(
                         hu.Id);
-
 
             if (location == null)
             {
@@ -90,13 +76,11 @@ namespace WMS_HU_Model.Services
                         "HU位置信息查询失败。");
             }
 
-
             return
                 OperationResult<HuLocationDto>
                 .Success(
                     location);
         }
-
 
         /// <summary>
         /// HU位置移动
@@ -116,7 +100,6 @@ namespace WMS_HU_Model.Services
                         "请求不能为空。");
             }
 
-
             if (string.IsNullOrWhiteSpace(
                 huCode))
             {
@@ -126,12 +109,10 @@ namespace WMS_HU_Model.Services
                         "HUCode不能为空。");
             }
 
-
             string normalizedHuCode =
                 huCode
                     .Trim()
                     .ToUpperInvariant();
-
 
             if (string.IsNullOrWhiteSpace(
                 request.WarehouseCode))
@@ -142,7 +123,6 @@ namespace WMS_HU_Model.Services
                         "WarehouseCode不能为空。");
             }
 
-
             if (string.IsNullOrWhiteSpace(
                 request.ToLocationCode))
             {
@@ -152,7 +132,6 @@ namespace WMS_HU_Model.Services
                         "ToLocationCode不能为空。");
             }
 
-
             if (string.IsNullOrWhiteSpace(
                 request.MoveType))
             {
@@ -161,7 +140,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "MoveType不能为空。");
             }
-
 
             //--------------------------------------------------
             // 2. 标准化输入
@@ -181,7 +159,6 @@ namespace WMS_HU_Model.Services
                     .Trim()
                     .ToUpperInvariant();
 
-
             //--------------------------------------------------
             // 3. MoveType合法性
             //--------------------------------------------------
@@ -195,14 +172,12 @@ namespace WMS_HU_Model.Services
                         moveType);
             }
 
-
             //--------------------------------------------------
             // 4. 查询HU
             //--------------------------------------------------
             HuDto hu =
                 _huRepository.GetByCode(
                     normalizedHuCode);
-
 
             if (hu == null)
             {
@@ -211,7 +186,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "HU不存在。");
             }
-
 
             //--------------------------------------------------
             // 5. RequestId幂等校验
@@ -223,7 +197,6 @@ namespace WMS_HU_Model.Services
                     _huLocationRepository
                         .GetMoveByRequestId(
                             request.RequestId);
-
 
                 if (existing != null)
                 {
@@ -241,13 +214,11 @@ namespace WMS_HU_Model.Services
                                 "RequestId已经被其他HU使用。");
                     }
 
-
                     //--------------------------------------------------
                     // 同一个RequestId重复提交
                     // 直接返回第一次移动结果
                     //--------------------------------------------------
-                    HuMoveResultDto existingResult =
-                        new HuMoveResultDto();
+                    HuMoveResultDto existingResult = new HuMoveResultDto();
 
                     existingResult.MoveLogId =
                         existing.Id;
@@ -273,7 +244,6 @@ namespace WMS_HU_Model.Services
                     existingResult.Operator =
                         existing.Operator;
 
-
                     return
                         OperationResult<HuMoveResultDto>
                         .Success(
@@ -281,7 +251,6 @@ namespace WMS_HU_Model.Services
                             "重复请求，返回原移动结果");
                 }
             }
-
 
             //--------------------------------------------------
             // 6. HU生命周期校验
@@ -297,7 +266,6 @@ namespace WMS_HU_Model.Services
                         "只有ACTIVE状态HU允许移动。");
             }
 
-
             //--------------------------------------------------
             // 7. HU冻结校验
             //--------------------------------------------------
@@ -308,7 +276,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "HU当前已冻结，不允许移动。");
             }
-
 
             //--------------------------------------------------
             // 8. 有父HU的HU不能单独移动
@@ -331,7 +298,6 @@ namespace WMS_HU_Model.Services
                         "如需单独移动，请先执行拆出业务。");
             }
 
-
             //--------------------------------------------------
             // 9. 查询目标货位
             //--------------------------------------------------
@@ -340,7 +306,6 @@ namespace WMS_HU_Model.Services
                     warehouseCode,
                     toLocationCode);
 
-
             if (target == null)
             {
                 return
@@ -348,7 +313,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "目标货位不存在。");
             }
-
 
             //--------------------------------------------------
             // 10. 目标货位状态
@@ -364,7 +328,6 @@ namespace WMS_HU_Model.Services
                         "目标货位当前不可用。");
             }
 
-
             //--------------------------------------------------
             // 11. 仓库是否允许该厂别
             //--------------------------------------------------
@@ -374,7 +337,6 @@ namespace WMS_HU_Model.Services
                         warehouseCode,
                         hu.PlantCode);
 
-
             if (!warehouseAllowsPlant)
             {
                 return
@@ -382,7 +344,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "当前仓库不允许存储该厂别库存。");
             }
-
 
             //--------------------------------------------------
             // 12. DEDICATED厂别货位规则
@@ -404,7 +365,6 @@ namespace WMS_HU_Model.Services
                 }
             }
 
-
             //--------------------------------------------------
             // 13. SAME_PLANT货位规则
             //--------------------------------------------------
@@ -419,7 +379,6 @@ namespace WMS_HU_Model.Services
                             target.Id,
                             hu.PlantCode);
 
-
                 if (differentPlantCount > 0)
                 {
                     return
@@ -429,7 +388,6 @@ namespace WMS_HU_Model.Services
                 }
             }
 
-
             //--------------------------------------------------
             // 14. ExpectedFrom并发校验准备
             //--------------------------------------------------
@@ -437,10 +395,7 @@ namespace WMS_HU_Model.Services
                 !string.IsNullOrWhiteSpace(
                     request.ExpectedFromLocationCode);
 
-
-            long? expectedFromLocationId =
-                null;
-
+            long? expectedFromLocationId = null;
 
             if (expectedFromSpecified)
             {
@@ -449,12 +404,10 @@ namespace WMS_HU_Model.Services
                         .Trim()
                         .ToUpperInvariant();
 
-
                 LocationDto expectedLocation =
                     _locationRepository.GetByCode(
                         warehouseCode,
                         expectedFromCode);
-
 
                 if (expectedLocation == null)
                 {
@@ -464,18 +417,13 @@ namespace WMS_HU_Model.Services
                             "ExpectedFromLocationCode不存在。");
                 }
 
-
-                expectedFromLocationId =
-                    expectedLocation.Id;
+                expectedFromLocationId = expectedLocation.Id;
             }
-
 
             //--------------------------------------------------
             // 15. 构造强类型Repository Command
             //--------------------------------------------------
-            HuMoveCommand command =
-                new HuMoveCommand();
-
+            HuMoveCommand command = new HuMoveCommand();
 
             command.HuId =
                 hu.Id;
@@ -503,7 +451,6 @@ namespace WMS_HU_Model.Services
             command.MoveType =
                 moveType;
 
-
             if (string.IsNullOrWhiteSpace(
                 request.ScannedLocationCode))
             {
@@ -517,7 +464,6 @@ namespace WMS_HU_Model.Services
                         .Trim()
                         .ToUpperInvariant();
             }
-
 
             command.BusinessNo =
                 request.BusinessNo;
@@ -537,7 +483,6 @@ namespace WMS_HU_Model.Services
             command.Remark =
                 request.Remark;
 
-
             //--------------------------------------------------
             // 16. Repository事务执行
             //--------------------------------------------------
@@ -546,7 +491,6 @@ namespace WMS_HU_Model.Services
                     .ExecuteMove(
                         command);
 
-
             if (!persistResult.IsSuccess)
             {
                 return
@@ -554,7 +498,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         persistResult.Message);
             }
-
 
             //--------------------------------------------------
             // 17. 返回结果
@@ -565,7 +508,6 @@ namespace WMS_HU_Model.Services
                     persistResult.Data,
                     "HU移动成功");
         }
-
 
         /// <summary>
         /// 查询HU移动历史
@@ -586,12 +528,10 @@ namespace WMS_HU_Model.Services
                         "HUCode不能为空。");
             }
 
-
             string normalizedHuCode =
                 huCode
                     .Trim()
                     .ToUpperInvariant();
-
 
             //--------------------------------------------------
             // 2. Top范围保护
@@ -601,12 +541,10 @@ namespace WMS_HU_Model.Services
                 top = 50;
             }
 
-
             if (top > 500)
             {
                 top = 500;
             }
-
 
             //--------------------------------------------------
             // 3. HU存在性检查
@@ -615,7 +553,6 @@ namespace WMS_HU_Model.Services
                 _huRepository.GetByCode(
                     normalizedHuCode);
 
-
             if (hu == null)
             {
                 return
@@ -623,7 +560,6 @@ namespace WMS_HU_Model.Services
                     .Fail(
                         "HU不存在。");
             }
-
 
             //--------------------------------------------------
             // 4. 查询移动历史
@@ -634,13 +570,11 @@ namespace WMS_HU_Model.Services
                         hu.Id,
                         top);
 
-
             return
                 OperationResult<List<HuMoveLogDto>>
                 .Success(
                     logs);
         }
-
 
         /// <summary>
         /// 当前阶段支持的HU移动类型

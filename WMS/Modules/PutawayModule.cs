@@ -8,30 +8,22 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class PutawayModule
-        : NancyModule
+    public class PutawayModule : NancyModule
     {
-        private readonly IPutawayService
-            _service;
-
+        private readonly IPutawayService _service;
 
         public PutawayModule()
             : base("/api/wms/putaway")
         {
-            IHuRepository huRepository =
-                new HuRepository();
+            IHuRepository huRepository = new HuRepository();
 
-            ILocationRepository locationRepository =
-                new LocationRepository();
+            ILocationRepository locationRepository = new LocationRepository();
 
             IHuLocationRepository
-                huLocationRepository =
-                    new HuLocationRepository();
+                huLocationRepository = new HuLocationRepository();
 
             IPutawayRepository
-                putawayRepository =
-                    new PutawayRepository();
-
+                putawayRepository = new PutawayRepository();
 
             _service =
                 new PutawayService(
@@ -40,19 +32,16 @@ namespace WMS.Modules
                     huLocationRepository,
                     putawayRepository);
 
-
             //----------------------------------------------------
             // 扫描托盘
             //----------------------------------------------------
             Get("/pallet/{palletHuCode}", args =>
             {
-                object rawValue =
-                    args.palletHuCode;
+                object rawValue = args.palletHuCode;
 
                 string palletHuCode =
                     Convert.ToString(
                         rawValue);
-
 
                 OperationResult<PalletPutawayStatusDto>
                     result =
@@ -60,7 +49,6 @@ namespace WMS.Modules
                             .GetPalletStatus(
                                 palletHuCode);
 
-
                 if (!result.IsSuccess)
                 {
                     return Response.AsJson(
@@ -68,21 +56,17 @@ namespace WMS.Modules
                             result.Message));
                 }
 
-
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
             });
-
 
             //----------------------------------------------------
             // 扫描外箱并上架
             //----------------------------------------------------
             Post("/box", _ =>
             {
-                PutawayBoxRequest request =
-                    this.Bind<PutawayBoxRequest>();
-
+                PutawayBoxRequest request = this.Bind<PutawayBoxRequest>();
 
                 OperationResult<PutawayResultDto>
                     result =
@@ -90,14 +74,12 @@ namespace WMS.Modules
                             .PutawayBox(
                                 request);
 
-
                 if (!result.IsSuccess)
                 {
                     return Response.AsJson(
                         ApiResult.Fail(
                             result.Message));
                 }
-
 
                 return Response.AsJson(
                     ApiResult.Success(

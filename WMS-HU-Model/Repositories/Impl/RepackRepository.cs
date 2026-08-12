@@ -438,13 +438,13 @@ WHERE Id = @RelationId
                         const string moveSql = @"
 INSERT INTO dbo.WMS_HU_MoveLog
 (
-    MoveNo, HUId, FromLocationId, ToLocationId, MoveType, 
+    MoveNo, HUId, FromLocationId, ToLocationId, MoveType,
     ScannedLocationCode, BusinessNo, RequestId, Operator, MoveTime, Remark
 )
 OUTPUT INSERTED.Id
 VALUES
 (
-    @MoveNo, @HUId, @FromLocationId, @ToLocationId, 'UNPACK_INNER', 
+    @MoveNo, @HUId, @FromLocationId, @ToLocationId, 'UNPACK_INNER',
     @ScannedLocationCode, @BusinessNo, @RequestId, @Operator, @MoveTime, @Remark
 );";
 
@@ -655,7 +655,7 @@ ORDER BY Id ASC;";
                         const string parentSql = @"
 SELECT COUNT(1)
 FROM dbo.WMS_HU_Relation WITH (UPDLOCK, HOLDLOCK)
-WHERE ChildHUId = @InnerHUId 
+WHERE ChildHUId = @InnerHUId
   AND IsActive = 1;";
 
                         using (SqlCommand cmd = new SqlCommand(parentSql, conn, tran))
@@ -719,13 +719,13 @@ VALUES
                         const string moveSql = @"
 INSERT INTO dbo.WMS_HU_MoveLog
 (
-    MoveNo, HUId, FromLocationId, ToLocationId, MoveType, 
+    MoveNo, HUId, FromLocationId, ToLocationId, MoveType,
     ScannedLocationCode, BusinessNo, RequestId, Operator, MoveTime, Remark
 )
 OUTPUT INSERTED.Id
 VALUES
 (
-    @MoveNo, @HUId, @FromLocationId, @ToLocationId, 'PACK_INNER', 
+    @MoveNo, @HUId, @FromLocationId, @ToLocationId, 'PACK_INNER',
     @ToLocationCode, @BusinessNo, @RequestId, @Operator, @MoveTime, @Remark
 );";
 
@@ -751,7 +751,7 @@ VALUES
                         //------------------------------------------------
                         const string deleteCurrentSql = @"
 DELETE FROM dbo.WMS_HU_CurrentLocation
-WHERE HUId = @InnerHUId 
+WHERE HUId = @InnerHUId
   AND LocationId = @ExpectedLocationId;";
 
                         using (SqlCommand cmd = new SqlCommand(deleteCurrentSql, conn, tran))

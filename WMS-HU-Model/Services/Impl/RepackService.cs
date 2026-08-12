@@ -21,17 +21,13 @@ namespace WMS_HU_Model.Services
             IHuLocationRepository huLocationRepository,
             IRepackRepository repackRepository)
         {
-            _huRepository =
-                huRepository;
+            _huRepository = huRepository;
 
-            _locationRepository =
-                locationRepository;
+            _locationRepository = locationRepository;
 
-            _huLocationRepository =
-                huLocationRepository;
+            _huLocationRepository = huLocationRepository;
 
-            _repackRepository =
-                repackRepository;
+            _repackRepository = repackRepository;
         }
 
         public OperationResult<BoxRepackStatusDto> GetBoxStatus(string boxHuCode)

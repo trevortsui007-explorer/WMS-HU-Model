@@ -79,8 +79,17 @@
     <Compile Include="Models\MasterData\CreateLocationRequest.cs" />
     <Compile Include="Models\MasterData\LocationDto.cs" />
     <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
+    <Compile Include="Models\Outbound\OutboundBatchPlanDto.cs" />
+    <Compile Include="Models\Outbound\OutboundBatchPlanItemDto.cs" />
+    <Compile Include="Models\Outbound\OutboundBatchPlanRequest.cs" />
+    <Compile Include="Models\Outbound\OutboundPickCandidateDto.cs" />
     <Compile Include="Models\Outbound\OutboundQueueItemDto.cs" />
     <Compile Include="Models\Outbound\OutboundQueueQuery.cs" />
+    <Compile Include="Models\Outbound\PickBatchCommand.cs" />
+    <Compile Include="Models\Outbound\PickBatchItemResultDto.cs" />
+    <Compile Include="Models\Outbound\PickBatchPersistenceResult.cs" />
+    <Compile Include="Models\Outbound\PickBatchRequest.cs" />
+    <Compile Include="Models\Outbound\PickBatchResultDto.cs" />
     <Compile Include="Models\Outbound\PickNextCommand.cs" />
     <Compile Include="Models\Outbound\PickNextRequest.cs" />
     <Compile Include="Models\Outbound\PickPersistenceResult.cs" />
@@ -103,6 +112,7 @@
     <Compile Include="Models\Repack\UnpackInnerPersistenceResult.cs" />
     <Compile Include="Models\Repack\UnpackInnerRequest.cs" />
     <Compile Include="Models\Repack\UnpackInnerResultDto.cs" />
+    <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IHuRepository.cs" />
     <Compile Include="Repositories\ILocationRepository.cs" />

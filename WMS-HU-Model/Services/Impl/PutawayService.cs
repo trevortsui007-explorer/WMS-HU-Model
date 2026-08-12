@@ -60,11 +60,6 @@ namespace WMS_HU_Model.Services
                 return OperationResult<PutawayResultDto>.Fail("请求不能为空。");
             }
 
-            if (string.IsNullOrWhiteSpace(request.PalletHuCode))
-            {
-                return OperationResult<PutawayResultDto>.Fail("PalletHuCode不能为空。");
-            }
-
             if (string.IsNullOrWhiteSpace(request.BoxHuCode))
             {
                 return OperationResult<PutawayResultDto>.Fail("BoxHuCode不能为空。");
@@ -90,22 +85,40 @@ namespace WMS_HU_Model.Services
                 return OperationResult<PutawayResultDto>.Fail("Operator不能为空。");
             }
 
-            string palletCode = request.PalletHuCode.Trim().ToUpperInvariant();
             string boxCode = request.BoxHuCode.Trim().ToUpperInvariant();
             string warehouseCode = request.WarehouseCode.Trim().ToUpperInvariant();
             string targetCode = request.ToLocationCode.Trim().ToUpperInvariant();
 
             //----------------------------------------------------
-            // 幂等优先
+            // 1. 获取外箱
+            //----------------------------------------------------
+            HuDto box = _huRepository.GetByCode(boxCode);
+
+            if (box == null)
+            {
+                return OperationResult<PutawayResultDto>.Fail("外箱HU不存在。");
+            }
+
+            if (box.HuType != "OUTER_BOX")
+            {
+                return OperationResult<PutawayResultDto>.Fail("当前HU不是OUTER_BOX。");
+            }
+
+            //----------------------------------------------------
+            // 2. 幂等
             //----------------------------------------------------
             PutawayResultDto duplicate = _putawayRepository.GetByRequestId(request.RequestId);
 
             if (duplicate != null)
             {
-                if (!string.Equals(duplicate.PalletHuCode, palletCode, StringComparison.OrdinalIgnoreCase) ||
-                    !string.Equals(duplicate.BoxHuCode, boxCode, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(duplicate.BoxHuCode, boxCode, StringComparison.OrdinalIgnoreCase))
                 {
                     return OperationResult<PutawayResultDto>.Fail("RequestId已经被其他上架业务使用。");
+                }
+
+                if (!string.Equals(duplicate.ToLocationCode, targetCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    return OperationResult<PutawayResultDto>.Fail("RequestId对应的目标货位与当前请求不一致。");
                 }
 
                 duplicate.IsDuplicate = true;
@@ -114,7 +127,7 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // 防止RequestId被普通Move占用
+            // 3. 防止RequestId被其他Move业务占用
             //----------------------------------------------------
             HuMoveLogDto existingMove = _huLocationRepository.GetMoveByRequestId(request.RequestId);
 
@@ -123,29 +136,24 @@ namespace WMS_HU_Model.Services
                 return OperationResult<PutawayResultDto>.Fail("RequestId已经被其他移动业务使用。");
             }
 
-            HuDto pallet = _huRepository.GetByCode(palletCode);
-            HuDto box = _huRepository.GetByCode(boxCode);
+            //----------------------------------------------------
+            // 4. 根据Box自动反查当前运输托
+            //----------------------------------------------------
+            HuDto pallet = _huRepository.GetActiveParent(box.Id);
 
             if (pallet == null)
             {
-                return OperationResult<PutawayResultDto>.Fail("托盘HU不存在。");
-            }
-
-            if (box == null)
-            {
-                return OperationResult<PutawayResultDto>.Fail("外箱HU不存在。");
+                return OperationResult<PutawayResultDto>.Fail("外箱当前没有有效运输托关系。");
             }
 
             if (pallet.HuType != "PALLET")
             {
-                return OperationResult<PutawayResultDto>.Fail("PalletHuCode对应HU不是PALLET。");
+                return OperationResult<PutawayResultDto>.Fail("外箱当前父HU不是PALLET。");
             }
 
-            if (box.HuType != "OUTER_BOX")
-            {
-                return OperationResult<PutawayResultDto>.Fail("BoxHuCode对应HU不是OUTER_BOX。");
-            }
-
+            //----------------------------------------------------
+            // 5. HU状态校验
+            //----------------------------------------------------
             if (pallet.LifecycleStatus != "ACTIVE" || box.LifecycleStatus != "ACTIVE")
             {
                 return OperationResult<PutawayResultDto>.Fail("只有ACTIVE状态HU允许上架。");
@@ -162,9 +170,14 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // 确认箱子确实还在托盘里
+            // 6. 确认Box仍属于当前运输托
             //----------------------------------------------------
             PalletPutawayStatusDto palletStatus = _putawayRepository.GetPalletStatus(pallet.Id);
+
+            if (palletStatus == null)
+            {
+                return OperationResult<PutawayResultDto>.Fail("运输托状态不存在。");
+            }
 
             bool boxInPallet = palletStatus.RemainingBoxCodes
                 .Any(x => string.Equals(x, boxCode, StringComparison.OrdinalIgnoreCase));
@@ -175,7 +188,7 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // 托盘必须在收货区域
+            // 7. 托盘必须位于收货区域
             //----------------------------------------------------
             HuLocationDto palletLocation = _huLocationRepository.GetLocation(pallet.Id);
 
@@ -190,22 +203,28 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // 外箱应该继承托盘位置
+            // 8. 外箱应继承托盘位置，不能已有DirectLocation
             //----------------------------------------------------
             HuLocationDto boxLocation = _huLocationRepository.GetLocation(box.Id);
+
+            if (boxLocation == null)
+            {
+                return OperationResult<PutawayResultDto>.Fail("无法获取外箱有效位置。");
+            }
 
             if (boxLocation.DirectLocationId.HasValue)
             {
                 return OperationResult<PutawayResultDto>.Fail("外箱已经存在直接货位。");
             }
 
-            if (!boxLocation.LocationSourceHuId.HasValue || boxLocation.LocationSourceHuId.Value != pallet.Id)
+            if (!boxLocation.LocationSourceHuId.HasValue ||
+                boxLocation.LocationSourceHuId.Value != pallet.Id)
             {
                 return OperationResult<PutawayResultDto>.Fail("外箱当前有效位置不是从指定托盘继承。");
             }
 
             //----------------------------------------------------
-            // 正式储存货位
+            // 9. 目标货位
             //----------------------------------------------------
             LocationDto target = _locationRepository.GetByCode(warehouseCode, targetCode);
 
@@ -235,11 +254,13 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // SAME_PLANT
+            // 10. SAME_PLANT
             //----------------------------------------------------
             if (target.PlantPolicy == "SAME_PLANT")
             {
-                int differentPlantCount = _huLocationRepository.CountDifferentPlantAtLocation(target.Id, box.PlantCode);
+                int differentPlantCount = _huLocationRepository.CountDifferentPlantAtLocation(
+                    target.Id,
+                    box.PlantCode);
 
                 if (differentPlantCount > 0)
                 {
@@ -248,16 +269,17 @@ namespace WMS_HU_Model.Services
             }
 
             //----------------------------------------------------
-            // Dedicated
+            // 11. DEDICATED
             //----------------------------------------------------
-            if (target.PlantPolicy == "DEDICATED")
+            if (target.PlantPolicy == "DEDICATED" &&
+                !string.Equals(target.DedicatedPlantCode, box.PlantCode, StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.Equals(target.DedicatedPlantCode, box.PlantCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    return OperationResult<PutawayResultDto>.Fail("目标货位为其他厂别专用货位。");
-                }
+                return OperationResult<PutawayResultDto>.Fail("目标货位为其他厂别专用货位。");
             }
 
+            //----------------------------------------------------
+            // 12. 构建事务命令
+            //----------------------------------------------------
             PutawayCommand command = new PutawayCommand
             {
                 PalletHuId = pallet.Id,
@@ -272,7 +294,9 @@ namespace WMS_HU_Model.Services
                 WarehouseCode = warehouseCode,
                 OperationNo = Guid.NewGuid().ToString("N").ToUpperInvariant(),
                 RequestId = request.RequestId,
-                ScannedLocationCode = string.IsNullOrWhiteSpace(request.ScannedLocationCode) ? target.LocationCode : request.ScannedLocationCode,
+                ScannedLocationCode = string.IsNullOrWhiteSpace(request.ScannedLocationCode)
+                    ? target.LocationCode
+                    : request.ScannedLocationCode,
                 BusinessNo = request.BusinessNo,
                 Operator = request.Operator,
                 Remark = request.Remark

@@ -22,5 +22,9 @@ namespace WMS_HU_Model.Services
         /// <param name="request">拣货请求参数</param>
         /// <returns>拣货执行结果 DTO</returns>
         OperationResult<PickResultDto> PickNext(PickNextRequest request);
+
+        OperationResult<OutboundBatchPlanDto> PlanBatch(OutboundBatchPlanRequest request);
+
+        OperationResult<PickBatchResultDto> PickBatch(PickBatchRequest request);
     }
 }

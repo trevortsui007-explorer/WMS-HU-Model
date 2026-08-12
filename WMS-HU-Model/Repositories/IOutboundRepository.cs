@@ -5,15 +5,18 @@ namespace WMS_HU_Model.Repositories
 {
     public interface IOutboundRepository
     {
-        List<OutboundQueueItemDto> GetQueue(
-            OutboundQueueQuery query);
+        List<OutboundQueueItemDto> GetQueue(OutboundQueueQuery query);
 
+        PickResultDto GetPickByRequestId(string requestId);
 
-        PickResultDto GetPickByRequestId(
-            string requestId);
+        PickPersistenceResult ExecutePickNext(PickNextCommand command);
 
+        List<OutboundPickCandidateDto> GetCandidates(OutboundBatchPlanRequest request);
 
-        PickPersistenceResult ExecutePickNext(
-            PickNextCommand command);
+        PickBatchResultDto GetPickBatchByRequestId(string requestId);
+
+        bool IsRequestIdUsedByOtherOperation(string requestId);
+
+        PickBatchPersistenceResult ExecutePickBatch(PickBatchCommand command);
     }
 }

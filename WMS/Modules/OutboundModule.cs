@@ -60,6 +60,40 @@ namespace WMS.Modules
 
                 return Response.AsJson(ApiResult.Success(result.Data, result.Message));
             });
+
+            //----------------------------------------------------
+            // FIFO 多箱规划
+            //----------------------------------------------------
+            Post("/plan", _ =>
+            {
+                OutboundBatchPlanRequest request = this.Bind<OutboundBatchPlanRequest>();
+
+                OperationResult<OutboundBatchPlanDto> result = _service.PlanBatch(request);
+
+                if (!result.IsSuccess)
+                {
+                    return Response.AsJson(ApiResult.Fail(result.Message));
+                }
+
+                return Response.AsJson(ApiResult.Success(result.Data));
+            });
+
+            //----------------------------------------------------
+            // FIFO 多箱实际拣货
+            //----------------------------------------------------
+            Post("/pick-batch", _ =>
+            {
+                PickBatchRequest request = this.Bind<PickBatchRequest>();
+
+                OperationResult<PickBatchResultDto> result = _service.PickBatch(request);
+
+                if (!result.IsSuccess)
+                {
+                    return Response.AsJson(ApiResult.Fail(result.Message));
+                }
+
+                return Response.AsJson(ApiResult.Success(result.Data, result.Message));
+            });
         }
     }
 }

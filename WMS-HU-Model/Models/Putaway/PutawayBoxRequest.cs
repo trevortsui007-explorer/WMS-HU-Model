@@ -2,8 +2,6 @@
 {
     public class PutawayBoxRequest
     {
-        public string PalletHuCode { get; set; }
-
         public string BoxHuCode { get; set; }
 
         public string WarehouseCode { get; set; }

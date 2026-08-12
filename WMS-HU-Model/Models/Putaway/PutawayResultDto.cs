@@ -20,6 +20,8 @@ namespace WMS_HU_Model.Models.Putaway
 
         public bool IsPalletEmpty { get; set; }
 
+        public bool IsPalletClosed { get; set; }
+
         public bool IsDuplicate { get; set; }
 
         public DateTime PutawayTime { get; set; }

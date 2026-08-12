@@ -1,0 +1,33 @@
+﻿namespace WMS_HU_Model.Models.Outbound
+{
+    public class PickBatchCommand
+    {
+        public string PickBatchNo { get; set; }
+
+        public string WarehouseCode { get; set; }
+
+        public string PlantCode { get; set; }
+
+        public string MaterialCode { get; set; }
+
+        public string MaterialRevision { get; set; }
+
+        public string BatchNo { get; set; }
+
+        public string ProductionOrderNo { get; set; }
+
+        public decimal RequiredQty { get; set; }
+
+        public string Uom { get; set; }
+
+        public bool AllowOverPick { get; set; }
+
+        public string RequestId { get; set; }
+
+        public string BusinessNo { get; set; }
+
+        public string Operator { get; set; }
+
+        public string Remark { get; set; }
+    }
+}

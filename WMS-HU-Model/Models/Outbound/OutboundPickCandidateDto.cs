@@ -9,6 +9,7 @@ namespace WMS_HU_Model.Models.Outbound
         public string PlantCode { get; set; }
         public long LocationId { get; set; }
         public string LocationCode { get; set; }
+        public int MinWeekSortKey { get; set; }
         public DateTime FifoTime { get; set; }
         public int InnerPackCount { get; set; }
         public decimal Qty { get; set; }

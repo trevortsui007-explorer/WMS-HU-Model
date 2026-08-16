@@ -15,6 +15,7 @@ namespace WMS_HU_Model.Models.Outbound
         public int InnerPackCount { get; set; }
         public decimal TotalQty { get; set; }
         public string Uom { get; set; }
+        public int MinWeekSortKey { get; set; }
         public DateTime FifoTime { get; set; }
     }
 }

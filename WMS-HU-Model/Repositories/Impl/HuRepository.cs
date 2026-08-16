@@ -5,6 +5,7 @@ using System.Data.SqlClient;
 using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.HU;
+using WMS_HU_Model.Models.WeekCode;
 
 namespace WMS_HU_Model.Repositories
 {
@@ -470,7 +471,7 @@ AND IsActive = 1;
         ///
         /// Repository 不重复承担业务规则。
         /// </summary>
-        public long AddItem(long huId, AddHuItemRequest request, string operationNo)
+        public long AddItem(long huId, AddHuItemRequest request, WeekCodeSnapshot weekCode, string operationNo)
         {
             using (SqlConnection conn = DbConnectionFactory.Create())
             {
@@ -493,6 +494,13 @@ INSERT INTO dbo.WMS_HU_Item
     SalesOrderNo,
     SalesOrderItem,
     DateCode,
+    WeekFormatCode,
+    WeekYear,
+    WeekNo,
+    WeekSortKey,
+    WeekRuleSource,
+    WeekRuleValue,
+    WeekResolvedTime,
     Qty,
     Uom,
     StockStatus,
@@ -513,6 +521,13 @@ VALUES
     @SalesOrderNo,
     @SalesOrderItem,
     @DateCode,
+    @WeekFormatCode,
+    @WeekYear,
+    @WeekNo,
+    @WeekSortKey,
+    @WeekRuleSource,
+    @WeekRuleValue,
+    @WeekResolvedTime,
     @Qty,
     @Uom,
     @StockStatus,
@@ -536,6 +551,13 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
                         parameters.Add("@SalesOrderNo", DbParameterValue.StringOrNull(request.SalesOrderNo), DbType.AnsiString, size: 50);
                         parameters.Add("@SalesOrderItem", DbParameterValue.StringOrNull(request.SalesOrderItem), DbType.AnsiString, size: 30);
                         parameters.Add("@DateCode", DbParameterValue.StringOrNull(request.DateCode), DbType.AnsiString, size: 50);
+                        parameters.Add("@WeekFormatCode", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekFormatCode), DbType.AnsiString, size: 30);
+                        parameters.Add("@WeekYear", weekCode == null ? null : (object)weekCode.WeekYear, DbType.Int16);
+                        parameters.Add("@WeekNo", weekCode == null ? null : (object)weekCode.WeekNo, DbType.Byte);
+                        parameters.Add("@WeekSortKey", weekCode == null ? null : (object)weekCode.WeekSortKey, DbType.Int32);
+                        parameters.Add("@WeekRuleSource", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleSource), DbType.AnsiString, size: 30);
+                        parameters.Add("@WeekRuleValue", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleValue), DbType.AnsiString, size: 100);
+                        parameters.Add("@WeekResolvedTime", weekCode == null ? null : (object)weekCode.WeekResolvedTime, DbType.DateTime2);
                         parameters.Add("@Qty", request.Qty, DbType.Decimal, precision: 18, scale: 4);
                         parameters.Add("@Uom", request.Uom, DbType.AnsiString, size: 20);
                         parameters.Add("@StockStatus", request.StockStatus, DbType.AnsiString, size: 20);
@@ -672,6 +694,13 @@ SELECT
     SAPBatchNo,
     ProductionOrderNo,
     DateCode,
+    WeekFormatCode,
+    WeekYear,
+    WeekNo,
+    WeekSortKey,
+    WeekRuleSource,
+    WeekRuleValue,
+    WeekResolvedTime,
     Qty,
     Uom,
     StockStatus

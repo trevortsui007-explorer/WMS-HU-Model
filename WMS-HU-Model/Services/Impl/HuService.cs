@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using WMS_HU_Model.Models.Common;
 using WMS_HU_Model.Models.HU;
+using WMS_HU_Model.Models.WeekCode;
 using WMS_HU_Model.Repositories;
 
 namespace WMS_HU_Model.Services
@@ -10,10 +11,17 @@ namespace WMS_HU_Model.Services
     public class HuService : IHuService
     {
         private readonly IHuRepository _repository;
+        private readonly IWeekCodeResolver _weekCodeResolver;
 
         public HuService(IHuRepository repository)
+            : this(repository, new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()))
         {
-            _repository = repository;
+        }
+
+        public HuService(IHuRepository repository, IWeekCodeResolver weekCodeResolver)
+        {
+            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _weekCodeResolver = weekCodeResolver ?? throw new ArgumentNullException(nameof(weekCodeResolver));
         }
 
         public OperationResult<HuDto> Get(string huCode)
@@ -162,6 +170,9 @@ namespace WMS_HU_Model.Services
 
         public OperationResult<HuTreeNodeDto> GetTree(string huCode)
         {
+            if (string.IsNullOrWhiteSpace(huCode))
+                return OperationResult<HuTreeNodeDto>.Fail("HUCode不能为空。");
+
             HuDto root = _repository.GetByCode(
                 huCode.Trim()
                     .ToUpperInvariant());
@@ -203,6 +214,9 @@ namespace WMS_HU_Model.Services
             if (request == null)
                 return OperationResult<HuItemDto>.Fail("请求不能为空。");
 
+            if (string.IsNullOrWhiteSpace(huCode))
+                return OperationResult<HuItemDto>.Fail("HUCode不能为空。");
+
             HuDto hu = _repository.GetByCode(
                 huCode.Trim()
                     .ToUpperInvariant());
@@ -225,6 +239,20 @@ namespace WMS_HU_Model.Services
             if (string.IsNullOrWhiteSpace(request.StockStatus))
                 request.StockStatus = "AVAILABLE";
 
+            request.MaterialCode = request.MaterialCode.Trim().ToUpperInvariant();
+            request.MaterialRevision = string.IsNullOrWhiteSpace(request.MaterialRevision)
+                ? null
+                : request.MaterialRevision.Trim().ToUpperInvariant();
+            request.DateCode = string.IsNullOrWhiteSpace(request.DateCode) ? null : request.DateCode.Trim();
+
+            OperationResult<WeekCodeSnapshot> weekCodeResult = _weekCodeResolver.Resolve(
+                request.MaterialCode,
+                request.MaterialRevision,
+                request.DateCode);
+
+            if (!weekCodeResult.IsSuccess)
+                return OperationResult<HuItemDto>.Fail(weekCodeResult.Message);
+
             string operationNo = Guid.NewGuid()
                 .ToString("N")
                 .ToUpperInvariant();
@@ -232,6 +260,7 @@ namespace WMS_HU_Model.Services
             long itemId = _repository.AddItem(
                 hu.Id,
                 request,
+                weekCodeResult.Data,
                 operationNo);
 
             HuItemDto item = _repository

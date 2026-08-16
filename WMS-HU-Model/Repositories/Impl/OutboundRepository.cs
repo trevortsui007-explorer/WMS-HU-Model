@@ -22,7 +22,8 @@ namespace WMS_HU_Model.Repositories
         box.PlantCode,
         w.WarehouseCode,
         loc.LocationCode,
-        MIN(item.CreateTime) AS FifoTime,
+        MIN(item.WeekSortKey) AS MinWeekSortKey,
+        MIN(item.WeekResolvedTime) AS FifoTime,
         COUNT(DISTINCT innerHU.Id) AS InnerPackCount,
         SUM(item.Qty) AS TotalQty,
         MIN(item.Uom) AS Uom,
@@ -61,7 +62,16 @@ namespace WMS_HU_Model.Repositories
     AND innerHU.LifecycleStatus = 'ACTIVE'
     AND innerHU.IsHold = 0
     AND item.StockStatus = 'AVAILABLE'
+    AND item.WeekSortKey IS NOT NULL
+    AND item.WeekResolvedTime IS NOT NULL
     AND item.MaterialCode = @MaterialCode
+    AND NOT EXISTS
+    (
+        SELECT 1
+        FROM dbo.WMS_HU_Reservation reserved
+        WHERE reserved.HUId = box.Id
+          AND reserved.ReservationStatus = 'ACTIVE'
+    )
     AND
     (
         @MaterialRevision IS NULL
@@ -118,6 +128,8 @@ namespace WMS_HU_Model.Repositories
                 AND
                 (
                     badItem.StockStatus <> 'AVAILABLE'
+                    OR badItem.WeekSortKey IS NULL
+                    OR badItem.WeekResolvedTime IS NULL
                     OR badItem.MaterialCode <> @MaterialCode
                     OR
                     (
@@ -151,7 +163,7 @@ SELECT TOP (@Top)
     ROW_NUMBER() OVER
     (
         ORDER BY
-            FifoTime ASC,
+            MinWeekSortKey ASC,
             BoxHUId ASC
     ) AS QueueSequence,
     BoxHUId,
@@ -164,10 +176,11 @@ SELECT TOP (@Top)
     InnerPackCount,
     TotalQty,
     Uom,
+    MinWeekSortKey,
     FifoTime
 FROM Candidate
 ORDER BY
-    FifoTime ASC,
+    MinWeekSortKey ASC,
     BoxHUId ASC;
 ";
 
@@ -576,7 +589,8 @@ SELECT TOP 1
     box.PlantCode,
     cl.LocationId,
     loc.LocationCode,
-    MIN(item.CreateTime) AS FifoTime,
+    MIN(item.WeekSortKey) AS MinWeekSortKey,
+    MIN(item.WeekResolvedTime) AS FifoTime,
     COUNT(DISTINCT innerHU.Id) AS InnerPackCount,
     SUM(item.Qty) AS Qty,
     MIN(item.Uom) AS Uom
@@ -621,7 +635,16 @@ AND innerHU.HUType = 'INNER_PACK'
 AND innerHU.LifecycleStatus = 'ACTIVE'
 AND innerHU.IsHold = 0
 AND item.StockStatus = 'AVAILABLE'
+AND item.WeekSortKey IS NOT NULL
+AND item.WeekResolvedTime IS NOT NULL
 AND item.MaterialCode = @MaterialCode
+AND NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_HU_Reservation reserved
+    WHERE reserved.HUId = box.Id
+      AND reserved.ReservationStatus = 'ACTIVE'
+)
 AND
 (
     @MaterialRevision IS NULL
@@ -669,6 +692,8 @@ AND NOT EXISTS
             AND
             (
                 badItem.StockStatus <> 'AVAILABLE'
+                OR badItem.WeekSortKey IS NULL
+                OR badItem.WeekResolvedTime IS NULL
                 OR badItem.MaterialCode <> @MaterialCode
                 OR
                 (
@@ -700,7 +725,7 @@ GROUP BY
 HAVING COUNT(DISTINCT item.Uom) = 1
 
 ORDER BY
-    MIN(item.CreateTime) ASC,
+    MIN(item.WeekSortKey) ASC,
     box.Id ASC;
 ";
 
@@ -727,6 +752,7 @@ ORDER BY
                         PlantCode = Convert.ToString(reader["PlantCode"]),
                         LocationId = Convert.ToInt64(reader["LocationId"]),
                         LocationCode = Convert.ToString(reader["LocationCode"]),
+                        MinWeekSortKey = Convert.ToInt32(reader["MinWeekSortKey"]),
                         FifoTime = Convert.ToDateTime(reader["FifoTime"]),
                         InnerPackCount = Convert.ToInt32(reader["InnerPackCount"]),
                         Qty = Convert.ToDecimal(reader["Qty"]),
@@ -763,7 +789,8 @@ SELECT
     box.PlantCode,
     cl.LocationId,
     loc.LocationCode,
-    MIN(item.CreateTime) AS FifoTime,
+    MIN(item.WeekSortKey) AS MinWeekSortKey,
+    MIN(item.WeekResolvedTime) AS FifoTime,
     COUNT(DISTINCT innerHU.Id) AS InnerPackCount,
     SUM(item.Qty) AS Qty,
     MIN(item.Uom) AS Uom
@@ -798,7 +825,16 @@ AND innerHU.HUType = 'INNER_PACK'
 AND innerHU.LifecycleStatus = 'ACTIVE'
 AND innerHU.IsHold = 0
 AND item.StockStatus = 'AVAILABLE'
+AND item.WeekSortKey IS NOT NULL
+AND item.WeekResolvedTime IS NOT NULL
 AND item.MaterialCode = @MaterialCode
+AND NOT EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_HU_Reservation reserved
+    WHERE reserved.HUId = box.Id
+      AND reserved.ReservationStatus = 'ACTIVE'
+)
 AND item.Uom = @Uom
 AND
 (
@@ -850,6 +886,8 @@ AND NOT EXISTS
             AND
             (
                 badItem.StockStatus <> 'AVAILABLE'
+                OR badItem.WeekSortKey IS NULL
+                OR badItem.WeekResolvedTime IS NULL
                 OR badItem.MaterialCode <> @MaterialCode
                 OR badItem.Uom <> @Uom
                 OR
@@ -880,7 +918,7 @@ GROUP BY
     loc.LocationCode
 
 ORDER BY
-    MIN(item.CreateTime) ASC,
+    MIN(item.WeekSortKey) ASC,
     box.Id ASC;
 ";
 

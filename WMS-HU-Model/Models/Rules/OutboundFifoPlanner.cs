@@ -128,6 +128,7 @@ namespace WMS_HU_Model.Rules
                 BoxHuId = candidate.BoxHuId,
                 BoxHuCode = candidate.BoxHuCode,
                 LocationCode = candidate.LocationCode,
+                MinWeekSortKey = candidate.MinWeekSortKey,
                 FifoTime = candidate.FifoTime,
                 BoxQty = candidate.Qty,
                 CumulativeQty = cumulativeQty,

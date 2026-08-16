@@ -86,6 +86,7 @@
     <Compile Include="Models\MasterData\CreateLocationRequest.cs" />
     <Compile Include="Models\MasterData\LocationDto.cs" />
     <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
+    <Compile Include="Models\WeekCode\WeekCodeSnapshot.cs" />
     <Compile Include="Models\Outbound\OutboundBatchPlanDto.cs" />
     <Compile Include="Models\Outbound\OutboundBatchPlanItemDto.cs" />
     <Compile Include="Models\Outbound\OutboundBatchPlanRequest.cs" />
@@ -141,9 +142,13 @@
     <Compile Include="Services\Impl\OutboundService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />
     <Compile Include="Services\Impl\RepackService.cs" />
+    <Compile Include="Services\Impl\UnavailableWeekCodeRuleProvider.cs" />
+    <Compile Include="Services\Impl\WeekCodeResolver.cs" />
     <Compile Include="Services\IOutboundService.cs" />
     <Compile Include="Services\IPutawayService.cs" />
     <Compile Include="Services\IRepackService.cs" />
+    <Compile Include="Services\IWeekCodeResolver.cs" />
+    <Compile Include="Services\IWeekCodeRuleProvider.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using WMS_HU_Model.Models.HU;
+using WMS_HU_Model.Models.WeekCode;
 
 namespace WMS_HU_Model.Repositories
 {
@@ -71,7 +72,7 @@ namespace WMS_HU_Model.Repositories
         /// <summary>
         /// 为指定的 HU 添加物料明细/装箱明细
         /// </summary>
-        long AddItem(long huId, AddHuItemRequest request, string operationNo);
+        long AddItem(long huId, AddHuItemRequest request, WeekCodeSnapshot weekCode, string operationNo);
 
         #endregion
 

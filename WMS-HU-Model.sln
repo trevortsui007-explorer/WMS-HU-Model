@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS-HU-Model", "WMS-HU-Mode
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS", "WMS\WMS.csproj", "{C4446A36-2038-461F-A1F2-632312754B5B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS-HU-Model.Tests", "WMS-HU-Model.Tests\WMS-HU-Model.Tests.csproj", "{8EE890EF-037E-4B16-8EED-82D9348C58C1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{C4446A36-2038-461F-A1F2-632312754B5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C4446A36-2038-461F-A1F2-632312754B5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C4446A36-2038-461F-A1F2-632312754B5B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8EE890EF-037E-4B16-8EED-82D9348C58C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8EE890EF-037E-4B16-8EED-82D9348C58C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8EE890EF-037E-4B16-8EED-82D9348C58C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8EE890EF-037E-4B16-8EED-82D9348C58C1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

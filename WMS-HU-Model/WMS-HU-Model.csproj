@@ -75,6 +75,7 @@
     <Compile Include="Models\HU\CreateHuRequest.cs" />
     <Compile Include="Models\HU\HuDto.cs" />
     <Compile Include="Models\HU\HuItemDto.cs" />
+    <Compile Include="Models\HU\HuHoldModels.cs" />
     <Compile Include="Models\HU\HuLocationDto.cs" />
     <Compile Include="Models\HU\HuMoveCommand.cs" />
     <Compile Include="Models\HU\HuMoveLogDto.cs" />
@@ -123,9 +124,11 @@
     <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IHuRepository.cs" />
+    <Compile Include="Repositories\IHuHoldRepository.cs" />
     <Compile Include="Repositories\ILocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuLocationRepository.cs" />
     <Compile Include="Repositories\Impl\HuRepository.cs" />
+    <Compile Include="Repositories\Impl\HuHoldRepository.cs" />
     <Compile Include="Repositories\Impl\LocationRepository.cs" />
     <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
@@ -135,9 +138,11 @@
     <Compile Include="Repositories\IRepackRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IHuService.cs" />
+    <Compile Include="Services\IHuHoldService.cs" />
     <Compile Include="Services\ILocationService.cs" />
     <Compile Include="Services\Impl\HuLocationService.cs" />
     <Compile Include="Services\Impl\HuService.cs" />
+    <Compile Include="Services\Impl\HuHoldService.cs" />
     <Compile Include="Services\Impl\LocationService.cs" />
     <Compile Include="Services\Impl\OutboundService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />

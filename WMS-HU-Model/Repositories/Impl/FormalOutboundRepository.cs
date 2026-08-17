@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
@@ -535,11 +535,18 @@ WHERE AllocationNo = @AllocationNo;";
                             tran.Rollback();
                             return OutboundActionPersistenceResult.Fail("Allocation不存在。");
                         }
-                        if (!string.Equals(allocation.AllocationStatus, "ACTIVE", StringComparison.Ordinal)
-                            || allocation.FirstPickTime.HasValue)
+
+                        if (allocation.FirstPickTime.HasValue)
                         {
                             tran.Rollback();
-                            return OutboundActionPersistenceResult.Fail("只有尚未扫描首箱的ACTIVE Allocation允许释放。");
+
+                            return OutboundActionPersistenceResult.Fail("当前已扫描出货箱，禁止释放分配，请按拣货异常流程处理。");
+                        }
+
+                        if (!string.Equals(allocation.AllocationStatus, "ACTIVE", StringComparison.Ordinal))
+                        {
+                            tran.Rollback();
+                            return OutboundActionPersistenceResult.Fail("当前Allocation状态不允许释放。");
                         }
 
                         DateTime now = DateTime.Now;
@@ -2453,6 +2460,7 @@ FROM dbo.WMS_HU_Reservation r
 INNER JOIN dbo.WMS_HU hu ON hu.Id = r.HUId
 INNER JOIN dbo.WMS_Location loc ON loc.Id = r.SourceLocationId
 WHERE r.AllocationId = @AllocationId
+  AND r.ReservationStatus = 'ACTIVE'
 ORDER BY r.PickBatchId, r.MinWeekSortKey, r.HUId;";
             List<StartPickingReservationRow> reservationRows = conn.Query<StartPickingReservationRow>(
                 reservationSql,

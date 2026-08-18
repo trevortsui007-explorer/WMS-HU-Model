@@ -50,6 +50,9 @@
     <Reference Include="Nancy.Hosting.Aspnet, Version=2.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Nancy.Hosting.Aspnet.2.0.0\lib\net452\Nancy.Hosting.Aspnet.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System.Web.DynamicData" />
     <Reference Include="System.Web.Entity" />
     <Reference Include="System.Web.ApplicationServices" />
@@ -82,6 +85,7 @@
     <Compile Include="Modules\HuModule.cs" />
     <Compile Include="Modules\LocationModule.cs" />
     <Compile Include="Modules\OutboundModule.cs" />
+    <Compile Include="Modules\SapOutboundIntegrationModule.cs" />
     <Compile Include="Modules\PutawayModule.cs" />
     <Compile Include="Modules\RepackModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

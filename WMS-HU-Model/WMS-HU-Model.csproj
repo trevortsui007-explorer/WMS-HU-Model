@@ -50,6 +50,9 @@
     <Reference Include="Nancy.Hosting.Aspnet, Version=2.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Nancy.Hosting.Aspnet.2.0.0\lib\net452\Nancy.Hosting.Aspnet.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
@@ -68,6 +71,7 @@
     <Compile Include="Infrastructure\Database\DbConnectionFactory.cs" />
     <Compile Include="Infrastructure\Database\HuMoveLogWriter.cs" />
     <Compile Include="Infrastructure\Database\HuOperationLogWriter.cs" />
+    <Compile Include="Infrastructure\Sap\SapPayloadCanonicalizer.cs" />
     <Compile Include="Models\Common\ApiResult.cs" />
     <Compile Include="Models\Common\OperationResult.cs" />
     <Compile Include="Models\HU\AddHuItemRequest.cs" />
@@ -108,6 +112,7 @@
     <Compile Include="Models\Outbound\Formal\OutboundAllocationPlanDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundInnerPackCandidateDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundOrderModels.cs" />
+    <Compile Include="Models\Outbound\Integration\SapOutboundOrderReceiveModels.cs" />
     <Compile Include="Models\Putaway\PalletPutawayStatusDto.cs" />
     <Compile Include="Models\Putaway\PutawayBoxRequest.cs" />
     <Compile Include="Models\Putaway\PutawayCommand.cs" />
@@ -142,9 +147,11 @@
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
     <Compile Include="Repositories\IOutboundRepository.cs" />
     <Compile Include="Repositories\IFormalOutboundRepository.cs" />
+    <Compile Include="Repositories\ISapOutboundOrderReceiveRepository.cs" />
     <Compile Include="Repositories\IPutawayRepository.cs" />
     <Compile Include="Repositories\Impl\PutawayRepository.cs" />
     <Compile Include="Repositories\Impl\FormalOutboundRepository.cs" />
+    <Compile Include="Repositories\Impl\SapOutboundOrderReceiveRepository.cs" />
     <Compile Include="Repositories\IRepackRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IHuService.cs" />
@@ -162,8 +169,10 @@
     <Compile Include="Services\Impl\UnavailableWeekCodeRuleProvider.cs" />
     <Compile Include="Services\Impl\WeekCodeResolver.cs" />
     <Compile Include="Services\Impl\FormalOutboundService.cs" />
+    <Compile Include="Services\Impl\SapOutboundOrderReceiveService.cs" />
     <Compile Include="Services\IOutboundService.cs" />
     <Compile Include="Services\IFormalOutboundService.cs" />
+    <Compile Include="Services\ISapOutboundOrderReceiveService.cs" />
     <Compile Include="Services\IPutawayService.cs" />
     <Compile Include="Services\IRepackService.cs" />
     <Compile Include="Services\IWeekCodeResolver.cs" />

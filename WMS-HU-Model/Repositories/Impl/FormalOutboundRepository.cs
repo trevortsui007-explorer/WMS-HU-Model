@@ -1200,32 +1200,69 @@ WHERE SAPDeliveryNo = @SAPDeliveryNo;",
                             return OutboundActionPersistenceResult.Fail("只有PICKED订单允许执行SHIPPED。");
                         }
 
-                        bool invalid = conn.ExecuteScalar<bool>(@"
-SELECT CASE WHEN
-    EXISTS
-    (
-        SELECT 1 FROM dbo.WMS_OutboundOrderLine
-        WHERE OutboundOrderId = @OrderId
-          AND (EffectivePickedQty <> EffectiveRequiredQty OR LineStatus <> 'PICKED')
-    )
- OR EXISTS
-    (
-        SELECT 1 FROM dbo.WMS_OutboundPickBatch
-        WHERE OutboundOrderId = @OrderId AND BatchStatus <> 'PICKED'
-    )
- OR EXISTS
-    (
-        SELECT 1 FROM dbo.WMS_OutboundPickException
-        WHERE OutboundOrderId = @OrderId
-          AND ExceptionStatus NOT IN ('RESOLVED', 'CANCELLED')
-    )
-THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END;",
-                            new { OrderId = order.Id },
-                            tran);
-                        if (invalid)
+                        long? currentAllocationId = conn.ExecuteScalar<long?>(@"
+SELECT TOP 1 Id
+FROM dbo.WMS_OutboundAllocation WITH (UPDLOCK, HOLDLOCK)
+WHERE OutboundOrderId = @OutboundOrderId
+  AND AllocationStatus = 'COMPLETED'
+ORDER BY Id DESC;",
+                            new { OutboundOrderId = order.Id }, tran);
+                        if (!currentAllocationId.HasValue)
                         {
                             tran.Rollback();
-                            return OutboundActionPersistenceResult.Fail("订单数量、Batch状态或Open Exception不满足SHIPPED条件。");
+                            return OutboundActionPersistenceResult.Fail(
+                                "订单不存在已完成的有效Allocation，不能执行SHIPPED。");
+                        }
+
+                        bool invalidLine = conn.ExecuteScalar<bool>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_OutboundOrderLine
+    WHERE OutboundOrderId = @OutboundOrderId
+      AND (EffectivePickedQty <> EffectiveRequiredQty OR LineStatus <> 'PICKED')
+)
+THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END;",
+                            new { OutboundOrderId = order.Id }, tran);
+                        if (invalidLine)
+                        {
+                            tran.Rollback();
+                            return OutboundActionPersistenceResult.Fail(
+                                "订单行数量或状态不满足SHIPPED条件。");
+                        }
+
+                        bool invalidBatch = conn.ExecuteScalar<bool>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_OutboundPickBatch
+    WHERE AllocationId = @AllocationId
+      AND BatchStatus <> 'PICKED'
+)
+THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END;",
+                            new { AllocationId = currentAllocationId.Value }, tran);
+                        if (invalidBatch)
+                        {
+                            tran.Rollback();
+                            return OutboundActionPersistenceResult.Fail(
+                                "当前Allocation仍存在非PICKED的PickBatch，不能执行SHIPPED。");
+                        }
+
+                        bool hasOpenException = conn.ExecuteScalar<bool>(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_OutboundPickException
+    WHERE OutboundOrderId = @OutboundOrderId
+      AND ExceptionStatus NOT IN ('RESOLVED', 'CANCELLED')
+)
+THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END;",
+                        new { OutboundOrderId = order.Id }, tran);
+                        if (hasOpenException)
+                        {
+                            tran.Rollback();
+                            return OutboundActionPersistenceResult.Fail(
+                                "订单仍存在未关闭的出库异常，不能执行SHIPPED。");
                         }
 
                         ScanLocationRow shipped = conn.QueryFirstOrDefault<ScanLocationRow>(@"
@@ -1253,11 +1290,11 @@ INNER JOIN dbo.WMS_OutboundPickBatch b ON b.Id = d.PickBatchId
 INNER JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
     ON cl.HUId = d.BoxHUId
 INNER JOIN dbo.WMS_Location loc ON loc.Id = cl.LocationId
-WHERE b.OutboundOrderId = @OrderId
+WHERE b.AllocationId = @AllocationId
   AND d.DetailStatus = 'PICKED'
   AND d.EffectiveQty > 0
 ORDER BY d.Id;",
-                            new { OrderId = order.Id },
+                            new { AllocationId = currentAllocationId.Value },
                             tran).AsList();
                         if (details.Count == 0 || details.Any(x => x.CurrentLocationCode != "OUTBOUND-STAGING"))
                         {
@@ -1313,7 +1350,7 @@ WHERE Id = @PickDetailId AND DetailStatus = 'PICKED';",
                         conn.Execute(@"
 UPDATE dbo.WMS_OutboundPickBatch
 SET BatchStatus = 'SHIPPED'
-WHERE OutboundOrderId = @OrderId AND BatchStatus = 'PICKED';
+WHERE AllocationId = @AllocationId AND BatchStatus = 'PICKED';
 
 UPDATE dbo.WMS_OutboundOrderLine
 SET ShippedQty = EffectivePickedQty, LineStatus = 'SHIPPED', ModifyTime = @Now
@@ -1326,6 +1363,7 @@ WHERE Id = @OrderId AND OrderStatus = 'PICKED';",
                             new
                             {
                                 OrderId = order.Id,
+                                AllocationId = currentAllocationId.Value,
                                 Now = now,
                                 request.RequestId,
                                 request.Operator
@@ -1413,15 +1451,15 @@ WHERE d.Id = @PickDetailId;",
                             tran.Rollback();
                             return OutboundActionPersistenceResult.Fail("PickDetail不存在。");
                         }
-                        if (detail.DetailStatus != "PICKED" || detail.EffectiveQty <= 0)
-                        {
-                            tran.Rollback();
-                            return OutboundActionPersistenceResult.Fail("只有当前有效的PICKED明细允许异常退回。");
-                        }
                         if (detail.OrderStatus == "SHIPPED")
                         {
                             tran.Rollback();
                             return OutboundActionPersistenceResult.Fail("SHIPPED订单不允许普通异常退回。");
+                        }
+                        if (detail.DetailStatus != "PICKED" || detail.EffectiveQty <= 0)
+                        {
+                            tran.Rollback();
+                            return OutboundActionPersistenceResult.Fail("只有当前有效的PICKED明细允许异常退回。");
                         }
 
                         ScanLocationRow returned = conn.QueryFirstOrDefault<ScanLocationRow>(@"

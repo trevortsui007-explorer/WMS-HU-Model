@@ -137,4 +137,13 @@
 
 - BLOCKER=0，HIGH=0，MEDIUM=1 ACCEPTED，LOW=0。
 - Accepted MEDIUM：真实 WMS_DEV 的 VBELN > 30 烟雾测试未执行，因为数据库写入安全门禁禁止该操作。该分支已通过 Fake Repository 自动化测试验证 Existing 未调用、SAPDeliveryNo=NULL、Canonical Hash 与 Raw JSON 保留，因此不阻塞 V1 提交。
-- Git commits：本变更未创建提交。
+- Git commits：本变更已完成创建提交。
+
+## MES Finished Goods Inbound V1 交接
+
+- 已实现范围：`POST /api/wms/integration/finished-goods/inbound` 接收通用成品入库快照；`POST /api/wms/integration/finished-goods/mes-inbound` 按 MES `PLAN_STOCK` 读取包装层级并完成入库编排。
+- 幂等与持久化：以 `SourceSystem + SourceType + SourceEntityId` 和 `FGI_V1` Snapshot Hash 判定重复或冲突；Receipt、HU、标识、层级、明细、MoveLog、CurrentLocation 与 OperationLog 在同一可串行化事务中写入。
+- 周码：MES 规则经 `md_flow` 链路查询；明确规则解析后写入 WeekCode 快照，缺失/歧义/不支持规则走异常入库并保留原始 DateCode。
+- 数据库：新增迁移草案 `docs/database/015_FinishedGoodsInboundCore.sql`，未执行；WMS_DEV 未修改。执行前仍需 live schema、`INBOUND-PENDING` 主数据、备份与人工审批。
+- 验证：Solution Debug/Release Build 均 PASS；控制台回归测试 PASS（36 cases）；未执行 Postman、WMS_DEV 或 MES 实库集成测试。
+- 风险：MES 真实表结构、运行账号权限、`INBOUND-PENDING` 位置主数据和迁移 015 的实库兼容性尚未验证；`MES_FGI_BATCH_RESULTS` 是本地运行产物，不纳入 Git。

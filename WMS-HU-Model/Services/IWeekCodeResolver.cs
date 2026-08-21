@@ -6,5 +6,6 @@ namespace WMS_HU_Model.Services
     public interface IWeekCodeResolver
     {
         OperationResult<WeekCodeSnapshot> Resolve(string materialCode, string materialRevision, string dateCode);
+        OperationResult<WeekCodeSnapshot> Resolve(string dateCode, string ruleValue, System.DateTime? anchorTime);
     }
 }

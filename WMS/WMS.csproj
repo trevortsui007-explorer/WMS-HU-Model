@@ -80,6 +80,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bootstrapper.cs" />
+    <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
+    <Compile Include="Modules\MesFinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Modules\HealthModule.cs" />
     <Compile Include="Modules\HuLocationModule.cs" />
     <Compile Include="Modules\HuModule.cs" />

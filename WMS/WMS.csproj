@@ -88,6 +88,8 @@
     <Compile Include="Modules\LocationModule.cs" />
     <Compile Include="Modules\OutboundModule.cs" />
     <Compile Include="Modules\SapOutboundIntegrationModule.cs" />
+    <Compile Include="Modules\WeekCodeAuditModule.cs" />
+    <Compile Include="Modules\WeekCodeRecalculateModule.cs" />
     <Compile Include="Modules\PutawayModule.cs" />
     <Compile Include="Modules\RepackModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -146,3 +148,4 @@
   </Target>
   -->
 </Project>
+

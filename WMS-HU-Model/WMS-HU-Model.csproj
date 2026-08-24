@@ -99,6 +99,8 @@
     <Compile Include="Models\MasterData\LocationDto.cs" />
     <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
     <Compile Include="Models\WeekCode\WeekCodeSnapshot.cs" />
+    <Compile Include="Models\WeekCode\WeekCodeAuditModels.cs" />
+    <Compile Include="Models\WeekCode\WeekCodeRecalculateModels.cs" />
     <Compile Include="Models\WeekCode\MesWeekCodeRuleModels.cs" />
     <Compile Include="Models\Outbound\OutboundBatchPlanDto.cs" />
     <Compile Include="Models\Outbound\OutboundBatchPlanItemDto.cs" />
@@ -143,6 +145,8 @@
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IFinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\IMesWeekCodeRuleRepository.cs" />
+    <Compile Include="Repositories\IWeekCodeAuditRepository.cs" />
+    <Compile Include="Repositories\IWeekCodeRecalculateRepository.cs" />
     <Compile Include="Services\IMesFinishedGoodsInboundRepository.cs" />
     <Compile Include="Services\IMesFinishedGoodsInboundOrchestrationService.cs" />
     <Compile Include="Repositories\IHuRepository.cs" />
@@ -153,6 +157,8 @@
     <Compile Include="Repositories\Impl\FinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\Impl\MesFinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\Impl\MesWeekCodeRuleRepository.cs" />
+    <Compile Include="Repositories\Impl\WeekCodeAuditRepository.cs" />
+    <Compile Include="Repositories\Impl\WeekCodeRecalculateRepository.cs" />
     <Compile Include="Repositories\Impl\HuRepository.cs" />
     <Compile Include="Repositories\Impl\HuIdentifierRepository.cs" />
     <Compile Include="Repositories\Impl\HuHoldRepository.cs" />
@@ -198,6 +204,11 @@
     <Compile Include="Services\IRepackService.cs" />
     <Compile Include="Services\IWeekCodeResolver.cs" />
     <Compile Include="Services\IWeekCodeRuleProvider.cs" />
+    <Compile Include="Services\IWeekCodeAuditService.cs" />
+    <Compile Include="Services\IWeekCodeRecalculateService.cs" />
+    <Compile Include="Services\WeekCodeAuditService.cs" />
+    <Compile Include="Services\WeekCodeRecalculateService.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+

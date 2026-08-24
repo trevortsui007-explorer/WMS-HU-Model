@@ -1,0 +1,74 @@
+using System;
+using System.Collections.Generic;
+using Nancy;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.HU;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+
+namespace WMS.Modules
+{
+    public class HuDetailModule : NancyModule
+    {
+        private readonly IHuDetailService _service;
+
+        public HuDetailModule()
+            : this(CreateService())
+        {
+        }
+
+        internal HuDetailModule(IHuDetailService service)
+            : base("/api/wms/hus")
+        {
+            _service = service;
+
+            Get("/{huCode}/detail", args =>
+            {
+                object rawHuCode = args.huCode;
+                string huCode = Convert.ToString(rawHuCode);
+                OperationResult<HuDetailDto> result = _service.GetDetail(huCode);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+
+            Get("/{huCode}/operations", args =>
+            {
+                object rawHuCode = args.huCode;
+                string huCode = Convert.ToString(rawHuCode);
+                int top = ReadTop();
+                OperationResult<List<HuOperationLogDto>> result = _service.GetOperationLogs(huCode, top);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+
+            Get("/{huCode}/holds", args =>
+            {
+                object rawHuCode = args.huCode;
+                string huCode = Convert.ToString(rawHuCode);
+                int top = ReadTop();
+                OperationResult<List<HuHoldLogDto>> result = _service.GetHoldLogs(huCode, top);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+        }
+
+        private int ReadTop()
+        {
+            object rawTop = Request.Query.top;
+            string topText = Convert.ToString(rawTop);
+            int top;
+            return int.TryParse(topText, out top) ? top : 50;
+        }
+
+        private static IHuDetailService CreateService()
+        {
+            IHuRepository huRepository = new HuRepository();
+            IHuLocationRepository huLocationRepository = new HuLocationRepository();
+            IHuLocationService locationService = new HuLocationService(huRepository, new LocationRepository(), huLocationRepository);
+            return new HuDetailService(huRepository, locationService, new HuDetailRepository());
+        }
+    }
+}

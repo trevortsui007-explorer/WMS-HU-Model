@@ -19,5 +19,6 @@
         public decimal Qty { get; set; }
         public string Uom { get; set; }
         public string StockStatus { get; set; }
+        public System.DateTime CreateTime { get; set; }
     }
 }

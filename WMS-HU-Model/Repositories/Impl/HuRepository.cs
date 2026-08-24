@@ -31,7 +31,8 @@ SELECT
     h.SourceSystem,
     h.SourceEntityId,
     h.SourceBusinessNo,
-    h.Remark
+    h.Remark,
+    h.CreateTime
 FROM dbo.WMS_HU h
 LEFT JOIN dbo.WMS_PackageSpec ps
     ON h.PackageSpecId = ps.Id
@@ -249,7 +250,8 @@ SELECT TOP 1
     parent.SourceSystem,
     parent.SourceEntityId,
     parent.SourceBusinessNo,
-    parent.Remark
+    parent.Remark,
+    parent.CreateTime
 FROM dbo.WMS_HU_Relation r
 INNER JOIN dbo.WMS_HU parent
     ON parent.Id = r.ParentHUId
@@ -703,7 +705,8 @@ SELECT
     WeekResolvedTime,
     Qty,
     Uom,
-    StockStatus
+    StockStatus,
+    CreateTime
 FROM dbo.WMS_HU_Item
 WHERE HUId = @HUId
 AND IsActive = 1

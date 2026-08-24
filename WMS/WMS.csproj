@@ -81,10 +81,13 @@
   <ItemGroup>
     <Compile Include="Bootstrapper.cs" />
     <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
+    <Compile Include="Modules\FinishedGoodsInboundReadModule.cs" />
+    <Compile Include="Modules\FinishedGoodsInventoryModule.cs" />
     <Compile Include="Modules\MesFinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Modules\HealthModule.cs" />
     <Compile Include="Modules\HuLocationModule.cs" />
     <Compile Include="Modules\HuModule.cs" />
+    <Compile Include="Modules\HuDetailModule.cs" />
     <Compile Include="Modules\LocationModule.cs" />
     <Compile Include="Modules\OutboundModule.cs" />
     <Compile Include="Modules\SapOutboundIntegrationModule.cs" />
@@ -148,4 +151,5 @@
   </Target>
   -->
 </Project>
+
 

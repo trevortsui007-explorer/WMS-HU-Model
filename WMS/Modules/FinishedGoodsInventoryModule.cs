@@ -1,0 +1,123 @@
+using System;
+using Nancy;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.Inventory;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+
+namespace WMS.Modules
+{
+    public class FinishedGoodsInventoryModule : NancyModule
+    {
+        private readonly IFinishedGoodsInventoryService _service;
+
+        public FinishedGoodsInventoryModule()
+            : this(new FinishedGoodsInventoryService(new FinishedGoodsInventoryRepository()))
+        {
+        }
+
+        internal FinishedGoodsInventoryModule(IFinishedGoodsInventoryService service)
+            : base("/api/wms/inventory/finished-goods")
+        {
+            _service = service;
+
+            Get("/", _ =>
+            {
+                FinishedGoodsInventoryQuery query;
+                string error;
+                if (!TryBuildQuery(out query, out error))
+                    return Response.AsJson(ApiResult.Fail(error, 400), HttpStatusCode.BadRequest);
+
+                OperationResult<FinishedGoodsInventoryResultDto> result = _service.Query(query);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
+            });
+
+            Get("/{boxCode}/preview", args =>
+            {
+                object rawBoxCode = args.boxCode;
+                string boxCode = Convert.ToString(rawBoxCode);
+                OperationResult<FinishedGoodsInventoryPreviewDto> result = _service.GetPreview(boxCode);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+        }
+
+        private bool TryBuildQuery(out FinishedGoodsInventoryQuery query, out string error)
+        {
+            object rawPlantCode = Request.Query.plantCode;
+            string plantCode = Convert.ToString(rawPlantCode);
+            object rawMaterialCode = Request.Query.materialCode;
+            string materialCode = Convert.ToString(rawMaterialCode);
+            object rawMaterialRevision = Request.Query.materialRevision;
+            string materialRevision = Convert.ToString(rawMaterialRevision);
+            object rawBoxCode = Request.Query.boxCode;
+            string boxCode = Convert.ToString(rawBoxCode);
+            object rawInnerPackCode = Request.Query.innerPackCode;
+            string innerPackCode = Convert.ToString(rawInnerPackCode);
+            object rawLocationCode = Request.Query.locationCode;
+            string locationCode = Convert.ToString(rawLocationCode);
+            object rawWeekCode = Request.Query.weekCode;
+            string weekCode = Convert.ToString(rawWeekCode);
+            object rawStockStatus = Request.Query.stockStatus;
+            string stockStatus = Convert.ToString(rawStockStatus);
+            object rawIsHold = Request.Query.isHold;
+            string isHold = Convert.ToString(rawIsHold);
+            object rawPage = Request.Query.page;
+            string page = Convert.ToString(rawPage);
+            object rawPageSize = Request.Query.pageSize;
+            string pageSize = Convert.ToString(rawPageSize);
+
+            bool? parsedIsHold;
+            int parsedPage;
+            int parsedPageSize;
+            if (!TryBoolean(isHold, out parsedIsHold))
+            {
+                query = null;
+                error = "isHold必须为true或false。";
+                return false;
+            }
+            if (!TryInteger(page, out parsedPage) || !TryInteger(pageSize, out parsedPageSize))
+            {
+                query = null;
+                error = "page和pageSize必须为整数。";
+                return false;
+            }
+
+            query = new FinishedGoodsInventoryQuery
+            {
+                PlantCode = plantCode,
+                MaterialCode = materialCode,
+                MaterialRevision = materialRevision,
+                BoxCode = boxCode,
+                InnerPackCode = innerPackCode,
+                LocationCode = locationCode,
+                WeekCode = weekCode,
+                StockStatus = stockStatus,
+                IsHold = parsedIsHold,
+                Page = parsedPage,
+                PageSize = parsedPageSize
+            };
+            error = null;
+            return true;
+        }
+
+        private static bool TryBoolean(string value, out bool? result)
+        {
+            result = null;
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            bool parsed;
+            if (!bool.TryParse(value, out parsed)) return false;
+            result = parsed;
+            return true;
+        }
+
+        private static bool TryInteger(string value, out int result)
+        {
+            result = 0;
+            return string.IsNullOrWhiteSpace(value) || int.TryParse(value, out result);
+        }
+    }
+}

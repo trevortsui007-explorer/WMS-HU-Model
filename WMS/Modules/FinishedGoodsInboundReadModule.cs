@@ -1,0 +1,91 @@
+using System;
+using Nancy;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.Inbound;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+
+namespace WMS.Modules
+{
+    public class FinishedGoodsInboundReadModule : NancyModule
+    {
+        private readonly IFinishedGoodsInboundReadService _service;
+
+        public FinishedGoodsInboundReadModule()
+            : this(new FinishedGoodsInboundReadService(new FinishedGoodsInboundReadRepository(), new HuLocationRepository()))
+        {
+        }
+
+        internal FinishedGoodsInboundReadModule(IFinishedGoodsInboundReadService service)
+            : base("/api/wms/inbound/finished-goods/receipts")
+        {
+            _service = service;
+
+            Get("/", _ =>
+            {
+                FinishedGoodsInboundRecordQuery query = ReadQuery();
+                OperationResult<FinishedGoodsInboundRecordResultDto> result = _service.Query(query);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
+            });
+
+            Get("/{receiptId}", args =>
+            {
+                object rawReceiptId = args.receiptId;
+                string receiptIdText = Convert.ToString(rawReceiptId);
+                long receiptId;
+                if (!long.TryParse(receiptIdText, out receiptId))
+                    return Response.AsJson(ApiResult.Fail("ReceiptId无效。", 400), HttpStatusCode.BadRequest);
+                OperationResult<FinishedGoodsInboundDetailDto> result = _service.GetDetail(receiptId);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+        }
+
+        private FinishedGoodsInboundRecordQuery ReadQuery()
+        {
+            object rawDateFrom = Request.Query.dateFrom;
+            string dateFrom = Convert.ToString(rawDateFrom);
+            object rawDateTo = Request.Query.dateTo;
+            string dateTo = Convert.ToString(rawDateTo);
+            object rawPlantCode = Request.Query.plantCode;
+            string plantCode = Convert.ToString(rawPlantCode);
+            object rawSourceSystem = Request.Query.sourceSystem;
+            string sourceSystem = Convert.ToString(rawSourceSystem);
+            object rawSourceType = Request.Query.sourceType;
+            string sourceType = Convert.ToString(rawSourceType);
+            object rawSourceEntityId = Request.Query.sourceEntityId;
+            string sourceEntityId = Convert.ToString(rawSourceEntityId);
+            object rawPalletCode = Request.Query.palletCode;
+            string palletCode = Convert.ToString(rawPalletCode);
+            object rawBoxCode = Request.Query.boxCode;
+            string boxCode = Convert.ToString(rawBoxCode);
+            object rawMaterialCode = Request.Query.materialCode;
+            string materialCode = Convert.ToString(rawMaterialCode);
+            object rawRequestId = Request.Query.requestId;
+            string requestId = Convert.ToString(rawRequestId);
+            object rawExceptionCategory = Request.Query.exceptionCategory;
+            string exceptionCategory = Convert.ToString(rawExceptionCategory);
+            object rawExceptionOnly = Request.Query.exceptionOnly;
+            string exceptionOnlyText = Convert.ToString(rawExceptionOnly);
+            object rawPage = Request.Query.page;
+            string pageText = Convert.ToString(rawPage);
+            object rawPageSize = Request.Query.pageSize;
+            string pageSizeText = Convert.ToString(rawPageSize);
+            int page;
+            int pageSize;
+            bool exceptionOnly;
+            int.TryParse(pageText, out page);
+            int.TryParse(pageSizeText, out pageSize);
+            bool.TryParse(exceptionOnlyText, out exceptionOnly);
+            return new FinishedGoodsInboundRecordQuery
+            {
+                DateFrom = dateFrom, DateTo = dateTo, PlantCode = plantCode, SourceSystem = sourceSystem, SourceType = sourceType,
+                SourceEntityId = sourceEntityId, PalletCode = palletCode, BoxCode = boxCode, MaterialCode = materialCode,
+                RequestId = requestId, ExceptionCategory = exceptionCategory, ExceptionOnly = exceptionOnly, Page = page, PageSize = pageSize
+            };
+        }
+    }
+}

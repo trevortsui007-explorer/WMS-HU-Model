@@ -8,6 +8,8 @@ namespace WMS_HU_Model.Repositories
         HuLocationDto GetLocation(
             long huId);
 
+        List<HuLocationDto> GetLocations(IList<long> huIds);
+
         HuMoveLogDto GetMoveByRequestId(
             string requestId);
 

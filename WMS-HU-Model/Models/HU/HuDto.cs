@@ -14,5 +14,6 @@
         public string SourceEntityId { get; set; }
         public string SourceBusinessNo { get; set; }
         public string Remark { get; set; }
+        public System.DateTime CreateTime { get; set; }
     }
 }

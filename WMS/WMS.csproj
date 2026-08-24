@@ -89,6 +89,7 @@
     <Compile Include="Modules\HuModule.cs" />
     <Compile Include="Modules\HuDetailModule.cs" />
     <Compile Include="Modules\LocationModule.cs" />
+    <Compile Include="Modules\MasterDataMaintenanceModule.cs" />
     <Compile Include="Modules\OutboundModule.cs" />
     <Compile Include="Modules\SapOutboundIntegrationModule.cs" />
     <Compile Include="Modules\WeekCodeAuditModule.cs" />
@@ -151,5 +152,6 @@
   </Target>
   -->
 </Project>
+
 
 

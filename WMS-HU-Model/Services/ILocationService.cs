@@ -10,6 +10,8 @@ namespace WMS_HU_Model.Services
             string warehouseCode,
             string zoneCode);
 
+        List<LocationDto> GetMaintenanceList(LocationMaintenanceQuery query);
+
         OperationResult<LocationDto> Get(
             string warehouseCode,
             string locationCode);
@@ -21,5 +23,7 @@ namespace WMS_HU_Model.Services
             string warehouseCode,
             string locationCode,
             UpdateLocationRequest request);
+
+        OperationResult<LocationDto> SetActive(string warehouseCode, string locationCode, bool isActive, MasterDataStatusRequest request);
     }
 }

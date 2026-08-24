@@ -29,5 +29,7 @@
         public int RouteSequence { get; set; }
         public string MasterStatus { get; set; }
         public string Remark { get; set; }
+        public int CurrentHuCount { get; set; }
+        public bool IsSystemProtected { get; set; }
     }
 }

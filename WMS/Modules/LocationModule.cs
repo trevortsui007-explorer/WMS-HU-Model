@@ -1,6 +1,7 @@
 ﻿using Nancy;
 using Nancy.ModelBinding;
 using System;
+using System.Collections.Generic;
 using WMS_HU_Model.Models.Common;
 using WMS_HU_Model.Models.MasterData;
 using WMS_HU_Model.Repositories;
@@ -22,9 +23,10 @@ namespace WMS.Modules
             // 查询货位列表
             Get("/", _ =>
             {
-                string warehouseCode = (string)Request.Query["warehouseCode"];
-
-                string zoneCode = (string)Request.Query["zoneCode"];
+                object rawWarehouseCode = Request.Query.warehouseCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                object rawZoneCode = Request.Query.zoneCode;
+                string zoneCode = Convert.ToString(rawZoneCode);
 
                 var list =
                     _service.GetList(
@@ -33,6 +35,24 @@ namespace WMS.Modules
 
                 return Response.AsJson(
                     ApiResult.Success(list));
+            });
+
+            Get("/maintenance", _ =>
+            {
+                object rawWarehouseCode = Request.Query.warehouseCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                object rawLocationCode = Request.Query.locationCode;
+                string locationCode = Convert.ToString(rawLocationCode);
+                object rawLocationTypeCode = Request.Query.locationTypeCode;
+                string locationTypeCode = Convert.ToString(rawLocationTypeCode);
+                object rawMasterStatus = Request.Query.masterStatus;
+                string masterStatus = Convert.ToString(rawMasterStatus);
+                List<LocationDto> list = _service.GetMaintenanceList(new LocationMaintenanceQuery
+                {
+                    WarehouseCode = warehouseCode, LocationCode = locationCode,
+                    LocationTypeCode = locationTypeCode, MasterStatus = masterStatus
+                });
+                return Response.AsJson(ApiResult.Success(list));
             });
 
             // 查询单个货位
@@ -121,6 +141,44 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
+            });
+
+            Post("/{warehouseCode}/{locationCode}/update", args =>
+            {
+                object rawWarehouseCode = args.warehouseCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                object rawLocationCode = args.locationCode;
+                string locationCode = Convert.ToString(rawLocationCode);
+                UpdateLocationRequest request = this.Bind<UpdateLocationRequest>();
+                OperationResult<LocationDto> result = _service.Update(warehouseCode, locationCode, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
+            });
+
+            Post("/{warehouseCode}/{locationCode}/enable", args =>
+            {
+                object rawWarehouseCode = args.warehouseCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                object rawLocationCode = args.locationCode;
+                string locationCode = Convert.ToString(rawLocationCode);
+                MasterDataStatusRequest request = this.Bind<MasterDataStatusRequest>();
+                OperationResult<LocationDto> result = _service.SetActive(warehouseCode, locationCode, true, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
+            });
+            Post("/{warehouseCode}/{locationCode}/disable", args =>
+            {
+                object rawWarehouseCode = args.warehouseCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                object rawLocationCode = args.locationCode;
+                string locationCode = Convert.ToString(rawLocationCode);
+                MasterDataStatusRequest request = this.Bind<MasterDataStatusRequest>();
+                OperationResult<LocationDto> result = _service.SetActive(warehouseCode, locationCode, false, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
             });
         }
     }

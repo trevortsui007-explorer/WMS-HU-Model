@@ -100,6 +100,7 @@
     <Compile Include="Models\HU\MovePersistenceResult.cs" />
     <Compile Include="Models\MasterData\CreateLocationRequest.cs" />
     <Compile Include="Models\MasterData\LocationDto.cs" />
+    <Compile Include="Models\MasterData\MasterDataMaintenanceModels.cs" />
     <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
     <Compile Include="Models\WeekCode\WeekCodeSnapshot.cs" />
     <Compile Include="Models\WeekCode\WeekCodeAuditModels.cs" />
@@ -159,6 +160,7 @@
     <Compile Include="Repositories\IHuIdentifierRepository.cs" />
     <Compile Include="Repositories\IHuHoldRepository.cs" />
     <Compile Include="Repositories\ILocationRepository.cs" />
+    <Compile Include="Repositories\IMasterDataMaintenanceRepository.cs" />
     <Compile Include="Repositories\Impl\HuLocationRepository.cs" />
     <Compile Include="Repositories\Impl\FinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\Impl\FinishedGoodsInboundReadRepository.cs" />
@@ -172,6 +174,7 @@
     <Compile Include="Repositories\Impl\HuIdentifierRepository.cs" />
     <Compile Include="Repositories\Impl\HuHoldRepository.cs" />
     <Compile Include="Repositories\Impl\LocationRepository.cs" />
+    <Compile Include="Repositories\Impl\MasterDataMaintenanceRepository.cs" />
     <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
     <Compile Include="Repositories\IOutboundRepository.cs" />
@@ -190,6 +193,7 @@
     <Compile Include="Services\IHuIdentifierService.cs" />
     <Compile Include="Services\IHuHoldService.cs" />
     <Compile Include="Services\ILocationService.cs" />
+    <Compile Include="Services\IMasterDataMaintenanceService.cs" />
     <Compile Include="Services\Impl\HuLocationService.cs" />
     <Compile Include="Services\Impl\FinishedGoodsInboundService.cs" />
     <Compile Include="Services\FinishedGoodsInboundReadService.cs" />
@@ -203,6 +207,7 @@
     <Compile Include="Services\Impl\HuHoldService.cs" />
     <Compile Include="Services\Impl\HuIdentifierService.cs" />
     <Compile Include="Services\Impl\LocationService.cs" />
+    <Compile Include="Services\MasterDataMaintenanceService.cs" />
     <Compile Include="Services\Impl\OutboundService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />
     <Compile Include="Services\Impl\RepackService.cs" />
@@ -226,5 +231,6 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+
 
 

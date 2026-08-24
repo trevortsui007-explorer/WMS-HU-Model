@@ -9,11 +9,15 @@ namespace WMS_HU_Model.Repositories
             string warehouseCode,
             string zoneCode);
 
+        List<LocationDto> GetMaintenanceList(LocationMaintenanceQuery query);
+
         LocationDto GetByCode(
             string warehouseCode,
             string locationCode);
 
         long? GetWarehouseId(string warehouseCode);
+
+        long? GetWarehouseIdAny(string warehouseCode);
 
         long? GetZoneId(
             long warehouseId,
@@ -38,5 +42,9 @@ namespace WMS_HU_Model.Repositories
             long zoneId,
             long? parentLocationId,
             UpdateLocationRequest request);
+
+        int CountCurrentHus(long locationId);
+
+        bool SetMasterStatus(long locationId, string masterStatus, string operatorName);
     }
 }

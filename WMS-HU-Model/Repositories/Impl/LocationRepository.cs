@@ -9,6 +9,24 @@ namespace WMS_HU_Model.Repositories
 {
     public class LocationRepository : ILocationRepository
     {
+        public const string MaintenanceListSql = @"
+SELECT l.Id, w.WarehouseCode, w.WarehouseName, z.ZoneCode, z.ZoneName,
+    l.LocationCode, l.LocationName, p.LocationCode AS ParentLocationCode,
+    l.LocationLevel, l.LocationTypeCode, l.ManageMode, l.IsVirtual, l.IsScannable,
+    l.ScanCode, l.CapacityMode, l.CapacityQty, l.MaxWeightKg, l.PlantPolicy,
+    l.DedicatedPlantCode, l.AllowMixedMaterial, l.AllowMixedBatch, l.AllowMixedOrder,
+    l.PutawayPriority, l.PickingPriority, l.RouteSequence, l.MasterStatus, l.Remark,
+    (SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation currentLocation WHERE currentLocation.LocationId=l.Id) AS CurrentHuCount
+FROM dbo.WMS_Location l
+INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId
+INNER JOIN dbo.WMS_Zone z ON z.Id=l.ZoneId
+LEFT JOIN dbo.WMS_Location p ON p.Id=l.ParentLocationId
+WHERE (@WarehouseCode IS NULL OR w.WarehouseCode=@WarehouseCode)
+  AND (@LocationCode IS NULL OR l.LocationCode LIKE '%' + @LocationCode + '%')
+  AND (@LocationTypeCode IS NULL OR l.LocationTypeCode=@LocationTypeCode)
+  AND (@MasterStatus IS NULL OR l.MasterStatus=@MasterStatus)
+ORDER BY w.WarehouseCode,z.SortNo,l.RouteSequence,l.LocationCode;";
+
         public List<LocationDto> GetList(
             string warehouseCode,
             string zoneCode)
@@ -85,6 +103,17 @@ ORDER BY
                 });
         }
 
+        public List<LocationDto> GetMaintenanceList(LocationMaintenanceQuery query)
+        {
+            return DbExecutor.Query<LocationDto>(MaintenanceListSql, new
+            {
+                WarehouseCode = string.IsNullOrWhiteSpace(query.WarehouseCode) ? null : query.WarehouseCode,
+                LocationCode = string.IsNullOrWhiteSpace(query.LocationCode) ? null : query.LocationCode,
+                LocationTypeCode = string.IsNullOrWhiteSpace(query.LocationTypeCode) ? null : query.LocationTypeCode,
+                MasterStatus = string.IsNullOrWhiteSpace(query.MasterStatus) ? null : query.MasterStatus
+            });
+        }
+
         public LocationDto GetByCode(
             string warehouseCode,
             string locationCode)
@@ -159,6 +188,12 @@ AND IsActive = 1;
             return DbExecutor.ExecuteScalar<long?>(
                 sql,
                 new { WarehouseCode = warehouseCode });
+        }
+
+        public long? GetWarehouseIdAny(string warehouseCode)
+        {
+            const string sql = "SELECT Id FROM dbo.WMS_Warehouse WHERE WarehouseCode=@WarehouseCode;";
+            return DbExecutor.ExecuteScalar<long?>(sql, new { WarehouseCode = warehouseCode });
         }
 
         public long? GetZoneId(
@@ -331,6 +366,23 @@ WHERE Id = @LocationId;
 
             parameters.Add("@LocationId", locationId, DbType.Int64);
 
+            return DbExecutor.Execute(sql, parameters) > 0;
+        }
+
+        public int CountCurrentHus(long locationId)
+        {
+            const string sql = "SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation WHERE LocationId=@LocationId;";
+            return DbExecutor.ExecuteScalar<int>(sql, new { LocationId = locationId });
+        }
+
+        public bool SetMasterStatus(long locationId, string masterStatus, string operatorName)
+        {
+            const string sql = @"UPDATE dbo.WMS_Location SET MasterStatus=@MasterStatus,
+ModifyUser=@Operator, ModifyTime=SYSDATETIME() WHERE Id=@LocationId;";
+            DynamicParameters parameters = new DynamicParameters();
+            parameters.Add("@MasterStatus", masterStatus, DbType.AnsiString, size: 20);
+            parameters.Add("@Operator", DbParameterValue.StringOrNull(operatorName), DbType.AnsiString, size: 50);
+            parameters.Add("@LocationId", locationId, DbType.Int64);
             return DbExecutor.Execute(sql, parameters) > 0;
         }
 

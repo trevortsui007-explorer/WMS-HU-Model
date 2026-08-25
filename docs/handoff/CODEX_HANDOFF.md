@@ -1,5 +1,18 @@
 # WMS 成品仓正式出库后端交接
 
+## 2026-08-25 PDA Inventory Lookup Backend Alignment
+
+- 实现范围：新增只读 `GET /api/wms/inventory/lookup?warehouseCode={warehouseCode}&code={code}`，支持 Location、OUTER_BOX、INNER_PACK、HUCode 与现有 active HU Identifier；业务失败显式返回 HTTP/API 400。
+- EffectiveLocation：新增统一 resolver，供 PDA Location 清单与 HU location 查询复用 SELF → 最近 active parent 规则；现有 HU location 继续同时返回 Direct/Effective 字段，并向后兼容增加 `LocationSourceHuType/LocationSource`。LocationSource 支持 SELF、PARENT_BOX、PARENT_PALLET。
+- LOCATION：按有效库位查 ACTIVE OUTER_BOX，覆盖箱无直接库位、父 PALLET 提供目标货架的场景；active Relation/INNER_PACK/Item，Hold 可见，SHIPPED 排除，每箱一次，Qty/PackCount/YYWW WeekDisplay 聚合，BoxCode 升序。
+- HU：OUTER_BOX 返回当前 pack/item 明细；INNER_PACK 一致维度 Item 汇总 Qty，维度冲突返回稳定 `INNER_PACK_ITEM_CONFLICT:` Message；active 父箱与拆包状态均支持。非 ACTIVE HU 可查，SHIPPED 不作为物理库位。
+- 数据库/API：Repository 使用 ADO.NET typed SqlParameter；只读 WMS 表，不访问 MES，不写 OperationLog；无 schema、migration、存储过程或索引变更。未执行 migrations 010–014，未执行 WMS_DEV DML/DDL。
+- Files：新增 Inventory lookup DTO、Repository/Service 接口与实现、EffectiveLocationResolver、Nancy Module；更新 HU location DTO/Service、两个项目编译清单、控制台测试、API 文档与本 handoff。
+- Verification：WMS-HU-Model、WMS Host、Tests Debug build 均 PASS；控制台 69/69 tests PASS；新增文件静态扫描无 `dynamic`、`AddWithValue`、DML 或 OperationLog。HTTP `localhost:52602` Runtime GET：health 200；H201 LOCATION 200；真实外箱 `B-F-260817114028RRSF-02` 200；由其返回的真实内包 `I-F-260817114028RRSF-02` 200；`INBOUND-PENDING` LOCATION 200 且包含 `B1951228B`，该箱单查返回 `LocationSource=PARENT_PALLET`；现有 `/hus/B1951228B/location` 继续返回 direct null + effective INBOUND-PENDING，并含新增来源字段；SHIPPED Location 返回空 Items；PALLET 与跨仓库分别返回预期 HTTP/API 400。文档示例 `712947`、`PK2608250001` 在当前数据中为 400 not found。HTTPS 44375 因本机会话 SSPI/Schannel 凭据失败未测；active Identifier 样本直连 SELECT 同样因 SSPI context 失败，故 Identifier Runtime 尚未验证。
+- Deviations/risks：文档建议复用现有 Dapper，但按项目强制规则，新 Repository 使用 Plain ADO.NET typed parameters；全局 ApiResult 未增加 ErrorCode，防御性冲突码保留在 Message 前缀。现有脏工作区修改均保留。
+- 推荐 Postman 顺序：Location `H201` → OUTER_BOX `712947` → INNER_PACK `PK...` → active Identifier → PALLET unsupported → foreign warehouse → not found → 受控冲突数据（如有）。全部为 GET。
+- Git commits：`1d4a382 feat: add PDA inventory lookup`。
+
 ## 2026-08-24 Page 07 Audit Log Center V1
 
 - 状态：`PAGE_06_MONITORING_COMPLETE=True`、`PAGE_07_AUDIT_CENTER_IN_PROGRESS=True`；实现、构建、自动化与真实 GET-only Runtime 核验完成，等待 Human Visual Review。

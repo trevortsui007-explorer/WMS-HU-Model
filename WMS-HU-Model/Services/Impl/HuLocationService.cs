@@ -15,16 +15,29 @@ namespace WMS_HU_Model.Services
 
         private readonly IHuLocationRepository _huLocationRepository;
 
+        private readonly IEffectiveLocationResolver _effectiveLocationResolver;
+
         public HuLocationService(
             IHuRepository huRepository,
             ILocationRepository locationRepository,
             IHuLocationRepository huLocationRepository)
+            : this(huRepository, locationRepository, huLocationRepository, new EffectiveLocationResolver())
+        {
+        }
+
+        public HuLocationService(
+            IHuRepository huRepository,
+            ILocationRepository locationRepository,
+            IHuLocationRepository huLocationRepository,
+            IEffectiveLocationResolver effectiveLocationResolver)
         {
             _huRepository = huRepository;
 
             _locationRepository = locationRepository;
 
             _huLocationRepository = huLocationRepository;
+
+            _effectiveLocationResolver = effectiveLocationResolver;
         }
 
         /// <summary>
@@ -64,8 +77,8 @@ namespace WMS_HU_Model.Services
             }
 
             HuLocationDto location =
-                _huLocationRepository
-                    .GetLocation(
+                _effectiveLocationResolver
+                    .Resolve(
                         hu.Id);
 
             if (location == null)

@@ -48,13 +48,14 @@
 | 40 | SAP Integration | 接收 SAP 出库单 | POST | `/api/wms/integration/sap/outbound-orders` | W | ACTIVE |
 | 41 | 周码治理核心接口 | 周码审计 | GET | `/api/wms/weekcode/audit` | R | ACTIVE |
 | 42 | 周码治理核心接口 | 周码重算 | POST | `/api/wms/weekcode/recalculate` | W | ACTIVE |
+| 43 | PDA 库存查询 | 货架 / 外箱 / 内包统一查询 | GET | `/api/wms/inventory/lookup` | R | ACTIVE |
 
 ## Project API Conventions
 
 - .NET Framework 4.7.2、Nancy 2.0、SQL Server；仓储实现同时使用 Dapper 与既有 `DbExecutor`。
 - Nancy Module 只做 HTTP 适配；Service 负责验证/业务编排；Repository 负责 SQL、连接和事务。MesDb 查询原则上只读，WmsDb 持久化 WMS 状态。
 - Service 层以下不得使用 `dynamic`；Nancy 的动态路由/查询参数按 `object` 后再 `Convert.ToString` 转换。
-- 除三个特别标出 HTTP 400 的 Module 外，很多旧 Module 对业务失败只返回 JSON `ApiResult.Code=400`，并未显式设置 HTTP 状态；调用方应同时检查 HTTP 状态和 `Code`。`pick-next`、`pick-batch` 固定返回 `Code=410`。
+- 除特别标出 HTTP 400 的 Module 外，很多旧 Module 对业务失败只返回 JSON `ApiResult.Code=400`，并未显式设置 HTTP 状态；调用方应同时检查 HTTP 状态和 `Code`。`pick-next`、`pick-batch` 固定返回 `Code=410`。
 
 ## 核心调用链
 
@@ -79,7 +80,7 @@ flowchart LR
 { "Code": 200, "Message": "success", "Data": {} }
 ```
 
-业务失败统一形状为 `{ "Code": 400, "Message": "真实 Service 错误文本", "Data": null }`。显式使用 HTTP 400 的接口为直接入库、MES 入库、周码审计和周码重算；直接入库/MES 入库还会在 JSON 绑定异常时返回 `请求JSON格式或字段类型无效。`，未处理异常返回 500。数据库健康检查的失败 JSON `Code=500`。
+业务失败统一形状为 `{ "Code": 400, "Message": "真实 Service 错误文本", "Data": null }`。显式使用 HTTP 400 的接口包括直接入库、MES 入库、PDA 库存查询、周码审计和周码重算；直接入库/MES 入库还会在 JSON 绑定异常时返回 `请求JSON格式或字段类型无效。`，未处理异常返回 500。数据库健康检查的失败 JSON `Code=500`。
 
 下列各接口的 `对应 Service`、请求字段、读写、事务、幂等性与 OperationLog 均以实现为准；“无显式业务事务”不代表底层读操作不存在数据库事务。
 
@@ -111,13 +112,26 @@ flowchart LR
 | `GET /api/wms/hus/{huCode}/tree` (`HuService.GetTree`) | path `huCode` | 返回 HU 递归树。 | R：`WMS_HU`,`WMS_HU_Relation`,`WMS_HU_Item`；无；天然幂等；否。 |
 | `POST /api/wms/hus/{huCode}/hold` (`HuHoldService.Hold`) | path `huCode`; Body `HoldHuRequest`: `HoldType`, `HoldReasonCode`, `HoldReason?`, `Operator`, `RequestId?` | 对 HU 创建 active hold，返回 `HuHoldResultDto`。 | W：`WMS_HU`,`WMS_HU_HoldLog`；事务；RequestId 幂等；OperationLog `HU_HOLD`。 |
 | `POST /api/wms/hus/{huCode}/release` (`HuHoldService.Release`) | path `huCode`; Body `ReleaseHuRequest`: `ReleaseReason?`, `Operator`, `RequestId?` | 释放 active hold，返回 `HuHoldResultDto`。 | W：`WMS_HU`,`WMS_HU_HoldLog`；事务；RequestId 幂等；OperationLog `HU_RELEASE`。 |
-| `GET /api/wms/hus/{huCode}/location` (`HuLocationService.GetLocation`) | path `huCode` | 查询当前库位，返回 `HuLocationDto`。 | R：`WMS_HU_CurrentLocation`,`WMS_Location`；无；天然幂等；否。 |
+| `GET /api/wms/hus/{huCode}/location` (`HuLocationService.GetLocation`) | path `huCode` | 同时返回 DirectLocation 与最近 active parent fallback 的 EffectiveLocation；`LocationSourceHuCode/LocationSourceHuType/LocationSource/IsInherited` 表示实际来源，不会以有效库位覆盖直接库位字段。 | R：`WMS_HU_CurrentLocation`,`WMS_HU_Relation`,`WMS_HU`,`WMS_Location`；无；天然幂等；否。 |
 | `POST /api/wms/hus/{huCode}/move` (`HuLocationService.Move`) | path `huCode`; Body `HuMoveRequest`: `ToLocationCode`, `ExpectedFromLocationCode?`, `MoveType`, `ScannedLocationCode?`, `BusinessNo?`, `TaskNo?`, `RequestId?`, `ReasonCode?`, `Operator`, `Remark?` | 移动 HU，返回 `OperationNo`, `MoveLogId`, From/To Location, `IsDuplicate` 等。 | W：`WMS_HU_CurrentLocation`,`WMS_HU_MoveLog`; 事务；RequestId 幂等；OperationLog（移动）。 |
 | `GET /api/wms/hus/{huCode}/moves` (`HuLocationService.GetMoveLogs`) | path `huCode`; query `top:int`，默认 50，非整数仍使用 50 | 返回最近移动日志数组。 | R：`WMS_HU_MoveLog`；无；天然幂等；否。 |
 | `GET /api/wms/locations/` (`LocationService.GetList`) | query `warehouseCode:string?`, `zoneCode:string?` | 查询库位列表。 | R：`WMS_Location`；无；天然幂等；否。 |
 | `GET /api/wms/locations/{warehouseCode}/{locationCode}` (`LocationService.Get`) | 两个 path 字符串 | 查询单库位。 | R：`WMS_Location`；无；天然幂等；否。 |
 | `POST /api/wms/locations/` (`LocationService.Create`) | Body `CreateLocationRequest`: `WarehouseCode`, `LocationCode`, `LocationName?`, `LocationType`, `ZoneCode?`, `IsVirtual:bool`, `Operator` | 创建库位，返回 `LocationDto`。 | W：`WMS_Location`；事务；非幂等（DTO 无 RequestId）；否。 |
 | `PUT /api/wms/locations/{warehouseCode}/{locationCode}` (`LocationService.Update`) | path；Body `UpdateLocationRequest`: `LocationName?`, `LocationType?`, `ZoneCode?`, `MasterStatus?`, `IsVirtual:bool?`, `Operator` | 更新库位，返回 `LocationDto`。 | W：`WMS_Location`；事务；非幂等；否。 |
+
+## PDA Inventory Lookup
+
+### 货架 / 外箱 / 内包统一查询 — GET `/api/wms/inventory/lookup`
+
+- **对应 Module / Service**：`InventoryQueryModule` / `InventoryQueryService`。
+- **Request**：query `warehouseCode:string`（必填，最大 30）与 `code:string`（必填，最大 200）；两者 Trim 后查询。解析顺序为请求仓库内 Location → HUCode → active HU Identifier。
+- **LOCATION Data**：`QueryCode`,`ResultType=LOCATION`,`WarehouseCode`,`ZoneCode`,`LocationCode`,`Items[]`；每个 Item 为一个 ACTIVE OUTER_BOX，含 `BoxCode`,`MaterialCode`,`MaterialRevision`,`WeekDisplay`,`Qty`,`PackCount`,`Status`,`IsHold`。Held 箱保留，SHIPPED 不作为货架库存，按 BoxCode 升序。
+- **OUTER_BOX Data**：返回 canonical `BoxCode`、`HuStatus`,`IsHold`、物料/版本、有效库位、`LocationSource` 和按 Pack/Batch/Week 聚合的 `Items[]`。
+- **INNER_PACK Data**：返回 `PackCode`,`ParentBoxCode`,`HuStatus`,`IsHold`、物料/版本/批次/周码、`TotalQty`，`Items=[]`。多条 active Item 仅在物料、版本、批次、周码一致时汇总；冲突返回 `INNER_PACK_ITEM_CONFLICT:` 开头的 HTTP/API 400 Message。
+- **EffectiveLocation**：Location 清单与 HU 查询共用 resolver；顺序为 SELF → 最近 active parent。`LocationSource` 为 `SELF`,`PARENT_BOX`,`PARENT_PALLET` 或空。外箱无直接库位但父托盘位于目标货架时仍属于该货架库存。
+- **仓库边界**：HU 有有效库位但不属于请求仓库时返回业务失败；无有效库位仍返回 HU 且库位字段为空。非 ACTIVE HU 可查询事实，但 SHIPPED Location 不作为物理库位返回。
+- **数据库影响**：READ ONLY：`WMS_Warehouse`,`WMS_Zone`,`WMS_Location`,`WMS_HU`,`WMS_HU_Identifier`,`WMS_HU_Relation`,`WMS_HU_Item`,`WMS_HU_CurrentLocation`。无事务、无 OperationLog、天然幂等，不访问 MES。
 
 ## Finished Goods Inbound
 
@@ -250,6 +264,10 @@ Content-Type: application/json
 
 ```http
 GET {{localUrl}}/api/wms/weekcode/audit?plantCode=P1&page=1&pageSize=50
+```
+
+```http
+GET {{localUrl}}/api/wms/inventory/lookup?warehouseCode=FG01&code=H201
 ```
 
 ```http

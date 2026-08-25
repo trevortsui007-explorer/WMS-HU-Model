@@ -78,6 +78,7 @@
     <Compile Include="Models\Inbound\FinishedGoodsInboundModels.cs" />
     <Compile Include="Models\Inbound\FinishedGoodsInboundReadModels.cs" />
     <Compile Include="Models\Inventory\FinishedGoodsInventoryModels.cs" />
+    <Compile Include="Models\Inventory\InventoryLookupModels.cs" />
     <Compile Include="Models\Inbound\MesFinishedGoodsInboundModels.cs" />
     <Compile Include="Models\Inbound\MesFinishedGoodsInboundWeekCodePreviewModels.cs" />
     <Compile Include="Models\Inbound\MesFinishedGoodsInboundTriggerModels.cs" />
@@ -149,6 +150,8 @@
     <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
     <Compile Include="Models\Rules\OutboundAllocationPlanner.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
+    <Compile Include="Repositories\IEffectiveLocationResolver.cs" />
+    <Compile Include="Repositories\IInventoryQueryRepository.cs" />
     <Compile Include="Repositories\IFinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\IFinishedGoodsInboundReadRepository.cs" />
     <Compile Include="Repositories\IMesWeekCodeRuleRepository.cs" />
@@ -166,6 +169,8 @@
     <Compile Include="Repositories\IAuditRepository.cs" />
     <Compile Include="Repositories\IMonitoringRepository.cs" />
     <Compile Include="Repositories\Impl\HuLocationRepository.cs" />
+    <Compile Include="Repositories\Impl\EffectiveLocationResolver.cs" />
+    <Compile Include="Repositories\Impl\InventoryQueryRepository.cs" />
     <Compile Include="Repositories\Impl\FinishedGoodsInboundRepository.cs" />
     <Compile Include="Repositories\Impl\FinishedGoodsInboundReadRepository.cs" />
     <Compile Include="Repositories\Impl\MesFinishedGoodsInboundRepository.cs" />
@@ -192,6 +197,7 @@
     <Compile Include="Repositories\Impl\SapOutboundOrderReceiveRepository.cs" />
     <Compile Include="Repositories\IRepackRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
+    <Compile Include="Services\IInventoryQueryService.cs" />
     <Compile Include="Services\IFinishedGoodsInboundService.cs" />
     <Compile Include="Services\IFinishedGoodsInboundReadService.cs" />
     <Compile Include="Services\IHuService.cs" />
@@ -203,6 +209,7 @@
     <Compile Include="Services\IAuditService.cs" />
     <Compile Include="Services\IMonitoringService.cs" />
     <Compile Include="Services\Impl\HuLocationService.cs" />
+    <Compile Include="Services\InventoryQueryService.cs" />
     <Compile Include="Services\Impl\FinishedGoodsInboundService.cs" />
     <Compile Include="Services\FinishedGoodsInboundReadService.cs" />
     <Compile Include="Services\MesFinishedGoodsInboundSnapshotBuilder.cs" />

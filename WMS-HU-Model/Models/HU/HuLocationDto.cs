@@ -15,6 +15,7 @@ namespace WMS_HU_Model.Models.HU
 
         public long? DirectLocationId { get; set; }
         public string DirectLocationCode { get; set; }
+        public string DirectLocationName { get; set; }
         public string DirectWarehouseCode { get; set; }
         public string DirectZoneCode { get; set; }
         public string DirectLocationTypeCode { get; set; }
@@ -26,6 +27,7 @@ namespace WMS_HU_Model.Models.HU
 
         public long? EffectiveLocationId { get; set; }
         public string EffectiveLocationCode { get; set; }
+        public string EffectiveLocationName { get; set; }
         public string EffectiveWarehouseCode { get; set; }
         public string EffectiveZoneCode { get; set; }
         public string EffectiveLocationTypeCode { get; set; }
@@ -36,6 +38,8 @@ namespace WMS_HU_Model.Models.HU
 
         public long? LocationSourceHuId { get; set; }
         public string LocationSourceHuCode { get; set; }
+        public string LocationSourceHuType { get; set; }
+        public string LocationSource { get; set; }
         public bool IsInherited { get; set; }
         public long? LastMoveLogId { get; set; }
         public string LastMoveNo { get; set; }

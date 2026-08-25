@@ -83,6 +83,7 @@
     <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Modules\FinishedGoodsInboundReadModule.cs" />
     <Compile Include="Modules\FinishedGoodsInventoryModule.cs" />
+    <Compile Include="Modules\InventoryQueryModule.cs" />
     <Compile Include="Modules\MesFinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Modules\HealthModule.cs" />
     <Compile Include="Modules\HuLocationModule.cs" />

@@ -70,6 +70,10 @@ namespace WMS_HU_Model.Tests
                 WeekCodeRecalculateReleaseRequestIdsAreScoped();
                 FinishedGoodsInventoryQueryValidatesAndPages();
                 FinishedGoodsInventorySqlPreservesCurrentInventorySemantics();
+                EffectiveLocationResolverPreservesPublicLocationSemantics();
+                InventoryLookupReturnsInheritedLocationInventory();
+                InventoryLookupAggregatesAndRejectsConflictingInnerItems();
+                InventoryLookupEnforcesResolutionAndWarehouseRules();
                 HuDetailElevatesRootAndPreservesLocationSemantics();
                 HuDetailSupportsShippedAndUnknownHu();
                 HuDetailHistoryIsBoundedAndOrdered();
@@ -1038,6 +1042,189 @@ namespace WMS_HU_Model.Tests
             {
                 return null;
             }
+        }
+
+        private static void EffectiveLocationResolverPreservesPublicLocationSemantics()
+        {
+            FakeHuRepository huRepository = HuHierarchy();
+            FakeEffectiveLocationResolver resolver = new FakeEffectiveLocationResolver();
+            resolver.Locations[3] = new HuLocationDto
+            {
+                HuId = 3,
+                HuCode = "PACK-1",
+                DirectLocationCode = null,
+                EffectiveLocationCode = "H201",
+                EffectiveWarehouseCode = "FG01",
+                LocationSourceHuCode = "PALLET-1",
+                LocationSourceHuType = "PALLET",
+                LocationSource = "PARENT_PALLET",
+                IsInherited = true
+            };
+            HuLocationService service = new HuLocationService(
+                huRepository,
+                new FakeLocationMaintenanceRepository(),
+                new FakeHuLocationRepository(),
+                resolver);
+
+            OperationResult<HuLocationDto> result = service.GetLocation(" pack-1 ");
+            Equal(true, result.IsSuccess, "HU location resolver succeeds");
+            Equal(null, result.Data.DirectLocationCode, "HU location direct field remains explicit");
+            Equal("H201", result.Data.EffectiveLocationCode, "HU location effective field remains available");
+            Equal("PALLET", result.Data.LocationSourceHuType, "HU location exposes source HU type");
+            Equal("PARENT_PALLET", result.Data.LocationSource, "HU location exposes actual source level");
+            Equal(true, EffectiveLocationResolver.ActiveParentPredicateSql.Contains("LifecycleStatus = 'ACTIVE'"), "effective resolver excludes inactive parents");
+            string inventorySql = InventoryQueryRepository.LocationInventorySql.ToUpperInvariant();
+            Equal(true, inventorySql.Contains("BOX.LIFECYCLESTATUS = 'ACTIVE'"), "PDA location inventory uses active outer boxes");
+            Equal(true, inventorySql.Contains("RELATION.ISACTIVE = 1") && inventorySql.Contains("PACK.LIFECYCLESTATUS = 'ACTIVE'") && inventorySql.Contains("ITEM.ISACTIVE = 1"), "PDA location inventory uses active relations packs and items");
+            Equal(false, inventorySql.Contains(" UPDATE ") || inventorySql.Contains(" INSERT ") || inventorySql.Contains(" DELETE ") || inventorySql.Contains(" MERGE "), "PDA location inventory SQL is read only");
+            Pass();
+        }
+
+        private static void InventoryLookupReturnsInheritedLocationInventory()
+        {
+            FakeInventoryQueryRepository repository = new FakeInventoryQueryRepository();
+            repository.Locations["FG01|H201"] = new InventoryLookupLocationRecord { Id = 8, WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "H201" };
+            repository.LocationFacts.Add(Fact(10, "BOX-2", 101, "PACK-2", "MAT-1", "01", "B-2", 2026, 35, 50m, true));
+            repository.LocationFacts.Add(Fact(9, "BOX-1", 99, "PACK-1", "MAT-1", "01", "B-1", 2026, 34, 100m, false));
+            repository.LocationFacts.Add(Fact(9, "BOX-1", 100, "PACK-3", "MAT-1", "01", "B-3", 2026, 35, 100m, false));
+            FakeEffectiveLocationResolver resolver = new FakeEffectiveLocationResolver();
+            resolver.HuIdsByLocation[8] = new List<long> { 9, 10 };
+            InventoryQueryService service = new InventoryQueryService(repository, new FakeHuIdentifierService(), resolver);
+
+            OperationResult<InventoryLookupDto> lookup = service.Lookup(" FG01 ", " H201 ");
+            Equal(true, lookup.IsSuccess, "location lookup succeeds");
+            InventoryLocationLookupDto result = (InventoryLocationLookupDto)lookup.Data;
+            Equal("LOCATION", result.ResultType, "location lookup result type");
+            Equal("BOX-1,BOX-2", string.Join(",", result.Items.Select(x => x.BoxCode)), "location boxes sorted deterministically");
+            Equal("2634/2635", result.Items[0].WeekDisplay, "location weeks aggregate as YYWW");
+            Equal(200m, result.Items[0].Qty, "location quantity sums active items");
+            Equal(2, result.Items[0].PackCount, "location pack count is distinct");
+            Equal(true, result.Items[1].IsHold, "held box remains visible");
+            Equal("OUTER_BOX", resolver.LastFindHuType, "location inventory resolves effective outer boxes");
+
+            repository.Locations["FG01|SHIPPED"] = new InventoryLookupLocationRecord { Id = 88, WarehouseCode = "FG01", ZoneCode = "SYSTEM", LocationCode = "SHIPPED" };
+            InventoryLocationLookupDto shipped = (InventoryLocationLookupDto)service.Lookup("FG01", "SHIPPED").Data;
+            Equal(0, shipped.Items.Count, "shipped location does not expose shelf inventory");
+            Pass();
+        }
+
+        private static void InventoryLookupAggregatesAndRejectsConflictingInnerItems()
+        {
+            FakeInventoryQueryRepository repository = new FakeInventoryQueryRepository();
+            repository.Hus[21] = new HuDto { Id = 21, HuCode = "PK-1", HuType = "INNER_PACK", LifecycleStatus = "ACTIVE", IsHold = false };
+            repository.InnerFacts[21] = new List<InventoryItemFact>
+            {
+                Fact(0, null, 21, "PK-1", "MAT-1", "01", "BATCH-1", 2026, 34, 40m, false),
+                Fact(0, null, 21, "PK-1", "MAT-1", "01", "BATCH-1", 2026, 34, 60m, false)
+            };
+            repository.ParentBoxes[21] = "BOX-1";
+            FakeHuIdentifierService identifiers = new FakeHuIdentifierService();
+            identifiers.Results["PK-1"] = Identity(21, "PK-1", "INNER_PACK");
+            FakeEffectiveLocationResolver resolver = new FakeEffectiveLocationResolver();
+            resolver.Locations[21] = new HuLocationDto { HuId = 21, EffectiveWarehouseCode = "FG01", EffectiveZoneCode = "STORAGE", EffectiveLocationCode = "H201", LocationSource = "PARENT_BOX" };
+            InventoryQueryService service = new InventoryQueryService(repository, identifiers, resolver);
+
+            InventoryInnerPackLookupDto result = (InventoryInnerPackLookupDto)service.Lookup("FG01", "PK-1").Data;
+            Equal(100m, result.TotalQty, "inner pack consistent items aggregate quantity");
+            Equal("2634", result.WeekCode, "inner pack week format");
+            Equal("BOX-1", result.ParentBoxCode, "inner pack active parent box");
+            Equal("PARENT_BOX", result.LocationSource, "inner pack source location retained");
+
+            repository.InnerFacts[21].Add(Fact(0, null, 21, "PK-1", "MAT-1", "01", "BATCH-1", 2026, 35, 1m, false));
+            OperationResult<InventoryLookupDto> conflict = service.Lookup("FG01", "PK-1");
+            Equal(false, conflict.IsSuccess, "inner pack conflicting dimensions fail");
+            Equal(true, conflict.Message.StartsWith("INNER_PACK_ITEM_CONFLICT:", StringComparison.Ordinal), "inner pack conflict has stable code prefix");
+            Pass();
+        }
+
+        private static void InventoryLookupEnforcesResolutionAndWarehouseRules()
+        {
+            FakeInventoryQueryRepository repository = new FakeInventoryQueryRepository();
+            repository.Hus[31] = new HuDto { Id = 31, HuCode = "BOX-31", HuType = "OUTER_BOX", LifecycleStatus = "SHIPPED", IsHold = false };
+            repository.Hus[32] = new HuDto { Id = 32, HuCode = "PALLET-32", HuType = "PALLET", LifecycleStatus = "ACTIVE" };
+            repository.ForeignLocations["OTHER"] = new InventoryLookupLocationRecord { Id = 99, WarehouseCode = "FG02", LocationCode = "OTHER" };
+            FakeHuIdentifierService identifiers = new FakeHuIdentifierService();
+            identifiers.Results["BOX-31"] = Identity(31, "BOX-31", "OUTER_BOX");
+            identifiers.Results["PALLET-32"] = Identity(32, "PALLET-32", "PALLET");
+            FakeEffectiveLocationResolver resolver = new FakeEffectiveLocationResolver();
+            resolver.Locations[31] = new HuLocationDto { HuId = 31, EffectiveWarehouseCode = "FG01", EffectiveZoneCode = "SYSTEM", EffectiveLocationCode = "SHIPPED", LocationSource = "SELF" };
+            InventoryQueryService service = new InventoryQueryService(repository, identifiers, resolver);
+
+            InventoryOuterBoxLookupDto shipped = (InventoryOuterBoxLookupDto)service.Lookup("FG01", "BOX-31").Data;
+            Equal("SHIPPED", shipped.HuStatus, "non-active HU facts remain queryable");
+            Equal(string.Empty, shipped.LocationCode, "shipped is not returned as physical location");
+            Equal(false, service.Lookup("FG01", "PALLET-32").IsSuccess, "unsupported pallet fails");
+            Equal("货架[OTHER]不属于仓库[FG01]。", service.Lookup("FG01", "OTHER").Message, "foreign location reports warehouse mismatch");
+
+            resolver.Locations[31] = new HuLocationDto { HuId = 31, EffectiveWarehouseCode = "FG02", EffectiveLocationCode = "H999" };
+            Equal(false, service.Lookup("FG01", "BOX-31").IsSuccess, "HU effective location enforces warehouse");
+            Equal(false, service.Lookup("FG01", "missing").IsSuccess, "missing lookup fails");
+            Pass();
+        }
+
+        private static InventoryItemFact Fact(long boxId, string boxCode, long packId, string packCode, string material, string revision, string batch, short year, byte week, decimal qty, bool hold)
+        {
+            return new InventoryItemFact
+            {
+                BoxHuId = boxId,
+                BoxCode = boxCode,
+                BoxStatus = "ACTIVE",
+                BoxIsHold = hold,
+                PackHuId = packId,
+                PackCode = packCode,
+                MaterialCode = material,
+                MaterialRevision = revision,
+                BatchNo = batch,
+                WeekYear = year,
+                WeekNo = week,
+                WeekSortKey = year * 100 + week,
+                Qty = qty
+            };
+        }
+
+        private static HuIdentityDto Identity(long id, string code, string type)
+        {
+            return new HuIdentityDto { HuId = id, HuCode = code, HuType = type, MatchedHuCode = true };
+        }
+
+        private class FakeInventoryQueryRepository : IInventoryQueryRepository
+        {
+            public Dictionary<string, InventoryLookupLocationRecord> Locations = new Dictionary<string, InventoryLookupLocationRecord>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, InventoryLookupLocationRecord> ForeignLocations = new Dictionary<string, InventoryLookupLocationRecord>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<long, HuDto> Hus = new Dictionary<long, HuDto>();
+            public List<InventoryItemFact> LocationFacts = new List<InventoryItemFact>();
+            public Dictionary<long, List<InventoryItemFact>> OuterFacts = new Dictionary<long, List<InventoryItemFact>>();
+            public Dictionary<long, List<InventoryItemFact>> InnerFacts = new Dictionary<long, List<InventoryItemFact>>();
+            public Dictionary<long, string> ParentBoxes = new Dictionary<long, string>();
+            public InventoryLookupLocationRecord GetLocation(string warehouseCode, string locationCode) { InventoryLookupLocationRecord value; return Locations.TryGetValue(warehouseCode + "|" + locationCode, out value) ? value : null; }
+            public InventoryLookupLocationRecord FindLocation(string locationCode) { InventoryLookupLocationRecord value; return ForeignLocations.TryGetValue(locationCode, out value) ? value : null; }
+            public HuDto GetHu(long huId) { HuDto value; return Hus.TryGetValue(huId, out value) ? value : null; }
+            public List<InventoryItemFact> GetLocationInventoryFacts(IList<long> boxHuIds) { return LocationFacts.Where(x => boxHuIds.Contains(x.BoxHuId)).ToList(); }
+            public List<InventoryItemFact> GetOuterBoxFacts(long boxHuId) { List<InventoryItemFact> value; return OuterFacts.TryGetValue(boxHuId, out value) ? value : new List<InventoryItemFact>(); }
+            public List<InventoryItemFact> GetInnerPackFacts(long packHuId) { List<InventoryItemFact> value; return InnerFacts.TryGetValue(packHuId, out value) ? value : new List<InventoryItemFact>(); }
+            public string GetActiveParentBoxCode(long packHuId) { string value; return ParentBoxes.TryGetValue(packHuId, out value) ? value : null; }
+        }
+
+        private class FakeHuIdentifierService : IHuIdentifierService
+        {
+            public Dictionary<string, HuIdentityDto> Results = new Dictionary<string, HuIdentityDto>(StringComparer.OrdinalIgnoreCase);
+            public OperationResult<HuIdentityDto> Resolve(string rawValue, string customerCode)
+            {
+                HuIdentityDto value;
+                return Results.TryGetValue(rawValue, out value)
+                    ? OperationResult<HuIdentityDto>.Success(value)
+                    : OperationResult<HuIdentityDto>.Fail("箱码未匹配到有效HU。");
+            }
+        }
+
+        private class FakeEffectiveLocationResolver : IEffectiveLocationResolver
+        {
+            public Dictionary<long, HuLocationDto> Locations = new Dictionary<long, HuLocationDto>();
+            public Dictionary<long, List<long>> HuIdsByLocation = new Dictionary<long, List<long>>();
+            public string LastFindHuType;
+            public HuLocationDto Resolve(long huId) { HuLocationDto value; return Locations.TryGetValue(huId, out value) ? value : null; }
+            public List<HuLocationDto> ResolveMany(IList<long> huIds) { return huIds.Select(Resolve).Where(x => x != null).ToList(); }
+            public List<long> FindHuIdsAtLocation(long locationId, string huType) { LastFindHuType = huType; List<long> value; return HuIdsByLocation.TryGetValue(locationId, out value) ? value : new List<long>(); }
         }
 
         private static void HuDetailElevatesRootAndPreservesLocationSemantics()

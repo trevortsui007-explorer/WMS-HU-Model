@@ -77,6 +77,15 @@ namespace WMS.Modules
                 return Response.AsJson(ApiResult.Success(result.Data, result.Message));
             });
 
+            Post("/unpack-box", _ =>
+            {
+                UnpackBoxRequest request = this.Bind<UnpackBoxRequest>();
+                OperationResult<UnpackBoxResultDto> result = _service.UnpackBox(request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
             //----------------------------------------------------
             // 内包箱装箱转移 -> 到箱子
             //----------------------------------------------------

@@ -24,5 +24,9 @@ namespace WMS_HU_Model.Repositories
 
         PackInnerPersistenceResult ExecutePackInner(
             PackInnerCommand command);
+
+        UnpackBoxResultDto GetUnpackBoxByRequestId(string requestId);
+
+        UnpackBoxPersistenceResult ExecuteUnpackBox(UnpackBoxCommand command);
     }
 }

@@ -483,5 +483,56 @@ namespace WMS_HU_Model.Services
 
             return OperationResult<PackInnerResultDto>.Success(result.Data, "内包装箱成功");
         }
+
+        public OperationResult<UnpackBoxResultDto> UnpackBox(UnpackBoxRequest request)
+        {
+            if (request == null) return OperationResult<UnpackBoxResultDto>.Fail("请求不能为空。");
+            request.BoxHuCode = Normalize(request.BoxHuCode);
+            request.WarehouseCode = Normalize(request.WarehouseCode);
+            request.ToLocationCode = Normalize(request.ToLocationCode);
+            request.ScannedLocationCode = Normalize(request.ScannedLocationCode);
+            request.RequestId = Text(request.RequestId);
+            request.Operator = Text(request.Operator);
+            request.BusinessNo = Text(request.BusinessNo);
+            request.Remark = Text(request.Remark);
+            if (request.BoxHuCode == null) return OperationResult<UnpackBoxResultDto>.Fail("BoxHuCode不能为空。");
+            if (request.WarehouseCode == null) return OperationResult<UnpackBoxResultDto>.Fail("WarehouseCode不能为空。");
+            if (request.RequestId == null) return OperationResult<UnpackBoxResultDto>.Fail("RequestId不能为空。");
+            if (request.Operator == null) return OperationResult<UnpackBoxResultDto>.Fail("Operator不能为空。");
+            if (request.BoxHuCode.Length > 100 || request.WarehouseCode.Length > 30 || (request.ToLocationCode != null && request.ToLocationCode.Length > 50) || request.RequestId.Length > 90)
+                return OperationResult<UnpackBoxResultDto>.Fail("请求字段长度超限。");
+
+            UnpackBoxResultDto duplicate = _repackRepository.GetUnpackBoxByRequestId(request.RequestId);
+            if (duplicate != null)
+            {
+                if (!string.Equals(duplicate.BoxHuCode, request.BoxHuCode, StringComparison.OrdinalIgnoreCase)
+                    || (request.ToLocationCode != null && !string.Equals(duplicate.ToLocationCode, request.ToLocationCode, StringComparison.OrdinalIgnoreCase)))
+                    return OperationResult<UnpackBoxResultDto>.Fail("RequestId已经被其他整箱拆包业务使用。");
+                duplicate.IsDuplicate = true;
+                return OperationResult<UnpackBoxResultDto>.Success(duplicate, "重复请求，返回原整箱拆包结果");
+            }
+
+            UnpackBoxCommand command = new UnpackBoxCommand
+            {
+                BoxHuCode = request.BoxHuCode, WarehouseCode = request.WarehouseCode, ToLocationCode = request.ToLocationCode,
+                ScannedLocationCode = request.ScannedLocationCode, RequestId = request.RequestId, BusinessNo = request.BusinessNo,
+                Operator = request.Operator, Remark = request.Remark, OperationNo = Guid.NewGuid().ToString("N").ToUpperInvariant()
+            };
+            UnpackBoxPersistenceResult persisted = _repackRepository.ExecuteUnpackBox(command);
+            return persisted.IsSuccess
+                ? OperationResult<UnpackBoxResultDto>.Success(persisted.Data, "整箱拆包成功")
+                : OperationResult<UnpackBoxResultDto>.Fail(persisted.Message);
+        }
+
+        private static string Normalize(string value)
+        {
+            string text = Text(value);
+            return text == null ? null : text.ToUpperInvariant();
+        }
+
+        private static string Text(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
     }
 }

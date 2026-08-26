@@ -149,6 +149,7 @@
     <Compile Include="Models\Repack\UnpackInnerPersistenceResult.cs" />
     <Compile Include="Models\Repack\UnpackInnerRequest.cs" />
     <Compile Include="Models\Repack\UnpackInnerResultDto.cs" />
+    <Compile Include="Models\Repack\UnpackBoxModels.cs" />
     <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
     <Compile Include="Models\Rules\OutboundAllocationPlanner.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
@@ -190,6 +191,7 @@
     <Compile Include="Repositories\Impl\MonitoringRepository.cs" />
     <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
+    <Compile Include="Repositories\Impl\WholeBoxUnpackRepository.cs" />
     <Compile Include="Repositories\IOutboundRepository.cs" />
     <Compile Include="Repositories\IFormalOutboundRepository.cs" />
     <Compile Include="Repositories\ISapOutboundOrderReceiveRepository.cs" />
@@ -250,6 +252,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+
 
 
 

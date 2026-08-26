@@ -740,6 +740,16 @@ WHERE HUId = @InnerHUId
             }
         }
 
+        public UnpackBoxResultDto GetUnpackBoxByRequestId(string requestId)
+        {
+            return new WholeBoxUnpackRepository().GetByRequestId(requestId);
+        }
+
+        public UnpackBoxPersistenceResult ExecuteUnpackBox(UnpackBoxCommand command)
+        {
+            return new WholeBoxUnpackRepository().Execute(command);
+        }
+
         private static void ReadDirectLocation(
     SqlConnection conn,
     SqlTransaction tran,

@@ -20,5 +20,7 @@ namespace WMS_HU_Model.Services
         OperationResult<PackInnerResultDto>
             PackInner(
                 PackInnerRequest request);
+
+        OperationResult<UnpackBoxResultDto> UnpackBox(UnpackBoxRequest request);
     }
 }

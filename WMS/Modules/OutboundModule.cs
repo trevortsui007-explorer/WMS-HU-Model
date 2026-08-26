@@ -44,6 +44,16 @@ namespace WMS.Modules
                     : Response.AsJson(ApiResult.Fail(result.Message));
             });
 
+            Get("/orders/{vbeln}/picking-state", args =>
+            {
+                object rawVbeln = args.vbeln;
+                string vbeln = Convert.ToString(rawVbeln);
+                OperationResult<OutboundPickingStateDto> result = _formalService.GetPickingState(vbeln);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
             Post("/orders/{vbeln}/preview", args =>
             {
                 object rawVbeln = args.vbeln;

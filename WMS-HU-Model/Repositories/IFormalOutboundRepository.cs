@@ -22,5 +22,6 @@ namespace WMS_HU_Model.Repositories
         OutboundActionPersistenceResult ReturnPickDetail(long pickDetailId, ReturnPickDetailRequest request);
         OutboundActionPersistenceResult ReturnToStock(string huCode, ReturnToStockRequest request);
         StartPickingPersistenceResult ReserveReplacement(string pickBatchNo, ReplacementRequest request);
+        OutboundPickingStateReadResult GetPickingState(string sapDeliveryNo);
     }
 }

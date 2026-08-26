@@ -2541,6 +2541,110 @@ ORDER BY r.PickBatchId, r.MinWeekSortKey, r.HUId;";
             return result;
         }
 
+        public OutboundPickingStateReadResult GetPickingState(string sapDeliveryNo)
+        {
+            OutboundOrderDto order = GetOrder(sapDeliveryNo);
+            if (order == null) return null;
+            OutboundPickingStateDto result = new OutboundPickingStateDto
+            {
+                SAPDeliveryNo = order.SAPDeliveryNo,
+                OrderStatus = order.OrderStatus,
+                Lines = order.Lines
+            };
+            if (order.OrderStatus == "WAIT_PICK") return OutboundPickingStateReadResult.Success(result);
+
+            using (SqlConnection connection = DbConnectionFactory.Create())
+            {
+                connection.Open();
+                const string activeAllocationSql = @"
+SELECT Id, AllocationNo, AllocationStatus
+FROM dbo.WMS_OutboundAllocation
+WHERE OutboundOrderId=@OutboundOrderId AND AllocationStatus IN ('ACTIVE','PICKING')
+ORDER BY Id;";
+                List<PickingAllocationRow> active = connection.Query<PickingAllocationRow>(activeAllocationSql, new { OutboundOrderId = order.Id }).AsList();
+                if (active.Count > 1)
+                {
+                    return OutboundPickingStateReadResult.Fail("PICKING_STATE_CONFLICT: 出库单存在多个有效Allocation，无法确定当前拣货状态。");
+                }
+
+                PickingAllocationRow allocation = active.SingleOrDefault();
+                if (allocation == null && (order.OrderStatus == "PICKED" || order.OrderStatus == "EXCEPTION"))
+                {
+                    const string completedSql = @"
+SELECT TOP 2 Id, AllocationNo, AllocationStatus
+FROM dbo.WMS_OutboundAllocation
+WHERE OutboundOrderId=@OutboundOrderId AND AllocationStatus='COMPLETED'
+ORDER BY CompleteTime DESC, Id DESC;";
+                    List<PickingAllocationRow> completed = connection.Query<PickingAllocationRow>(completedSql, new { OutboundOrderId = order.Id }).AsList();
+                    if (completed.Count > 1)
+                    {
+                        return OutboundPickingStateReadResult.Fail("PICKING_STATE_CONFLICT: 出库单存在多个已完成Allocation，无法确定当前拣货状态。");
+                    }
+                    allocation = completed.SingleOrDefault();
+                }
+                if (allocation == null) return OutboundPickingStateReadResult.Success(result);
+
+                result.HasActivePicking = active.Count == 1;
+                result.AllocationNo = allocation.AllocationNo;
+                result.AllocationStatus = allocation.AllocationStatus;
+                const string duplicateBatchSql = @"
+SELECT COUNT(1)
+FROM
+(
+    SELECT GroupKey
+    FROM dbo.WMS_OutboundPickBatch
+    WHERE AllocationId=@AllocationId AND BatchStatus IN ('ALLOCATED','PICKING','EXCEPTION')
+    GROUP BY GroupKey
+    HAVING COUNT(1)>1
+) duplicateGroup;";
+                if (connection.ExecuteScalar<int>(duplicateBatchSql, new { AllocationId = allocation.Id }) > 0)
+                {
+                    return OutboundPickingStateReadResult.Fail("PICKING_STATE_CONFLICT: 同一拣货分组存在多个有效PickBatch，无法确定当前任务。");
+                }
+                const string batchSql = @"
+SELECT Id AS PickBatchId,PickBatchNo,BatchStatus,MaterialCode,Uom,PlannedQty,
+       EffectivePickedQty AS PickedQty,PlannedQty-EffectivePickedQty AS RemainingQty
+FROM dbo.WMS_OutboundPickBatch
+WHERE AllocationId=@AllocationId
+ORDER BY Id;";
+                result.ActivePickBatches = connection.Query<PickingStateBatchDto>(batchSql, new { AllocationId = allocation.Id }).AsList();
+
+                const string taskSql = @"
+SELECT b.Id AS PickBatchId,b.PickBatchNo,b.MaterialCode,b.MaterialRevision,b.Uom,
+       r.ReservationNo,box.HUCode AS BoxCode,location.LocationCode,r.ReservedQty,
+       CAST(0 AS DECIMAL(18,4)) AS PickedQty,r.ReservedQty AS RemainingQty,
+       r.ReservationStatus AS PickStatus,ISNULL(r.MinWeekSortKey,2147483647) AS MinWeekSortKey
+FROM dbo.WMS_HU_Reservation r
+INNER JOIN dbo.WMS_OutboundPickBatch b ON b.Id=r.PickBatchId
+INNER JOIN dbo.WMS_HU box ON box.Id=r.HUId
+INNER JOIN dbo.WMS_Location location ON location.Id=r.SourceLocationId
+WHERE r.AllocationId=@AllocationId AND r.ReservationStatus='ACTIVE'
+ORDER BY b.Id,ISNULL(r.MinWeekSortKey,2147483647),r.HUId;";
+                result.RemainingTasks = connection.Query<PickingStateTaskDto>(taskSql, new { AllocationId = allocation.Id }).AsList();
+                foreach (PickingStateTaskDto task in result.RemainingTasks)
+                {
+                    task.SAPItemNos = order.Lines.Where(x => string.Equals(x.MaterialCode, task.MaterialCode, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(x.Uom, task.Uom, StringComparison.OrdinalIgnoreCase)).OrderBy(x => x.SAPItemNo).Select(x => x.SAPItemNo).ToList();
+                    task.SAPItemNo = task.SAPItemNos.Count == 1 ? task.SAPItemNos[0] : null;
+                }
+
+                const string completedDetailSql = @"
+SELECT d.Id AS PickDetailId,b.PickBatchNo,box.HUCode AS BoxCode,source.LocationCode,
+       d.EffectiveQty AS PickedQty,d.DetailStatus AS PickStatus
+FROM dbo.WMS_OutboundPickBatchDetail d
+INNER JOIN dbo.WMS_OutboundPickBatch b ON b.Id=d.PickBatchId
+INNER JOIN dbo.WMS_HU box ON box.Id=d.BoxHUId
+INNER JOIN dbo.WMS_Location source ON source.Id=d.FromLocationId
+WHERE b.AllocationId=@AllocationId
+ORDER BY d.Id;";
+                result.CompletedPickDetails = connection.Query<PickingStateCompletedDetailDto>(completedDetailSql, new { AllocationId = allocation.Id }).AsList();
+                result.IsPickingComplete = result.RemainingTasks.Count == 0
+                    && result.ActivePickBatches.Count > 0
+                    && result.ActivePickBatches.All(x => x.BatchStatus == "PICKED" || x.BatchStatus == "SHIPPED");
+            }
+            return OutboundPickingStateReadResult.Success(result);
+        }
+
         private static string BuildGroupKey(string materialCode, string uom)
         {
             string material = string.IsNullOrWhiteSpace(materialCode) ? string.Empty : materialCode.Trim().ToUpperInvariant();
@@ -2774,6 +2878,13 @@ ORDER BY r.PickBatchId, r.MinWeekSortKey, r.HUId;";
             public string AllocationRequestId { get; set; }
             public string SAPDeliveryNo { get; set; }
             public string OrderStatus { get; set; }
+        }
+
+        private class PickingAllocationRow
+        {
+            public long Id { get; set; }
+            public string AllocationNo { get; set; }
+            public string AllocationStatus { get; set; }
         }
     }
 }

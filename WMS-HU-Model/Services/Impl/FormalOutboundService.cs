@@ -361,6 +361,17 @@ namespace WMS_HU_Model.Services
                 : OperationResult<StartPickingResultDto>.Fail(result.Message);
         }
 
+        public OperationResult<OutboundPickingStateDto> GetPickingState(string sapDeliveryNo)
+        {
+            string normalized = NormalizeRequired(sapDeliveryNo);
+            if (normalized == null) return OperationResult<OutboundPickingStateDto>.Fail("VBELN不能为空。");
+            if (normalized.Length > 30) return OperationResult<OutboundPickingStateDto>.Fail("VBELN长度不能超过30。");
+            OutboundPickingStateReadResult state = _repository.GetPickingState(normalized);
+            if (state == null) return OperationResult<OutboundPickingStateDto>.Fail("出库单不存在。");
+            if (!state.IsSuccess) return OperationResult<OutboundPickingStateDto>.Fail(state.Message);
+            return OperationResult<OutboundPickingStateDto>.Success(state.Data);
+        }
+
         private static string ValidateActionRequest(
             OutboundActionRequest request,
             string businessName,

@@ -17,5 +17,6 @@ namespace WMS_HU_Model.Services
         OperationResult<OutboundActionResultDto> ReturnPickDetail(long pickDetailId, ReturnPickDetailRequest request);
         OperationResult<OutboundActionResultDto> ReturnToStock(string huCode, ReturnToStockRequest request);
         OperationResult<StartPickingResultDto> ReserveReplacement(string pickBatchNo, ReplacementRequest request);
+        OperationResult<OutboundPickingStateDto> GetPickingState(string sapDeliveryNo);
     }
 }

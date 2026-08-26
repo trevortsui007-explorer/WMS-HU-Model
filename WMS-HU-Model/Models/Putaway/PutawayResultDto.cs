@@ -6,6 +6,7 @@ namespace WMS_HU_Model.Models.Putaway
     {
         public string OperationNo { get; set; }
         public long MoveLogId { get; set; }
+        public string SourceMode { get; set; }
         public string PalletHuCode { get; set; }
         public string BoxHuCode { get; set; }
         public string FromLocationCode { get; set; }

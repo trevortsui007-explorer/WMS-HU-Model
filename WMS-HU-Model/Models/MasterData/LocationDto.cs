@@ -27,6 +27,9 @@
         public int PutawayPriority { get; set; }
         public int PickingPriority { get; set; }
         public int RouteSequence { get; set; }
+        public string PhysicalRackGroupCode { get; set; }
+        public string PhysicalRowCode { get; set; }
+        public int? PositionSequence { get; set; }
         public string MasterStatus { get; set; }
         public string Remark { get; set; }
         public int CurrentHuCount { get; set; }

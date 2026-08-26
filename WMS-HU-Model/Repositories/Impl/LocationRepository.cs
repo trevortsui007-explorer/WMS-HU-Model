@@ -15,7 +15,9 @@ SELECT l.Id, w.WarehouseCode, w.WarehouseName, z.ZoneCode, z.ZoneName,
     l.LocationLevel, l.LocationTypeCode, l.ManageMode, l.IsVirtual, l.IsScannable,
     l.ScanCode, l.CapacityMode, l.CapacityQty, l.MaxWeightKg, l.PlantPolicy,
     l.DedicatedPlantCode, l.AllowMixedMaterial, l.AllowMixedBatch, l.AllowMixedOrder,
-    l.PutawayPriority, l.PickingPriority, l.RouteSequence, l.MasterStatus, l.Remark,
+    l.PutawayPriority, l.PickingPriority, l.RouteSequence,
+    l.PhysicalRackGroupCode, l.PhysicalRowCode, l.PositionSequence,
+    l.MasterStatus, l.Remark,
     (SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation currentLocation WHERE currentLocation.LocationId=l.Id) AS CurrentHuCount
 FROM dbo.WMS_Location l
 INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId
@@ -61,6 +63,9 @@ SELECT
     l.PutawayPriority,
     l.PickingPriority,
     l.RouteSequence,
+    l.PhysicalRackGroupCode,
+    l.PhysicalRowCode,
+    l.PositionSequence,
     l.MasterStatus,
     l.Remark
 
@@ -148,6 +153,9 @@ SELECT
     l.PutawayPriority,
     l.PickingPriority,
     l.RouteSequence,
+    l.PhysicalRackGroupCode,
+    l.PhysicalRowCode,
+    l.PositionSequence,
     l.MasterStatus,
     l.Remark
 

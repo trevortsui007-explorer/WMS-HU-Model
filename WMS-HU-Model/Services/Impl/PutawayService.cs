@@ -159,7 +159,7 @@ namespace WMS_HU_Model.Services
 
             if (pallet == null)
             {
-                return OperationResult<PutawayResultDto>.Fail("外箱当前没有有效运输托关系。");
+                return PutawayDirectReceive(box, warehouseCode, targetCode, request);
             }
 
             if (pallet.HuType != "PALLET")
@@ -326,6 +326,63 @@ namespace WMS_HU_Model.Services
             }
 
             return OperationResult<PutawayResultDto>.Success(persistResult.Data, "外箱拆托上架成功");
+        }
+
+        private OperationResult<PutawayResultDto> PutawayDirectReceive(HuDto box, string warehouseCode, string targetCode, PutawayBoxRequest request)
+        {
+            if (box.LifecycleStatus != "ACTIVE") return OperationResult<PutawayResultDto>.Fail("只有ACTIVE状态外箱允许上架。");
+            if (box.IsHold) return OperationResult<PutawayResultDto>.Fail("外箱当前已冻结。");
+
+            HuLocationDto sourceLocation = _effectiveLocationResolver.Resolve(box.Id);
+            if (sourceLocation == null || !sourceLocation.DirectLocationId.HasValue)
+                return OperationResult<PutawayResultDto>.Fail("外箱没有直接当前位置，库存位置状态不完整。");
+            if (!string.Equals(sourceLocation.LocationSource, "SELF", StringComparison.OrdinalIgnoreCase))
+                return OperationResult<PutawayResultDto>.Fail("外箱直接位置与有效位置来源不一致，无法执行上架。");
+            if (string.Equals(sourceLocation.DirectZoneCode, "STORAGE", StringComparison.OrdinalIgnoreCase))
+                return OperationResult<PutawayResultDto>.Fail("外箱已位于正式储存区，如需调整货位请使用移库作业。");
+            if (!string.Equals(sourceLocation.DirectZoneCode, "RECEIVE", StringComparison.OrdinalIgnoreCase))
+                return OperationResult<PutawayResultDto>.Fail("无托盘外箱必须位于有效RECEIVE收货区域才能上架。");
+            if (!string.Equals(sourceLocation.DirectWarehouseCode, warehouseCode, StringComparison.OrdinalIgnoreCase))
+                return OperationResult<PutawayResultDto>.Fail("外箱当前收货货位不属于指定仓库。");
+
+            LocationDto source = _locationRepository.GetByCode(warehouseCode, sourceLocation.DirectLocationCode);
+            if (source == null || source.MasterStatus != "ACTIVE" || source.ZoneCode != "RECEIVE")
+                return OperationResult<PutawayResultDto>.Fail("外箱当前收货货位不存在或不可用。");
+
+            LocationDto target = _locationRepository.GetByCode(warehouseCode, targetCode);
+            if (target == null) return OperationResult<PutawayResultDto>.Fail("目标货位不存在。");
+            if (target.MasterStatus != "ACTIVE") return OperationResult<PutawayResultDto>.Fail("目标货位当前不可用。");
+            if (target.IsVirtual) return OperationResult<PutawayResultDto>.Fail("正常上架不能使用虚拟货位。");
+            if (target.ZoneCode != "STORAGE") return OperationResult<PutawayResultDto>.Fail("正常上架目标必须属于STORAGE区域。");
+            if (source.Id == target.Id) return OperationResult<PutawayResultDto>.Fail("目标货位不能与外箱当前收货货位相同。");
+            if (!_huLocationRepository.WarehouseAllowsPlant(warehouseCode, box.PlantCode))
+                return OperationResult<PutawayResultDto>.Fail("仓库不允许存储该厂别库存。");
+            if (target.PlantPolicy == "SAME_PLANT" && _huLocationRepository.CountDifferentPlantAtLocation(target.Id, box.PlantCode) > 0)
+                return OperationResult<PutawayResultDto>.Fail("目标货位当前存在其他厂别库存。");
+            if (target.PlantPolicy == "DEDICATED" && !string.Equals(target.DedicatedPlantCode, box.PlantCode, StringComparison.OrdinalIgnoreCase))
+                return OperationResult<PutawayResultDto>.Fail("目标货位为其他厂别专用货位。");
+
+            DirectReceivePutawayCommand command = new DirectReceivePutawayCommand
+            {
+                BoxHuId = box.Id,
+                BoxHuCode = box.HuCode,
+                PlantCode = box.PlantCode,
+                FromLocationId = sourceLocation.DirectLocationId.Value,
+                FromLocationCode = sourceLocation.DirectLocationCode,
+                ToLocationId = target.Id,
+                ToLocationCode = target.LocationCode,
+                WarehouseCode = warehouseCode,
+                OperationNo = Guid.NewGuid().ToString("N").ToUpperInvariant(),
+                RequestId = request.RequestId,
+                ScannedLocationCode = string.IsNullOrWhiteSpace(request.ScannedLocationCode) ? target.LocationCode : request.ScannedLocationCode,
+                BusinessNo = request.BusinessNo,
+                Operator = request.Operator,
+                Remark = request.Remark
+            };
+            PutawayPersistenceResult persisted = _putawayRepository.ExecuteDirectReceivePutaway(command);
+            if (!persisted.IsSuccess) return OperationResult<PutawayResultDto>.Fail(persisted.Message);
+            return OperationResult<PutawayResultDto>.Success(persisted.Data,
+                persisted.Data.IsDuplicate ? "重复请求，返回原上架结果" : "外箱上架成功");
         }
 
         public OperationResult<PalletPutawayByBoxContextDto> GetPalletContextByBox(string boxHuCode)

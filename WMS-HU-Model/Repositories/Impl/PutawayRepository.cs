@@ -63,75 +63,7 @@ ORDER BY child.HUCode;
 
         public PutawayResultDto GetByRequestId(string requestId)
         {
-            if (string.IsNullOrWhiteSpace(requestId))
-            {
-                return null;
-            }
-
-            const string sql = @"
-SELECT TOP 1
-    op.OperationNo,
-    moveLog.Id AS MoveLogId,
-    pallet.HUCode AS PalletHUCode,
-    pallet.LifecycleStatus AS PalletLifecycleStatus,
-    box.HUCode AS BoxHUCode,
-    fromLoc.LocationCode AS FromLocationCode,
-    toLoc.LocationCode AS ToLocationCode,
-    moveLog.MoveTime AS PutawayTime,
-    RemainingBoxCount =
-    (
-        SELECT COUNT(1)
-        FROM dbo.WMS_HU_Relation remainRel
-        INNER JOIN dbo.WMS_HU remainHU
-            ON remainHU.Id = remainRel.ChildHUId
-        WHERE remainRel.ParentHUId = pallet.Id
-        AND remainRel.IsActive = 1
-        AND remainHU.HUType = 'OUTER_BOX'
-        AND remainHU.LifecycleStatus = 'ACTIVE'
-    )
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU box
-    ON box.Id = op.HUId
-INNER JOIN dbo.WMS_HU pallet
-    ON pallet.Id = op.RelatedHUId
-INNER JOIN dbo.WMS_HU_MoveLog moveLog
-    ON moveLog.MoveNo = op.OperationNo
-    AND moveLog.HUId = box.Id
-LEFT JOIN dbo.WMS_Location fromLoc
-    ON fromLoc.Id = moveLog.FromLocationId
-INNER JOIN dbo.WMS_Location toLoc
-    ON toLoc.Id = moveLog.ToLocationId
-WHERE op.OperationType = 'PUTAWAY'
-AND op.RequestId = @RequestId;";
-
-            PutawayRequestRow row = DbExecutor.QueryFirstOrDefault<PutawayRequestRow>(
-                sql,
-                new { RequestId = requestId });
-
-            if (row == null)
-                return null;
-
-            PutawayResultDto result = new PutawayResultDto
-            {
-                OperationNo = row.OperationNo,
-                MoveLogId = row.MoveLogId,
-                PalletHuCode = row.PalletHuCode,
-                BoxHuCode = row.BoxHuCode,
-                FromLocationCode = row.FromLocationCode,
-                ToLocationCode = row.ToLocationCode,
-                RemainingBoxCount = row.RemainingBoxCount,
-                PutawayTime = row.PutawayTime,
-                IsDuplicate = true
-            };
-
-            result.IsPalletEmpty = result.RemainingBoxCount == 0;
-            result.IsPalletClosed =
-                string.Equals(
-                    row.PalletLifecycleStatus,
-                    "CLOSED",
-                    StringComparison.OrdinalIgnoreCase);
-
-            return result;
+            return PutawayIdempotencyReader.Read(requestId);
         }
 
         public PutawayPersistenceResult ExecutePutaway(PutawayCommand command)
@@ -658,6 +590,7 @@ WHERE HUId = @PalletHUId;";
                         {
                             OperationNo = command.OperationNo,
                             MoveLogId = moveLogId,
+                            SourceMode = "PALLET_INHERITED",
                             PalletHuCode = command.PalletHuCode,
                             BoxHuCode = command.BoxHuCode,
                             FromLocationCode = currentPalletLocationCode,
@@ -682,6 +615,11 @@ WHERE HUId = @PalletHUId;";
                     }
                 }
             }
+        }
+
+        public PutawayPersistenceResult ExecuteDirectReceivePutaway(DirectReceivePutawayCommand command)
+        {
+            return new DirectReceivePutawayRepository().Execute(command);
         }
 
         public WholePalletPutawayResultDto GetWholePalletPutawayByRequestId(string requestId)
@@ -953,11 +891,6 @@ ORDER BY box.HUCode;";
                 operationTime,
                 detailJson: null,
                 remark: remark);
-        }
-
-        private class PutawayRequestRow : PutawayResultDto
-        {
-            public string PalletLifecycleStatus { get; set; }
         }
 
         private class WholePalletHeaderRow

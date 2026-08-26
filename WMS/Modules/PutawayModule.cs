@@ -11,6 +11,7 @@ namespace WMS.Modules
     public class PutawayModule : NancyModule
     {
         private readonly IPutawayService _service;
+        private readonly IPutawayRecommendationService _recommendationService;
 
         public PutawayModule()
             : base("/api/wms/putaway")
@@ -31,6 +32,20 @@ namespace WMS.Modules
                     locationRepository,
                     huLocationRepository,
                     putawayRepository);
+
+            _recommendationService = new PutawayRecommendationService(new PutawayRecommendationRepository());
+
+            Get("/recommendations", _ =>
+            {
+                object rawWarehouseCode = Request.Query.warehouseCode;
+                object rawBoxHuCode = Request.Query.boxHuCode;
+                string warehouseCode = Convert.ToString(rawWarehouseCode);
+                string boxHuCode = Convert.ToString(rawBoxHuCode);
+                OperationResult<PutawayRecommendationResultDto> result = _recommendationService.GetRecommendations(warehouseCode, boxHuCode);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
 
             //----------------------------------------------------
             // 扫描托盘

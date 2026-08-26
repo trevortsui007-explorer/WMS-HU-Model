@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using WMS_HU_Model.Models.Common;
@@ -149,6 +149,8 @@ namespace WMS_HU_Model.Services
             MasterDataOptionsDto result = new MasterDataOptionsDto();
             result.WarehouseTypes.Add(FinishedGoodsWarehouseType);
             result.LocationTypes.Add("DOUBLE_RACK");
+            result.LocationTypes.Add("TRIPLE_TIER_REMAINDER_RACK");
+            result.LocationTypes.Add("FLOOR_STORAGE");
             result.Warehouses = _repository.GetWarehouseOptions();
             string code = Text(warehouseCode, true);
             if (code != null) result.Zones = _repository.GetZoneOptions(code);

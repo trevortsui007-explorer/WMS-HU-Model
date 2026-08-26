@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
+using System.Linq;
 using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.Putaway;
@@ -683,13 +684,256 @@ WHERE HUId = @PalletHUId;";
             }
         }
 
+        public WholePalletPutawayResultDto GetWholePalletPutawayByRequestId(string requestId)
+        {
+            if (string.IsNullOrWhiteSpace(requestId)) return null;
+            const string headerSql = @"
+SELECT TOP 1 op.OperationNo, pallet.HUCode AS PalletHuCode, op.OperationTime AS PutawayTime
+FROM dbo.WMS_HU_OperationLog op
+INNER JOIN dbo.WMS_HU pallet ON pallet.Id = op.HUId
+WHERE op.OperationType = 'PUTAWAY_PALLET' AND op.RequestId = @RequestId;";
+            WholePalletHeaderRow header = DbExecutor.QueryFirstOrDefault<WholePalletHeaderRow>(headerSql, new { RequestId = requestId });
+            if (header == null) return null;
+            const string itemSql = @"
+SELECT box.HUCode AS BoxCode, fromLoc.LocationCode AS FromLocationCode, toLoc.LocationCode AS ToLocationCode
+FROM dbo.WMS_HU_OperationLog op
+INNER JOIN dbo.WMS_HU box ON box.Id = op.HUId
+INNER JOIN dbo.WMS_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = box.Id
+LEFT JOIN dbo.WMS_Location fromLoc ON fromLoc.Id = moveLog.FromLocationId
+INNER JOIN dbo.WMS_Location toLoc ON toLoc.Id = moveLog.ToLocationId
+WHERE op.OperationType = 'PUTAWAY' AND op.RequestId = @RequestId
+ORDER BY box.HUCode;";
+            List<WholePalletItemRow> items = DbExecutor.Query<WholePalletItemRow>(itemSql, new { RequestId = requestId });
+            return new WholePalletPutawayResultDto
+            {
+                OperationNo = header.OperationNo,
+                PalletHuCode = header.PalletHuCode,
+                FromLocationCode = items.Select(x => x.FromLocationCode).FirstOrDefault(),
+                ToLocationCode = items.Select(x => x.ToLocationCode).FirstOrDefault(),
+                BoxCodes = items.Select(x => x.BoxCode).ToList(),
+                MovedCount = items.Count,
+                IsPalletClosed = true,
+                IsDuplicate = true,
+                PutawayTime = header.PutawayTime
+            };
+        }
+
+        public WholePalletPutawayPersistenceResult ExecuteWholePalletPutaway(WholePalletPutawayCommand command)
+        {
+            using (SqlConnection conn = DbConnectionFactory.Create())
+            {
+                conn.Open();
+                using (SqlTransaction tran = conn.BeginTransaction(IsolationLevel.Serializable))
+                {
+                    try
+                    {
+                        DateTime now = DateTime.Now;
+                        const string duplicateSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK, HOLDLOCK) WHERE RequestId = @RequestId;";
+                        using (SqlCommand duplicateCommand = new SqlCommand(duplicateSql, conn, tran))
+                        {
+                            duplicateCommand.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
+                            if (Convert.ToInt32(duplicateCommand.ExecuteScalar()) > 0)
+                            {
+                                tran.Rollback();
+                                return WholePalletPutawayPersistenceResult.Fail("RequestId已经被其他WMS业务使用。");
+                            }
+                        }
+
+                        WholePalletHuRow pallet;
+                        const string palletSql = @"
+SELECT h.Id, h.HUCode, h.HUType, h.PlantCode, h.LifecycleStatus, h.IsHold,
+       cl.LocationId, loc.LocationCode, z.ZoneCode, w.WarehouseCode
+FROM dbo.WMS_HU h WITH (UPDLOCK, HOLDLOCK)
+LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = h.Id
+LEFT JOIN dbo.WMS_Location loc ON loc.Id = cl.LocationId
+LEFT JOIN dbo.WMS_Zone z ON z.Id = loc.ZoneId
+LEFT JOIN dbo.WMS_Warehouse w ON w.Id = loc.WarehouseId
+WHERE h.HUCode = @PalletHuCode;";
+                        using (SqlCommand palletCommand = new SqlCommand(palletSql, conn, tran))
+                        {
+                            palletCommand.Parameters.Add("@PalletHuCode", SqlDbType.VarChar, 100).Value = command.PalletHuCode;
+                            using (SqlDataReader reader = palletCommand.ExecuteReader())
+                            {
+                                if (!reader.Read())
+                                {
+                                    tran.Rollback();
+                                    return WholePalletPutawayPersistenceResult.Fail("托盘HU不存在。");
+                                }
+                                pallet = new WholePalletHuRow
+                                {
+                                    Id = Convert.ToInt64(reader["Id"]), HuCode = Convert.ToString(reader["HUCode"]), HuType = Convert.ToString(reader["HUType"]),
+                                    PlantCode = Convert.ToString(reader["PlantCode"]), LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]), IsHold = Convert.ToBoolean(reader["IsHold"]),
+                                    LocationId = reader["LocationId"] == DBNull.Value ? (long?)null : Convert.ToInt64(reader["LocationId"]),
+                                    LocationCode = reader["LocationCode"] == DBNull.Value ? null : Convert.ToString(reader["LocationCode"]),
+                                    ZoneCode = reader["ZoneCode"] == DBNull.Value ? null : Convert.ToString(reader["ZoneCode"]),
+                                    WarehouseCode = reader["WarehouseCode"] == DBNull.Value ? null : Convert.ToString(reader["WarehouseCode"])
+                                };
+                            }
+                        }
+                        if (pallet.HuType != "PALLET") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("当前HU不是PALLET。"); }
+                        if (pallet.LifecycleStatus != "ACTIVE") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("只有ACTIVE状态托盘允许整托上架。"); }
+                        if (pallet.IsHold) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘当前已冻结。"); }
+                        if (!pallet.LocationId.HasValue || pallet.ZoneCode != "RECEIVE") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘当前不在收货区域。"); }
+                        if (!string.Equals(pallet.WarehouseCode, command.WarehouseCode, StringComparison.OrdinalIgnoreCase)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘当前不属于指定仓库。"); }
+
+                        WholePalletTargetRow target;
+                        const string targetSql = @"
+SELECT l.Id, l.LocationCode, l.MasterStatus, l.IsVirtual, l.PlantPolicy, l.DedicatedPlantCode, z.ZoneCode, w.WarehouseCode
+FROM dbo.WMS_Location l WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_Zone z ON z.Id = l.ZoneId
+INNER JOIN dbo.WMS_Warehouse w ON w.Id = l.WarehouseId
+WHERE w.WarehouseCode = @WarehouseCode AND l.LocationCode = @LocationCode;";
+                        using (SqlCommand targetCommand = new SqlCommand(targetSql, conn, tran))
+                        {
+                            targetCommand.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = command.WarehouseCode;
+                            targetCommand.Parameters.Add("@LocationCode", SqlDbType.VarChar, 50).Value = command.TargetLocationCode;
+                            using (SqlDataReader reader = targetCommand.ExecuteReader())
+                            {
+                                if (!reader.Read()) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位不存在。"); }
+                                target = new WholePalletTargetRow
+                                {
+                                    Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), MasterStatus = Convert.ToString(reader["MasterStatus"]),
+                                    IsVirtual = Convert.ToBoolean(reader["IsVirtual"]), PlantPolicy = Convert.ToString(reader["PlantPolicy"]),
+                                    DedicatedPlantCode = reader["DedicatedPlantCode"] == DBNull.Value ? null : Convert.ToString(reader["DedicatedPlantCode"]), ZoneCode = Convert.ToString(reader["ZoneCode"])
+                                };
+                            }
+                        }
+                        if (target.MasterStatus != "ACTIVE" || target.IsVirtual || target.ZoneCode != "STORAGE") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位必须是当前仓库可用的实体STORAGE货位。"); }
+                        if (target.Id == pallet.LocationId.Value) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位不能与托盘收货货位相同。"); }
+
+                        List<WholePalletBoxRow> boxes = new List<WholePalletBoxRow>();
+                        const string boxesSql = @"
+SELECT r.Id AS RelationId, box.Id, box.HUCode, box.PlantCode, box.LifecycleStatus, box.IsHold,
+       CAST(CASE WHEN cl.HUId IS NULL THEN 0 ELSE 1 END AS bit) AS HasDirectLocation
+FROM dbo.WMS_HU_Relation r WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_HU box WITH (UPDLOCK, HOLDLOCK) ON box.Id = r.ChildHUId
+LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = box.Id
+WHERE r.ParentHUId = @PalletHuId AND r.IsActive = 1 AND box.HUType = 'OUTER_BOX'
+ORDER BY box.HUCode;";
+                        using (SqlCommand boxesCommand = new SqlCommand(boxesSql, conn, tran))
+                        {
+                            boxesCommand.Parameters.Add("@PalletHuId", SqlDbType.BigInt).Value = pallet.Id;
+                            using (SqlDataReader reader = boxesCommand.ExecuteReader())
+                            {
+                                while (reader.Read()) boxes.Add(new WholePalletBoxRow
+                                {
+                                    RelationId = Convert.ToInt64(reader["RelationId"]), Id = Convert.ToInt64(reader["Id"]), HuCode = Convert.ToString(reader["HUCode"]),
+                                    PlantCode = Convert.ToString(reader["PlantCode"]), LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]),
+                                    IsHold = Convert.ToBoolean(reader["IsHold"]), HasDirectLocation = Convert.ToBoolean(reader["HasDirectLocation"])
+                                });
+                            }
+                        }
+                        if (boxes.Count == 0) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘当前没有可上架外箱。"); }
+                        if (boxes.Any(x => x.LifecycleStatus != "ACTIVE")) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘存在非ACTIVE外箱，整托上架已取消。"); }
+                        if (boxes.Any(x => x.IsHold)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘存在冻结外箱，整托上架已取消。"); }
+                        if (boxes.Any(x => x.HasDirectLocation)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘存在已有直接货位的外箱，整托上架已取消。"); }
+                        if (boxes.Any(x => !string.Equals(x.PlantCode, pallet.PlantCode, StringComparison.OrdinalIgnoreCase))) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘与外箱厂别不一致。"); }
+
+                        const string warehousePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
+                        using (SqlCommand plantCommand = new SqlCommand(warehousePlantSql, conn, tran))
+                        {
+                            plantCommand.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = command.WarehouseCode;
+                            plantCommand.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20).Value = pallet.PlantCode;
+                            if (Convert.ToInt32(plantCommand.ExecuteScalar()) == 0) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("当前仓库不允许存储该厂别库存。"); }
+                        }
+                        if (target.PlantPolicy == "DEDICATED" && !string.Equals(target.DedicatedPlantCode, pallet.PlantCode, StringComparison.OrdinalIgnoreCase)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位为其他厂别专用货位。"); }
+                        if (target.PlantPolicy == "SAME_PLANT")
+                        {
+                            const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation cl INNER JOIN dbo.WMS_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
+                            using (SqlCommand samePlantCommand = new SqlCommand(samePlantSql, conn, tran))
+                            {
+                                samePlantCommand.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
+                                samePlantCommand.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20).Value = pallet.PlantCode;
+                                if (Convert.ToInt32(samePlantCommand.ExecuteScalar()) > 0) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位当前存在其他厂别库存。"); }
+                            }
+                        }
+
+                        InsertOperationLog(conn, tran, command.OperationNo, "PUTAWAY_PALLET", pallet.Id, null, command.RequestId, command.BusinessNo, command.Operator, command.Remark, now);
+                        List<string> movedCodes = new List<string>();
+                        for (int index = 0; index < boxes.Count; index++)
+                        {
+                            WholePalletBoxRow box = boxes[index];
+                            string itemOperationNo = command.OperationNo + "-" + (index + 1).ToString("000");
+                            string itemRequestId = command.RequestId + ":" + (index + 1).ToString("000");
+                            const string closeSql = @"UPDATE dbo.WMS_HU_Relation SET EffectiveTo=@Now,IsActive=0,CloseOperationNo=@OperationNo,CloseUser=@Operator,CloseReason=N'PUTAWAY' WHERE Id=@RelationId AND IsActive=1;";
+                            using (SqlCommand closeCommand = new SqlCommand(closeSql, conn, tran))
+                            {
+                                closeCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                                closeCommand.Parameters.Add("@OperationNo", SqlDbType.VarChar, 50).Value = itemOperationNo;
+                                closeCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
+                                closeCommand.Parameters.Add("@RelationId", SqlDbType.BigInt).Value = box.RelationId;
+                                if (closeCommand.ExecuteNonQuery() != 1) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("外箱关系已变化，整托上架已取消。"); }
+                            }
+                            long moveLogId;
+                            const string moveSql = @"INSERT INTO dbo.WMS_HU_MoveLog(MoveNo,HUId,FromLocationId,ToLocationId,MoveType,ScannedLocationCode,BusinessNo,RequestId,Operator,MoveTime,Remark) OUTPUT INSERTED.Id VALUES(@MoveNo,@HUId,@From,@To,'PUTAWAY',@Scan,@BusinessNo,@RequestId,@Operator,@Now,@Remark);";
+                            using (SqlCommand moveCommand = new SqlCommand(moveSql, conn, tran))
+                            {
+                                moveCommand.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50).Value = itemOperationNo;
+                                moveCommand.Parameters.Add("@HUId", SqlDbType.BigInt).Value = box.Id;
+                                moveCommand.Parameters.Add("@From", SqlDbType.BigInt).Value = pallet.LocationId.Value;
+                                moveCommand.Parameters.Add("@To", SqlDbType.BigInt).Value = target.Id;
+                                moveCommand.Parameters.Add("@Scan", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.ScannedLocationCode);
+                                moveCommand.Parameters.Add("@BusinessNo", SqlDbType.VarChar, 100).Value = DbParameterValue.StringOrDbNull(command.BusinessNo);
+                                moveCommand.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = itemRequestId;
+                                moveCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
+                                moveCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                                moveCommand.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbParameterValue.StringOrDbNull(command.Remark);
+                                moveLogId = Convert.ToInt64(moveCommand.ExecuteScalar());
+                            }
+                            const string currentSql = @"INSERT INTO dbo.WMS_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,LastMoveNo,LastMoveType,LastOperator) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@MoveNo,'PUTAWAY',@Operator);";
+                            using (SqlCommand currentCommand = new SqlCommand(currentSql, conn, tran))
+                            {
+                                currentCommand.Parameters.Add("@HUId", SqlDbType.BigInt).Value = box.Id;
+                                currentCommand.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
+                                currentCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                                currentCommand.Parameters.Add("@MoveLogId", SqlDbType.BigInt).Value = moveLogId;
+                                currentCommand.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50).Value = itemOperationNo;
+                                currentCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
+                                currentCommand.ExecuteNonQuery();
+                            }
+                            InsertOperationLog(conn, tran, itemOperationNo, "DETACH_HU", pallet.Id, box.Id, command.RequestId, command.BusinessNo, command.Operator, "整托上架：解除托盘与外箱关系", now);
+                            InsertOperationLog(conn, tran, itemOperationNo, "PUTAWAY", box.Id, pallet.Id, command.RequestId, command.BusinessNo, command.Operator, command.Remark, now);
+                            movedCodes.Add(box.HuCode);
+                        }
+                        const string closePalletSql = @"UPDATE dbo.WMS_HU SET LifecycleStatus='CLOSED',ModifyUser=@Operator,ModifyTime=@Now WHERE Id=@PalletHuId AND HUType='PALLET' AND LifecycleStatus='ACTIVE';";
+                        using (SqlCommand closePalletCommand = new SqlCommand(closePalletSql, conn, tran))
+                        {
+                            closePalletCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
+                            closePalletCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                            closePalletCommand.Parameters.Add("@PalletHuId", SqlDbType.BigInt).Value = pallet.Id;
+                            if (closePalletCommand.ExecuteNonQuery() != 1) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("运输托HU关闭失败。"); }
+                        }
+                        const string deletePalletLocationSql = @"DELETE FROM dbo.WMS_HU_CurrentLocation WHERE HUId=@PalletHuId;";
+                        using (SqlCommand deletePalletLocationCommand = new SqlCommand(deletePalletLocationSql, conn, tran))
+                        {
+                            deletePalletLocationCommand.Parameters.Add("@PalletHuId", SqlDbType.BigInt).Value = pallet.Id;
+                            deletePalletLocationCommand.ExecuteNonQuery();
+                        }
+                        InsertOperationLog(conn, tran, command.OperationNo, "CLOSE_HU", pallet.Id, null, command.RequestId, command.BusinessNo, command.Operator, "整托上架完成，系统关闭一次性运输托HU。", now);
+                        tran.Commit();
+                        return WholePalletPutawayPersistenceResult.Success(new WholePalletPutawayResultDto
+                        {
+                            OperationNo = command.OperationNo, PalletHuCode = pallet.HuCode, FromLocationCode = pallet.LocationCode,
+                            ToLocationCode = target.LocationCode, BoxCodes = movedCodes, MovedCount = movedCodes.Count,
+                            IsPalletClosed = true, IsDuplicate = false, PutawayTime = now
+                        });
+                    }
+                    catch
+                    {
+                        if (tran.Connection != null) tran.Rollback();
+                        throw;
+                    }
+                }
+            }
+        }
+
         private static void InsertOperationLog(
             SqlConnection conn,
             SqlTransaction tran,
             string operationNo,
             string operationType,
             long huId,
-            long relatedHuId,
+            long? relatedHuId,
             string requestId,
             string businessNo,
             string operatorCode,
@@ -714,6 +958,56 @@ WHERE HUId = @PalletHUId;";
         private class PutawayRequestRow : PutawayResultDto
         {
             public string PalletLifecycleStatus { get; set; }
+        }
+
+        private class WholePalletHeaderRow
+        {
+            public string OperationNo { get; set; }
+            public string PalletHuCode { get; set; }
+            public DateTime PutawayTime { get; set; }
+        }
+
+        private class WholePalletItemRow
+        {
+            public string BoxCode { get; set; }
+            public string FromLocationCode { get; set; }
+            public string ToLocationCode { get; set; }
+        }
+
+        private class WholePalletHuRow
+        {
+            public long Id { get; set; }
+            public string HuCode { get; set; }
+            public string HuType { get; set; }
+            public string PlantCode { get; set; }
+            public string LifecycleStatus { get; set; }
+            public bool IsHold { get; set; }
+            public long? LocationId { get; set; }
+            public string LocationCode { get; set; }
+            public string ZoneCode { get; set; }
+            public string WarehouseCode { get; set; }
+        }
+
+        private class WholePalletTargetRow
+        {
+            public long Id { get; set; }
+            public string LocationCode { get; set; }
+            public string MasterStatus { get; set; }
+            public bool IsVirtual { get; set; }
+            public string PlantPolicy { get; set; }
+            public string DedicatedPlantCode { get; set; }
+            public string ZoneCode { get; set; }
+        }
+
+        private class WholePalletBoxRow
+        {
+            public long RelationId { get; set; }
+            public long Id { get; set; }
+            public string HuCode { get; set; }
+            public string PlantCode { get; set; }
+            public string LifecycleStatus { get; set; }
+            public bool IsHold { get; set; }
+            public bool HasDirectLocation { get; set; }
         }
     }
 }

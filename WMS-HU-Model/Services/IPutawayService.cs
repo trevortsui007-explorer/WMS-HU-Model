@@ -12,5 +12,9 @@ namespace WMS_HU_Model.Services
         OperationResult<PutawayResultDto>
             PutawayBox(
                 PutawayBoxRequest request);
+
+        OperationResult<PalletPutawayByBoxContextDto> GetPalletContextByBox(string boxHuCode);
+
+        OperationResult<WholePalletPutawayResultDto> PutawayPallet(WholePalletPutawayRequest request);
     }
 }

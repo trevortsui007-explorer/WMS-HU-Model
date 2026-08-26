@@ -61,6 +61,16 @@ namespace WMS.Modules
                         result.Data));
             });
 
+            Get("/pallet/by-box/{boxHuCode}", args =>
+            {
+                object rawValue = args.boxHuCode;
+                string boxHuCode = Convert.ToString(rawValue);
+                OperationResult<PalletPutawayByBoxContextDto> result = _service.GetPalletContextByBox(boxHuCode);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
             //----------------------------------------------------
             // 扫描外箱并上架
             //----------------------------------------------------
@@ -85,6 +95,15 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
+            });
+
+            Post("/pallet", _ =>
+            {
+                WholePalletPutawayRequest request = this.Bind<WholePalletPutawayRequest>();
+                OperationResult<WholePalletPutawayResultDto> result = _service.PutawayPallet(request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
             });
         }
     }

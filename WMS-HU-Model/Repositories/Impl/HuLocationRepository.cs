@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
@@ -75,6 +75,7 @@ SELECT
 
     directLoc.Id AS DirectLocationId,
     directLoc.LocationCode AS DirectLocationCode,
+    directLoc.LocationName AS DirectLocationName,
     directWarehouse.WarehouseCode
         AS DirectWarehouseCode,
     directZone.ZoneCode
@@ -94,6 +95,9 @@ SELECT
 
     effectiveInfo.LocationCode
         AS EffectiveLocationCode,
+
+    effectiveInfo.LocationName
+        AS EffectiveLocationName,
 
     effectiveInfo.WarehouseCode
         AS EffectiveWarehouseCode,
@@ -139,6 +143,7 @@ OUTER APPLY
 
         loc.Id AS LocationId,
         loc.LocationCode,
+        loc.LocationName,
         loc.LocationTypeCode,
 
         wh.WarehouseCode,
@@ -206,10 +211,12 @@ Ancestors AS
 SELECT
     h.Id AS HuId, h.HUCode, h.HUType, h.PlantCode,
     directLoc.Id AS DirectLocationId, directLoc.LocationCode AS DirectLocationCode,
+    directLoc.LocationName AS DirectLocationName,
     directWarehouse.WarehouseCode AS DirectWarehouseCode, directZone.ZoneCode AS DirectZoneCode,
     directLoc.LocationTypeCode AS DirectLocationTypeCode, directCurrent.LocationSince AS DirectLocationSince,
     directCurrent.LastMoveLogId, directCurrent.LastMoveNo, directCurrent.LastMoveType,
     effectiveInfo.LocationId AS EffectiveLocationId, effectiveInfo.LocationCode AS EffectiveLocationCode,
+    effectiveInfo.LocationName AS EffectiveLocationName,
     effectiveInfo.WarehouseCode AS EffectiveWarehouseCode, effectiveInfo.ZoneCode AS EffectiveZoneCode,
     effectiveInfo.LocationTypeCode AS EffectiveLocationTypeCode,
     effectiveInfo.SourceHUId AS LocationSourceHuId, effectiveInfo.SourceHUCode AS LocationSourceHuCode,
@@ -221,7 +228,7 @@ LEFT JOIN dbo.WMS_Warehouse directWarehouse ON directWarehouse.Id = directLoc.Wa
 LEFT JOIN dbo.WMS_Zone directZone ON directZone.Id = directLoc.ZoneId
 OUTER APPLY
 (
-    SELECT TOP 1 loc.Id AS LocationId, loc.LocationCode, loc.LocationTypeCode,
+    SELECT TOP 1 loc.Id AS LocationId, loc.LocationCode, loc.LocationName, loc.LocationTypeCode,
         warehouse.WarehouseCode, zone.ZoneCode, ancestor.HUId AS SourceHUId, ancestor.HUCode AS SourceHUCode
     FROM Ancestors ancestor
     INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
@@ -251,12 +258,14 @@ OPTION (MAXRECURSION 20);";
                             PlantCode = DbString(reader, "PlantCode"),
                             DirectLocationId = DbInt64(reader, "DirectLocationId"),
                             DirectLocationCode = DbString(reader, "DirectLocationCode"),
+                            DirectLocationName = DbString(reader, "DirectLocationName"),
                             DirectWarehouseCode = DbString(reader, "DirectWarehouseCode"),
                             DirectZoneCode = DbString(reader, "DirectZoneCode"),
                             DirectLocationTypeCode = DbString(reader, "DirectLocationTypeCode"),
                             DirectLocationSince = DbDateTime(reader, "DirectLocationSince"),
                             EffectiveLocationId = DbInt64(reader, "EffectiveLocationId"),
                             EffectiveLocationCode = DbString(reader, "EffectiveLocationCode"),
+                            EffectiveLocationName = DbString(reader, "EffectiveLocationName"),
                             EffectiveWarehouseCode = DbString(reader, "EffectiveWarehouseCode"),
                             EffectiveZoneCode = DbString(reader, "EffectiveZoneCode"),
                             EffectiveLocationTypeCode = DbString(reader, "EffectiveLocationTypeCode"),

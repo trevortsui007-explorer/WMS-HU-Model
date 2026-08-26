@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using WMS_HU_Model.Models.Common;
 using WMS_HU_Model.Models.HU;
@@ -14,17 +15,32 @@ namespace WMS_HU_Model.Services
         private readonly ILocationRepository _locationRepository;
         private readonly IHuLocationRepository _huLocationRepository;
         private readonly IPutawayRepository _putawayRepository;
+        private readonly IInventoryQueryRepository _inventoryRepository;
+        private readonly IEffectiveLocationResolver _effectiveLocationResolver;
 
         public PutawayService(
             IHuRepository huRepository,
             ILocationRepository locationRepository,
             IHuLocationRepository huLocationRepository,
             IPutawayRepository putawayRepository)
+            : this(huRepository, locationRepository, huLocationRepository, putawayRepository, new InventoryQueryRepository(), new EffectiveLocationResolver())
+        {
+        }
+
+        public PutawayService(
+            IHuRepository huRepository,
+            ILocationRepository locationRepository,
+            IHuLocationRepository huLocationRepository,
+            IPutawayRepository putawayRepository,
+            IInventoryQueryRepository inventoryRepository,
+            IEffectiveLocationResolver effectiveLocationResolver)
         {
             _huRepository = huRepository;
             _locationRepository = locationRepository;
             _huLocationRepository = huLocationRepository;
             _putawayRepository = putawayRepository;
+            _inventoryRepository = inventoryRepository;
+            _effectiveLocationResolver = effectiveLocationResolver;
         }
 
         public OperationResult<PalletPutawayStatusDto> GetPalletStatus(string palletHuCode)
@@ -310,6 +326,123 @@ namespace WMS_HU_Model.Services
             }
 
             return OperationResult<PutawayResultDto>.Success(persistResult.Data, "外箱拆托上架成功");
+        }
+
+        public OperationResult<PalletPutawayByBoxContextDto> GetPalletContextByBox(string boxHuCode)
+        {
+            if (string.IsNullOrWhiteSpace(boxHuCode)) return OperationResult<PalletPutawayByBoxContextDto>.Fail("BoxHuCode不能为空。");
+            string normalized = boxHuCode.Trim().ToUpperInvariant();
+            if (normalized.Length > 100) return OperationResult<PalletPutawayByBoxContextDto>.Fail("BoxHuCode长度不能超过100。");
+
+            HuDto scannedBox = _huRepository.GetByCode(normalized);
+            if (scannedBox == null || scannedBox.HuType != "OUTER_BOX") return OperationResult<PalletPutawayByBoxContextDto>.Fail("外箱不存在或HU类型错误。");
+            HuDto pallet = _huRepository.GetActiveParent(scannedBox.Id);
+            if (pallet == null || pallet.HuType != "PALLET") return OperationResult<PalletPutawayByBoxContextDto>.Fail("外箱当前没有有效运输托关系。");
+
+            PalletPutawayStatusDto status = _putawayRepository.GetPalletStatus(pallet.Id);
+            if (status == null) return OperationResult<PalletPutawayByBoxContextDto>.Fail("运输托状态不存在。");
+            if (!status.RemainingBoxCodes.Any(x => string.Equals(x, normalized, StringComparison.OrdinalIgnoreCase)))
+                return OperationResult<PalletPutawayByBoxContextDto>.Fail("该外箱当前不属于可上架运输托范围。");
+
+            List<HuDto> boxes = status.RemainingBoxCodes.Select(_huRepository.GetByCode).Where(x => x != null).ToList();
+            Dictionary<long, HuLocationDto> locations = _effectiveLocationResolver.ResolveMany(boxes.Select(x => x.Id).ToList()).ToDictionary(x => x.HuId);
+            List<Models.Inventory.InventoryItemFact> palletFacts = _inventoryRepository.GetLocationInventoryFacts(boxes.Select(x => x.Id).ToList()) ?? new List<Models.Inventory.InventoryItemFact>();
+            PalletPutawayByBoxContextDto result = new PalletPutawayByBoxContextDto
+            {
+                ScannedBoxCode = scannedBox.HuCode,
+                PalletHuCode = pallet.HuCode
+            };
+            foreach (HuDto box in boxes.OrderBy(x => x.HuCode, StringComparer.OrdinalIgnoreCase))
+            {
+                List<Models.Inventory.InventoryItemFact> facts = palletFacts.Where(x => x.BoxHuId == box.Id).ToList();
+                List<string> materials = facts.Select(x => x.MaterialCode ?? string.Empty).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                List<string> revisions = facts.Select(x => x.MaterialRevision ?? string.Empty).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (materials.Count > 1 || revisions.Count > 1)
+                    return OperationResult<PalletPutawayByBoxContextDto>.Fail("外箱[" + box.HuCode + "]存在不一致的物料或版本，无法生成整托上架摘要。");
+
+                HuLocationDto location;
+                locations.TryGetValue(box.Id, out location);
+                result.Boxes.Add(new PalletPutawayBoxDto
+                {
+                    BoxCode = box.HuCode,
+                    MaterialCode = materials.FirstOrDefault(),
+                    MaterialRevision = revisions.FirstOrDefault(),
+                    Qty = facts.Sum(x => x.Qty),
+                    WeekSummary = string.Join("/", facts.Where(x => x.WeekYear.HasValue && x.WeekNo.HasValue)
+                        .Select(x => new { x.WeekYear, x.WeekNo, x.WeekSortKey }).Distinct()
+                        .OrderBy(x => x.WeekSortKey).ThenBy(x => x.WeekYear).ThenBy(x => x.WeekNo)
+                        .Select(x => (x.WeekYear.Value % 100).ToString("00") + x.WeekNo.Value.ToString("00"))),
+                    HuStatus = box.LifecycleStatus,
+                    IsHold = box.IsHold,
+                    EffectiveLocationCode = location == null ? null : location.EffectiveLocationCode,
+                    LocationSource = location == null ? string.Empty : location.LocationSource
+                });
+            }
+            HuLocationDto palletLocation = _effectiveLocationResolver.Resolve(pallet.Id);
+            result.WarehouseCode = palletLocation == null ? null : palletLocation.EffectiveWarehouseCode;
+            result.EffectiveLocationCode = palletLocation == null ? null : palletLocation.EffectiveLocationCode;
+            result.LocationSource = palletLocation == null ? string.Empty : palletLocation.LocationSource;
+            result.BoxCount = result.Boxes.Count;
+            result.TotalQty = result.Boxes.Sum(x => x.Qty);
+            return OperationResult<PalletPutawayByBoxContextDto>.Success(result);
+        }
+
+        public OperationResult<WholePalletPutawayResultDto> PutawayPallet(WholePalletPutawayRequest request)
+        {
+            if (request == null) return OperationResult<WholePalletPutawayResultDto>.Fail("请求不能为空。");
+            request.PalletHuCode = Normalize(request.PalletHuCode);
+            request.WarehouseCode = Normalize(request.WarehouseCode);
+            request.TargetLocationCode = Normalize(request.TargetLocationCode);
+            request.ScannedLocationCode = Normalize(request.ScannedLocationCode);
+            request.RequestId = Text(request.RequestId);
+            request.Operator = Text(request.Operator);
+            request.BusinessNo = Text(request.BusinessNo);
+            request.Remark = Text(request.Remark);
+            if (request.PalletHuCode == null) return OperationResult<WholePalletPutawayResultDto>.Fail("PalletHuCode不能为空。");
+            if (request.WarehouseCode == null) return OperationResult<WholePalletPutawayResultDto>.Fail("WarehouseCode不能为空。");
+            if (request.TargetLocationCode == null) return OperationResult<WholePalletPutawayResultDto>.Fail("TargetLocationCode不能为空。");
+            if (request.RequestId == null) return OperationResult<WholePalletPutawayResultDto>.Fail("RequestId不能为空。");
+            if (request.Operator == null) return OperationResult<WholePalletPutawayResultDto>.Fail("Operator不能为空。");
+            if (request.PalletHuCode.Length > 100 || request.TargetLocationCode.Length > 50 || request.WarehouseCode.Length > 30 || request.RequestId.Length > 90)
+                return OperationResult<WholePalletPutawayResultDto>.Fail("请求字段长度超限。");
+
+            WholePalletPutawayResultDto duplicate = _putawayRepository.GetWholePalletPutawayByRequestId(request.RequestId);
+            if (duplicate != null)
+            {
+                if (!string.Equals(duplicate.PalletHuCode, request.PalletHuCode, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(duplicate.ToLocationCode, request.TargetLocationCode, StringComparison.OrdinalIgnoreCase))
+                    return OperationResult<WholePalletPutawayResultDto>.Fail("RequestId已经被其他整托上架业务使用。");
+                duplicate.IsDuplicate = true;
+                return OperationResult<WholePalletPutawayResultDto>.Success(duplicate, "重复请求，返回原整托上架结果");
+            }
+
+            WholePalletPutawayCommand command = new WholePalletPutawayCommand
+            {
+                PalletHuCode = request.PalletHuCode,
+                WarehouseCode = request.WarehouseCode,
+                TargetLocationCode = request.TargetLocationCode,
+                ScannedLocationCode = request.ScannedLocationCode ?? request.TargetLocationCode,
+                RequestId = request.RequestId,
+                BusinessNo = request.BusinessNo,
+                Operator = request.Operator,
+                Remark = request.Remark,
+                OperationNo = Guid.NewGuid().ToString("N").ToUpperInvariant()
+            };
+            WholePalletPutawayPersistenceResult persisted = _putawayRepository.ExecuteWholePalletPutaway(command);
+            return persisted.IsSuccess
+                ? OperationResult<WholePalletPutawayResultDto>.Success(persisted.Data, "整托上架成功")
+                : OperationResult<WholePalletPutawayResultDto>.Fail(persisted.Message);
+        }
+
+        private static string Normalize(string value)
+        {
+            string text = Text(value);
+            return text == null ? null : text.ToUpperInvariant();
+        }
+
+        private static string Text(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
     }
 }

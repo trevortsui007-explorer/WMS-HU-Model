@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using Dapper;
@@ -378,7 +378,17 @@ WHERE Id = @LocationId;
         public bool SetMasterStatus(long locationId, string masterStatus, string operatorName)
         {
             const string sql = @"UPDATE dbo.WMS_Location SET MasterStatus=@MasterStatus,
-ModifyUser=@Operator, ModifyTime=SYSDATETIME() WHERE Id=@LocationId;";
+ModifyUser=@Operator, ModifyTime=SYSDATETIME()
+WHERE Id=@LocationId
+  AND
+  (
+      @MasterStatus='ACTIVE'
+      OR NOT EXISTS
+      (
+          SELECT 1 FROM dbo.WMS_HU_CurrentLocation currentLocation
+          WHERE currentLocation.LocationId=@LocationId
+      )
+  );";
             DynamicParameters parameters = new DynamicParameters();
             parameters.Add("@MasterStatus", masterStatus, DbType.AnsiString, size: 20);
             parameters.Add("@Operator", DbParameterValue.StringOrNull(operatorName), DbType.AnsiString, size: 50);

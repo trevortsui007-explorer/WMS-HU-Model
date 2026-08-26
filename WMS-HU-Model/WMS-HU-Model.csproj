@@ -135,6 +135,7 @@
     <Compile Include="Models\Putaway\PutawayCommand.cs" />
     <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
     <Compile Include="Models\Putaway\PutawayResultDto.cs" />
+    <Compile Include="Models\Putaway\WholePalletPutawayModels.cs" />
     <Compile Include="Models\Repack\BoxRepackStatusDto.cs" />
     <Compile Include="Models\Repack\PackInnerCommand.cs" />
     <Compile Include="Models\Repack\PackInnerPersistenceResult.cs" />
@@ -249,6 +250,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+
 
 
 

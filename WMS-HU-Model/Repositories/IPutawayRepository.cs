@@ -12,5 +12,9 @@ namespace WMS_HU_Model.Repositories
 
         PutawayPersistenceResult ExecutePutaway(
             PutawayCommand command);
+
+        WholePalletPutawayResultDto GetWholePalletPutawayByRequestId(string requestId);
+
+        WholePalletPutawayPersistenceResult ExecuteWholePalletPutaway(WholePalletPutawayCommand command);
     }
 }

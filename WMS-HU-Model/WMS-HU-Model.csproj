@@ -140,6 +140,7 @@
     <Compile Include="Models\Putaway\WholePalletPutawayModels.cs" />
     <Compile Include="Models\Relocation\RelocationModels.cs" />
     <Compile Include="Models\Repack\BoxRepackStatusDto.cs" />
+    <Compile Include="Models\Repack\MergeBoxModels.cs" />
     <Compile Include="Models\Repack\PackInnerCommand.cs" />
     <Compile Include="Models\Repack\PackInnerPersistenceResult.cs" />
     <Compile Include="Models\Repack\PackInnerRequest.cs" />
@@ -154,6 +155,8 @@
     <Compile Include="Models\Repack\UnpackInnerResultDto.cs" />
     <Compile Include="Models\Repack\UnpackBoxModels.cs" />
     <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
+    <Compile Include="Models\Rules\CanonicalOuterBoxCode.cs" />
+    <Compile Include="Models\Rules\MergeBoxRules.cs" />
     <Compile Include="Models\Rules\OutboundAllocationPlanner.cs" />
     <Compile Include="Repositories\IHuLocationRepository.cs" />
     <Compile Include="Repositories\IEffectiveLocationResolver.cs" />
@@ -194,6 +197,7 @@
     <Compile Include="Repositories\Impl\MonitoringRepository.cs" />
     <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
+    <Compile Include="Repositories\Impl\MergeBoxRepository.cs" />
     <Compile Include="Repositories\Impl\RelocationRepository.cs" />
     <Compile Include="Repositories\Impl\WholeBoxUnpackRepository.cs" />
     <Compile Include="Repositories\IOutboundRepository.cs" />
@@ -265,6 +269,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+
 
 
 

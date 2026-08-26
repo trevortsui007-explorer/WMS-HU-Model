@@ -86,6 +86,15 @@ namespace WMS.Modules
                     : Response.AsJson(ApiResult.Fail(result.Message));
             });
 
+            Post("/merge-box", _ =>
+            {
+                MergeBoxRequest request = this.Bind<MergeBoxRequest>();
+                OperationResult<MergeBoxResultDto> result = _service.MergeBox(request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
             //----------------------------------------------------
             // 内包箱装箱转移 -> 到箱子
             //----------------------------------------------------

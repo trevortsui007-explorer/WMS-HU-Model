@@ -750,6 +750,16 @@ WHERE HUId = @InnerHUId
             return new WholeBoxUnpackRepository().Execute(command);
         }
 
+        public MergeBoxResultDto GetMergeBoxByRequestId(string requestId)
+        {
+            return new MergeBoxRepository().GetByRequestId(requestId);
+        }
+
+        public MergeBoxPersistenceResult ExecuteMergeBox(MergeBoxCommand command)
+        {
+            return new MergeBoxRepository().Execute(command);
+        }
+
         private static void ReadDirectLocation(
     SqlConnection conn,
     SqlTransaction tran,

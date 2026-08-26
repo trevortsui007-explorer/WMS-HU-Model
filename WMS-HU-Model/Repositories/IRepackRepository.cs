@@ -28,5 +28,9 @@ namespace WMS_HU_Model.Repositories
         UnpackBoxResultDto GetUnpackBoxByRequestId(string requestId);
 
         UnpackBoxPersistenceResult ExecuteUnpackBox(UnpackBoxCommand command);
+
+        MergeBoxResultDto GetMergeBoxByRequestId(string requestId);
+
+        MergeBoxPersistenceResult ExecuteMergeBox(MergeBoxCommand command);
     }
 }

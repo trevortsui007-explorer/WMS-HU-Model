@@ -22,5 +22,7 @@ namespace WMS_HU_Model.Services
                 PackInnerRequest request);
 
         OperationResult<UnpackBoxResultDto> UnpackBox(UnpackBoxRequest request);
+
+        OperationResult<MergeBoxResultDto> MergeBox(MergeBoxRequest request);
     }
 }

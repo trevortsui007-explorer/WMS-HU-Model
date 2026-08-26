@@ -524,6 +524,55 @@ namespace WMS_HU_Model.Services
                 : OperationResult<UnpackBoxResultDto>.Fail(persisted.Message);
         }
 
+        public OperationResult<MergeBoxResultDto> MergeBox(MergeBoxRequest request)
+        {
+            if (request == null) return OperationResult<MergeBoxResultDto>.Fail("请求不能为空。");
+
+            string warehouseCode = Normalize(request.WarehouseCode);
+            string requestId = Text(request.RequestId);
+            string operatorCode = Text(request.Operator);
+            string businessNo = Text(request.BusinessNo);
+            string remark = Text(request.Remark);
+            if (warehouseCode == null) return OperationResult<MergeBoxResultDto>.Fail("WarehouseCode不能为空。");
+            if (request.InnerPackHuCodes == null || request.InnerPackHuCodes.Count == 0) return OperationResult<MergeBoxResultDto>.Fail("InnerPackHuCodes不能为空。");
+            if (requestId == null) return OperationResult<MergeBoxResultDto>.Fail("RequestId不能为空。");
+            if (operatorCode == null) return OperationResult<MergeBoxResultDto>.Fail("Operator不能为空。");
+
+            var innerPackHuCodes = request.InnerPackHuCodes.Select(Normalize).ToList();
+            if (innerPackHuCodes.Any(x => x == null)) return OperationResult<MergeBoxResultDto>.Fail("InnerPackHuCodes不能包含空值。");
+            if (innerPackHuCodes.Distinct(StringComparer.OrdinalIgnoreCase).Count() != innerPackHuCodes.Count)
+                return OperationResult<MergeBoxResultDto>.Fail("InnerPackHuCodes存在重复内包。");
+            if (warehouseCode.Length > 30 || requestId.Length > 90 || operatorCode.Length > 50
+                || innerPackHuCodes.Any(x => x.Length > 100) || (businessNo != null && businessNo.Length > 100) || (remark != null && remark.Length > 1000))
+                return OperationResult<MergeBoxResultDto>.Fail("请求字段长度超限。");
+
+            MergeBoxResultDto duplicate = _repackRepository.GetMergeBoxByRequestId(requestId);
+            if (duplicate != null)
+            {
+                bool sameRequest = string.Equals(duplicate.WarehouseCode, warehouseCode, StringComparison.OrdinalIgnoreCase)
+                    && duplicate.InnerPackHuCodes.Count == innerPackHuCodes.Count
+                    && !duplicate.InnerPackHuCodes.Except(innerPackHuCodes, StringComparer.OrdinalIgnoreCase).Any();
+                if (!sameRequest) return OperationResult<MergeBoxResultDto>.Fail("RequestId已经被其他合箱业务使用。");
+                duplicate.IsDuplicate = true;
+                return OperationResult<MergeBoxResultDto>.Success(duplicate, "重复请求，返回原合箱结果");
+            }
+
+            MergeBoxCommand command = new MergeBoxCommand
+            {
+                WarehouseCode = warehouseCode,
+                InnerPackHuCodes = innerPackHuCodes,
+                RequestId = requestId,
+                BusinessNo = businessNo,
+                Operator = operatorCode,
+                Remark = remark,
+                OperationNo = Guid.NewGuid().ToString("N").ToUpperInvariant()
+            };
+            MergeBoxPersistenceResult persisted = _repackRepository.ExecuteMergeBox(command);
+            if (!persisted.IsSuccess) return OperationResult<MergeBoxResultDto>.Fail(persisted.Message);
+            return OperationResult<MergeBoxResultDto>.Success(persisted.Data,
+                persisted.Data.IsDuplicate ? "重复请求，返回原合箱结果" : "合箱成功");
+        }
+
         private static string Normalize(string value)
         {
             string text = Text(value);

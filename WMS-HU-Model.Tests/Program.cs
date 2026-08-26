@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 using WMS_HU_Model.Infrastructure.Sap;
@@ -12,6 +13,9 @@ using WMS_HU_Model.Models.Inventory;
 using WMS_HU_Model.Models.HU;
 using WMS_HU_Model.Models.MasterData;
 using WMS_HU_Model.Models.Monitoring;
+using WMS_HU_Model.Models.Putaway;
+using WMS_HU_Model.Models.Relocation;
+using WMS_HU_Model.Models.Repack;
 using WMS_HU_Model.Models.WeekCode;
 using WMS_HU_Model.Repositories;
 using WMS_HU_Model.Rules;
@@ -74,6 +78,12 @@ namespace WMS_HU_Model.Tests
                 InventoryLookupReturnsInheritedLocationInventory();
                 InventoryLookupAggregatesAndRejectsConflictingInnerItems();
                 InventoryLookupEnforcesResolutionAndWarehouseRules();
+                WholePalletPutawayContextAndCommandAreAligned();
+                BatchRelocationValidatesAtomicRequest();
+                BatchRelocationHandlesReplayAndWarehouseValidationFailures();
+                OutboundPickingStateResumesWithoutWrites();
+                WholeBoxUnpackUsesAtomicCommandContract();
+                PdaClosureRepositoriesAreAtomicAndTyped();
                 HuDetailElevatesRootAndPreservesLocationSemantics();
                 HuDetailSupportsShippedAndUnknownHu();
                 HuDetailHistoryIsBoundedAndOrdered();
@@ -83,6 +93,7 @@ namespace WMS_HU_Model.Tests
                 MasterDataWarehouseLifecycleIsGuarded();
                 MasterDataWarehousePlantLifecycleIsGuarded();
                 MasterDataLocationLifecycleIsGuarded();
+                MasterDataLocationControlledMaintenanceIsEnforced();
                 MasterDataSqlContractsAreSetBasedAndTyped();
                 AuditOperationQueryIsBoundedAndNormalized();
                 AuditMoveQueryPreservesMovementFacts();
@@ -1162,6 +1173,154 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void WholePalletPutawayContextAndCommandAreAligned()
+        {
+            FakeHuRepository hus = HuHierarchy();
+            hus.Hus["BOX-1"].PlantCode = "1020";
+            FakePutawayRepository putaway = new FakePutawayRepository
+            {
+                Status = new PalletPutawayStatusDto { PalletHuId = 1, PalletHuCode = "PALLET-1", RemainingBoxCodes = new List<string> { "BOX-1" }, RemainingBoxCount = 1 }
+            };
+            FakeInventoryQueryRepository inventory = new FakeInventoryQueryRepository();
+            inventory.LocationFacts.Add(Fact(2, "BOX-1", 3, "PACK-1", "MAT-1", "01", "B1", 2026, 34, 100m, false));
+            FakeEffectiveLocationResolver locations = new FakeEffectiveLocationResolver();
+            locations.Locations[1] = new HuLocationDto { HuId = 1, EffectiveWarehouseCode = "FG01", EffectiveLocationCode = "INBOUND-PENDING", LocationSource = "SELF" };
+            locations.Locations[2] = new HuLocationDto { HuId = 2, EffectiveWarehouseCode = "FG01", EffectiveLocationCode = "INBOUND-PENDING", LocationSource = "PARENT_PALLET" };
+            PutawayService service = new PutawayService(hus, new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), putaway, inventory, locations);
+
+            OperationResult<PalletPutawayByBoxContextDto> context = service.GetPalletContextByBox(" box-1 ");
+            Equal(true, context.IsSuccess, "whole pallet context succeeds");
+            Equal("PALLET-1", context.Data.PalletHuCode, "box resolves active pallet");
+            Equal("PARENT_PALLET", context.Data.Boxes[0].LocationSource, "whole pallet box uses effective location source");
+            Equal(100m, context.Data.TotalQty, "whole pallet total quantity");
+
+            OperationResult<WholePalletPutawayResultDto> command = service.PutawayPallet(new WholePalletPutawayRequest
+            {
+                PalletHuCode = " pallet-1 ", WarehouseCode = " fg01 ", TargetLocationCode = " h201 ", RequestId = "REQ-PALLET", Operator = "tester"
+            });
+            Equal(true, command.IsSuccess, "whole pallet command succeeds");
+            Equal("PALLET-1", putaway.LastWholeCommand.PalletHuCode, "whole pallet code normalized");
+            Equal("H201", putaway.LastWholeCommand.TargetLocationCode, "whole pallet target normalized");
+            Equal(false, service.PutawayPallet(new WholePalletPutawayRequest()).IsSuccess, "whole pallet required fields validated");
+            Pass();
+        }
+
+        private static void BatchRelocationValidatesAtomicRequest()
+        {
+            FakeRelocationRepository repository = new FakeRelocationRepository();
+            RelocationService service = new RelocationService(repository);
+            OperationResult<BatchRelocationResultDto> result = service.MoveBatch(new BatchRelocationRequest
+            {
+                WarehouseCode = " fg01 ", SourceLocationCode = " h201 ", TargetLocationCode = " h305 ",
+                BoxHuCodes = new List<string> { " box-2 ", "box-1" }, RequestId = "REQ-MOVE", Operator = "tester"
+            });
+            Equal(true, result.IsSuccess, "batch relocation succeeds");
+            Equal("FG01", repository.LastCommand.WarehouseCode, "batch relocation warehouse normalized");
+            Equal(2, repository.LastCommand.BoxHuCodes.Count, "batch relocation dispatches one atomic command");
+            Equal(false, service.MoveBatch(new BatchRelocationRequest { WarehouseCode = "FG01", SourceLocationCode = "H201", TargetLocationCode = "H305", BoxHuCodes = new List<string> { "B1", "b1" }, RequestId = "R", Operator = "O" }).IsSuccess, "batch relocation rejects duplicates");
+            Equal(false, service.MoveBatch(new BatchRelocationRequest { WarehouseCode = "FG01", SourceLocationCode = "H201", TargetLocationCode = "H201", BoxHuCodes = new List<string> { "B1" }, RequestId = "R", Operator = "O" }).IsSuccess, "batch relocation rejects same location");
+            Pass();
+        }
+
+        private static void BatchRelocationHandlesReplayAndWarehouseValidationFailures()
+        {
+            FakeRelocationRepository duplicateRepository = new FakeRelocationRepository
+            {
+                Existing = new BatchRelocationResultDto
+                {
+                    SourceLocationCode = "H201",
+                    TargetLocationCode = "H305",
+                    BoxCodes = new List<string> { "BOX-1" },
+                    MovedCount = 1
+                }
+            };
+            RelocationService duplicateService = new RelocationService(duplicateRepository);
+            OperationResult<BatchRelocationResultDto> duplicate = duplicateService.MoveBatch(new BatchRelocationRequest
+            {
+                WarehouseCode = "FG01", SourceLocationCode = "H201", TargetLocationCode = "H305",
+                BoxHuCodes = new List<string> { "BOX-1" }, RequestId = "REQ-MOVE", Operator = "tester"
+            });
+            Equal(true, duplicate.IsSuccess, "batch relocation replays same request");
+            Equal(true, duplicate.Data.IsDuplicate, "batch relocation marks replay");
+            Equal(null, duplicateRepository.LastCommand, "batch relocation replay skips write");
+
+            FakeRelocationRepository sourceFailureRepository = new FakeRelocationRepository
+            {
+                Next = BatchRelocationPersistenceResult.Fail("一个或多个外箱的有效源货位已变化。")
+            };
+            OperationResult<BatchRelocationResultDto> sourceFailure = new RelocationService(sourceFailureRepository).MoveBatch(new BatchRelocationRequest
+            {
+                WarehouseCode = "FG01", SourceLocationCode = "H201", TargetLocationCode = "H305",
+                BoxHuCodes = new List<string> { "BOX-1" }, RequestId = "REQ-SOURCE", Operator = "tester"
+            });
+            Equal(false, sourceFailure.IsSuccess, "batch relocation rejects changed source location");
+
+            FakeRelocationRepository targetFailureRepository = new FakeRelocationRepository
+            {
+                Next = BatchRelocationPersistenceResult.Fail("目标货位不存在或不属于指定仓库。")
+            };
+            OperationResult<BatchRelocationResultDto> targetFailure = new RelocationService(targetFailureRepository).MoveBatch(new BatchRelocationRequest
+            {
+                WarehouseCode = "FG01", SourceLocationCode = "H201", TargetLocationCode = "H305",
+                BoxHuCodes = new List<string> { "BOX-1" }, RequestId = "REQ-TARGET", Operator = "tester"
+            });
+            Equal(false, targetFailure.IsSuccess, "batch relocation rejects invalid target location");
+            Pass();
+        }
+
+        private static void OutboundPickingStateResumesWithoutWrites()
+        {
+            FakeFormalOutboundRepository repository = new FakeFormalOutboundRepository
+            {
+                PickingState = new OutboundPickingStateDto
+                {
+                    SAPDeliveryNo = "800001", OrderStatus = "PICKING", HasActivePicking = true,
+                    AllocationNo = "ALLOC-1", AllocationStatus = "PICKING",
+                    RemainingTasks = new List<PickingStateTaskDto> { new PickingStateTaskDto { PickBatchNo = "PB-1", BoxCode = "BOX-1", RemainingQty = 100m } }
+                }
+            };
+            FormalOutboundService service = new FormalOutboundService(repository, new FakeHuIdentifierService());
+            OperationResult<OutboundPickingStateDto> result = service.GetPickingState(" 800001 ");
+            Equal(true, result.IsSuccess, "picking state succeeds");
+            Equal("PICKING", result.Data.OrderStatus, "picking state resumes existing status");
+            Equal(1, result.Data.RemainingTasks.Count, "picking state returns remaining task");
+            Equal(0, repository.WriteCalls, "picking state performs no repository write");
+            repository.PickingStateError = "PICKING_STATE_CONFLICT: duplicate";
+            Equal(false, service.GetPickingState("800001").IsSuccess, "picking state rejects inconsistent active allocations");
+            Pass();
+        }
+
+        private static void WholeBoxUnpackUsesAtomicCommandContract()
+        {
+            FakeRepackRepository repository = new FakeRepackRepository();
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            OperationResult<UnpackBoxResultDto> result = service.UnpackBox(new UnpackBoxRequest
+            {
+                BoxHuCode = " box-1 ", WarehouseCode = " fg01 ", RequestId = "REQ-UNPACK", Operator = "tester"
+            });
+            Equal(true, result.IsSuccess, "whole box unpack succeeds");
+            Equal("BOX-1", repository.LastUnpackBoxCommand.BoxHuCode, "whole box code normalized");
+            Equal(null, repository.LastUnpackBoxCommand.ToLocationCode, "omitted target delegates same-location semantics to transaction repository");
+            Equal(false, service.UnpackBox(new UnpackBoxRequest()).IsSuccess, "whole box unpack required fields validated");
+            Pass();
+        }
+
+        private static void PdaClosureRepositoriesAreAtomicAndTyped()
+        {
+            string putaway = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayRepository.cs"));
+            string relocation = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "RelocationRepository.cs"));
+            string unpack = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "WholeBoxUnpackRepository.cs"));
+            string outbound = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "FormalOutboundRepository.cs"));
+            Equal(true, putaway.Contains("ExecuteWholePalletPutaway") && putaway.Contains("IsolationLevel.Serializable"), "whole pallet repository is transactional");
+            Equal(true, relocation.Contains("ExecuteBatch") && relocation.Contains("IsolationLevel.Serializable") && relocation.Contains("IN (@") == false, "relocation repository is transactional and binds generated parameters");
+            Equal(true, unpack.Contains("Execute(UnpackBoxCommand") && unpack.Contains("IsolationLevel.Serializable"), "whole box unpack repository is transactional");
+            Equal(true, outbound.Contains("GetPickingState") && outbound.Contains("ReservationStatus='ACTIVE'"), "picking state reads active reservations");
+            string combined = putaway + relocation + unpack;
+            Equal(false, combined.Contains("AddWithValue"), "PDA closure repositories do not use AddWithValue");
+            Equal(true, combined.Contains("SqlDbType.VarChar") && combined.Contains("SqlDbType.BigInt"), "PDA closure repositories use typed parameters");
+            Pass();
+        }
+
         private static InventoryItemFact Fact(long boxId, string boxCode, long packId, string packCode, string material, string revision, string batch, short year, byte week, decimal qty, bool hold)
         {
             return new InventoryItemFact
@@ -1185,6 +1344,74 @@ namespace WMS_HU_Model.Tests
         private static HuIdentityDto Identity(long id, string code, string type)
         {
             return new HuIdentityDto { HuId = id, HuCode = code, HuType = type, MatchedHuCode = true };
+        }
+
+        private class FakePutawayRepository : IPutawayRepository
+        {
+            public PalletPutawayStatusDto Status;
+            public WholePalletPutawayCommand LastWholeCommand;
+            public PalletPutawayStatusDto GetPalletStatus(long palletHuId) { return Status; }
+            public PutawayResultDto GetByRequestId(string requestId) { return null; }
+            public PutawayPersistenceResult ExecutePutaway(PutawayCommand command) { throw new NotSupportedException(); }
+            public WholePalletPutawayResultDto GetWholePalletPutawayByRequestId(string requestId) { return null; }
+            public WholePalletPutawayPersistenceResult ExecuteWholePalletPutaway(WholePalletPutawayCommand command)
+            {
+                LastWholeCommand = command;
+                return WholePalletPutawayPersistenceResult.Success(new WholePalletPutawayResultDto { PalletHuCode = command.PalletHuCode, ToLocationCode = command.TargetLocationCode, MovedCount = 1 });
+            }
+        }
+
+        private class FakeRelocationRepository : IRelocationRepository
+        {
+            public BatchRelocationCommand LastCommand;
+            public BatchRelocationResultDto Existing;
+            public BatchRelocationPersistenceResult Next;
+            public BatchRelocationResultDto GetByRequestId(string requestId) { return Existing; }
+            public BatchRelocationPersistenceResult ExecuteBatch(BatchRelocationCommand command)
+            {
+                LastCommand = command;
+                return Next ?? BatchRelocationPersistenceResult.Success(new BatchRelocationResultDto { SourceLocationCode = command.SourceLocationCode, TargetLocationCode = command.TargetLocationCode, BoxCodes = command.BoxHuCodes, MovedCount = command.BoxHuCodes.Count });
+            }
+        }
+
+        private class FakeRepackRepository : IRepackRepository
+        {
+            public UnpackBoxCommand LastUnpackBoxCommand;
+            public BoxRepackStatusDto GetBoxStatus(long boxHuId) { return null; }
+            public TransferInnerResultDto GetTransferByRequestId(string requestId) { return null; }
+            public TransferInnerPersistenceResult ExecuteTransferInner(TransferInnerCommand command) { throw new NotSupportedException(); }
+            public UnpackInnerResultDto GetUnpackByRequestId(string requestId) { return null; }
+            public UnpackInnerPersistenceResult ExecuteUnpackInner(UnpackInnerCommand command) { throw new NotSupportedException(); }
+            public PackInnerResultDto GetPackByRequestId(string requestId) { return null; }
+            public PackInnerPersistenceResult ExecutePackInner(PackInnerCommand command) { throw new NotSupportedException(); }
+            public UnpackBoxResultDto GetUnpackBoxByRequestId(string requestId) { return null; }
+            public UnpackBoxPersistenceResult ExecuteUnpackBox(UnpackBoxCommand command)
+            {
+                LastUnpackBoxCommand = command;
+                return UnpackBoxPersistenceResult.Success(new UnpackBoxResultDto { BoxHuCode = command.BoxHuCode, ToLocationCode = command.ToLocationCode, UnpackedCount = 2 });
+            }
+        }
+
+        private class FakeFormalOutboundRepository : IFormalOutboundRepository
+        {
+            public OutboundPickingStateDto PickingState;
+            public string PickingStateError;
+            public int WriteCalls;
+            public List<OutboundOrderDto> GetOrders(OutboundOrderQuery query) { return new List<OutboundOrderDto>(); }
+            public OutboundOrderDto GetOrder(string sapDeliveryNo) { return null; }
+            public List<OutboundAllocationCandidateDto> GetAllocationCandidates(OutboundOrderDto order, string materialCode, string uom) { return new List<OutboundAllocationCandidateDto>(); }
+            public StartPickingResultDto GetStartPickingByRequestId(string requestId) { return null; }
+            public StartPickingPersistenceResult ExecuteStartPicking(StartPickingCommand command) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundActionPersistenceResult ReleaseAllocation(string allocationNo, OutboundActionRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundActionPersistenceResult VoidOrder(string sapDeliveryNo, OutboundActionRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public string GetPickBatchCustomerCode(string pickBatchNo) { return null; }
+            public OutboundScanResultDto GetScanByRequestId(string requestId) { return null; }
+            public OutboundScanPersistenceResult ExecuteScan(OutboundScanCommand command) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundActionPersistenceResult ShipOrder(string sapDeliveryNo, ShipOutboundRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundActionPersistenceResult ReturnPickDetail(long pickDetailId, ReturnPickDetailRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundActionPersistenceResult ReturnToStock(string huCode, ReturnToStockRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public StartPickingPersistenceResult ReserveReplacement(string pickBatchNo, ReplacementRequest request) { WriteCalls++; throw new NotSupportedException(); }
+            public OutboundPickingStateReadResult GetPickingState(string sapDeliveryNo) { return PickingStateError == null ? OutboundPickingStateReadResult.Success(PickingState) : OutboundPickingStateReadResult.Fail(PickingStateError); }
         }
 
         private class FakeInventoryQueryRepository : IInventoryQueryRepository
@@ -1236,6 +1463,7 @@ namespace WMS_HU_Model.Tests
                 HuCode = "PACK-1",
                 DirectLocationCode = null,
                 EffectiveLocationCode = "A-01-01",
+                EffectiveLocationName = "成品货架 A-01-01",
                 LocationSourceHuCode = "PALLET-1",
                 IsInherited = true
             };
@@ -1252,6 +1480,7 @@ namespace WMS_HU_Model.Tests
             Equal(3, result.Data.Tree.Count, "HU detail current three-level tree");
             Equal(true, result.Data.Location.IsInherited, "HU detail preserves inherited location");
             Equal("A-01-01", result.Data.Location.EffectiveLocationCode, "HU detail effective location");
+            Equal("成品货架 A-01-01", result.Data.Location.EffectiveLocationName, "HU detail effective location name");
             Equal(null, result.Data.Location.DirectLocationCode, "HU detail direct location remains explicit null");
             Equal("HOLD-1", result.Data.CurrentHold.HoldNo, "HU detail active hold");
             Equal("INNER_PACK", detailRepository.LastContentHuType, "HU detail content query follows selected HU type");
@@ -1438,6 +1667,9 @@ namespace WMS_HU_Model.Tests
             repository.HasCurrentHuValue = false; repository.HasActiveMappingValue = false;
             Equal(true, service.SetWarehouseActive("NEW", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "empty warehouse disables");
             Equal(true, service.SetWarehouseActive("NEW", true, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "warehouse enables");
+            MasterDataOptionsDto options = service.GetOptions("FG01");
+            Equal("DOUBLE_RACK,TRIPLE_TIER_REMAINDER_RACK,FLOOR_STORAGE", string.Join(",", options.LocationTypes), "server owns approved physical location types");
+            Equal(false, options.LocationTypes.Contains("VIRTUAL"), "system location type excluded from supervisor options");
             Pass();
         }
 
@@ -1469,14 +1701,47 @@ namespace WMS_HU_Model.Tests
             Equal(true, service.Create(create).IsSuccess, "location create succeeds");
             Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "SYSTEM", LocationCode = "SHIPPED", LocationTypeCode = "DOUBLE_RACK", Operator = "tester" }).IsSuccess, "reserved location create rejected");
             repository.CurrentHuCount = 1;
-            Equal(false, service.SetActive("FG01", "A-01", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "location current HU blocks disable");
+            OperationResult<LocationDto> occupiedDisable = service.SetActive("FG01", "A-01", false, new MasterDataStatusRequest { Operator = "tester" });
+            Equal(false, occupiedDisable.IsSuccess, "location current HU blocks disable");
+            Equal("当前货位仍有库存，请先完成移货，确认货位为空后再下线。", occupiedDisable.Message, "occupied location returns actionable offline guidance");
             repository.CurrentHuCount = 0;
+            repository.OccupyOnStatusUpdate = true;
+            Equal(false, service.SetActive("FG01", "A-01", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "execution-time occupancy race blocks disable");
+            repository.OccupyOnStatusUpdate = false;
             Equal(true, service.SetActive("FG01", "A-01", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "empty location disables");
+            Equal(true, repository.Locations.ContainsKey("A-01"), "disable preserves location master record");
+            Equal("INACTIVE", repository.Locations["A-01"].MasterStatus, "disable changes status only");
+            Equal(true, service.SetActive("FG01", "A-01", true, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "disabled physical location can be enabled again");
+            Equal("ACTIVE", repository.Locations["A-01"].MasterStatus, "reenable retains the same location master record");
             repository.Locations["INBOUND-PENDING"] = new LocationDto { Id = 2, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", LocationTypeCode = "VIRTUAL", MasterStatus = "ACTIVE" };
             Equal(false, service.SetActive("FG01", "INBOUND-PENDING", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "system location disable rejected");
             Equal(false, service.Update("FG01", "INBOUND-PENDING", LocationUpdate("tester")).IsSuccess, "system location edit rejected");
             repository.WarehouseActive = false;
             Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "A-02", LocationTypeCode = "DOUBLE_RACK", Operator = "tester" }).IsSuccess, "inactive warehouse location rejected");
+            Pass();
+        }
+
+        private static void MasterDataLocationControlledMaintenanceIsEnforced()
+        {
+            FakeLocationMaintenanceRepository repository = new FakeLocationMaintenanceRepository { WarehouseActive = true };
+            LocationService service = new LocationService(repository);
+            CreateLocationRequest triple = new CreateLocationRequest
+            {
+                WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = " 01w ",
+                LocationTypeCode = "triple_tier_remainder_rack", CapacityQty = 16, Operator = "tester"
+            };
+            Equal(true, service.Create(triple).IsSuccess, "approved triple-tier type accepted");
+            Equal(true, repository.Locations.ContainsKey("01w"), "location code is trim-only without uppercase rewrite");
+            Equal(null, triple.CapacityQty, "create capacity is server-deferred");
+            Equal(true, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "F001", LocationTypeCode = "FLOOR_STORAGE", Operator = "tester" }).IsSuccess, "approved floor type accepted");
+            Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "V001", LocationTypeCode = "VIRTUAL", Operator = "tester" }).IsSuccess, "virtual physical create rejected");
+            Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "X001", LocationTypeCode = "UNKNOWN", Operator = "tester" }).IsSuccess, "invalid physical type rejected");
+            Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "RETURN", LocationCode = "X002", LocationTypeCode = "DOUBLE_RACK", Operator = "tester" }).IsSuccess, "non-storage physical create rejected");
+            repository.Locations["SYS-X"] = new LocationDto { Id = 20, WarehouseCode = "FG01", ZoneCode = "SYSTEM", LocationCode = "SYS-X", LocationTypeCode = "VIRTUAL", IsVirtual = true, MasterStatus = "ACTIVE" };
+            Equal(true, service.Get("FG01", "SYS-X").Data.IsSystemProtected, "virtual location returned as system protected");
+            Equal(false, service.Update("FG01", "SYS-X", LocationUpdate("tester")).IsSuccess, "virtual system update rejected");
+            Equal(false, service.SetActive("FG01", "SYS-X", true, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "virtual system enable rejected");
+            Equal(false, service.Update("FG01", "F001", new UpdateLocationRequest { ZoneCode = "RETURN", LocationTypeCode = "DOUBLE_RACK", Operator = "tester" }).IsSuccess, "physical update outside storage rejected");
             Pass();
         }
 
@@ -1713,7 +1978,7 @@ namespace WMS_HU_Model.Tests
         private class FakeLocationMaintenanceRepository : ILocationRepository
         {
             public Dictionary<string, LocationDto> Locations = new Dictionary<string, LocationDto>(StringComparer.OrdinalIgnoreCase);
-            public bool WarehouseActive; public int CurrentHuCount;
+            public bool WarehouseActive; public int CurrentHuCount; public bool OccupyOnStatusUpdate;
             public List<LocationDto> GetList(string warehouseCode, string zoneCode) { return Locations.Values.ToList(); }
             public List<LocationDto> GetMaintenanceList(LocationMaintenanceQuery query) { return Locations.Values.ToList(); }
             public LocationDto GetByCode(string warehouseCode, string locationCode) { LocationDto value; return Locations.TryGetValue(locationCode, out value) ? value : null; }
@@ -1725,7 +1990,7 @@ namespace WMS_HU_Model.Tests
             public long Insert(long warehouseId, long zoneId, long? parentLocationId, CreateLocationRequest request) { Locations[request.LocationCode] = new LocationDto { Id = Locations.Count + 1, WarehouseCode = request.WarehouseCode, ZoneCode = request.ZoneCode, LocationCode = request.LocationCode, LocationTypeCode = request.LocationTypeCode, MasterStatus = "ACTIVE" }; return Locations.Count; }
             public bool Update(long locationId, long zoneId, long? parentLocationId, UpdateLocationRequest request) { return true; }
             public int CountCurrentHus(long locationId) { return CurrentHuCount; }
-            public bool SetMasterStatus(long locationId, string masterStatus, string operatorName) { Locations.Values.First(x => x.Id == locationId).MasterStatus = masterStatus; return true; }
+            public bool SetMasterStatus(long locationId, string masterStatus, string operatorName) { if (masterStatus == "INACTIVE" && (CurrentHuCount > 0 || OccupyOnStatusUpdate)) return false; Locations.Values.First(x => x.Id == locationId).MasterStatus = masterStatus; return true; }
         }
 
         private class FakeAuditRepository : IAuditRepository

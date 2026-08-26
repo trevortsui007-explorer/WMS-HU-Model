@@ -1,6 +1,8 @@
-# WMS Frontend Foundation V1 实施说明
+﻿# WMS Frontend Foundation V1 实施说明
 
 > V1.1 update: Showcase and component skin now follow `LEARUN_NATIVE_VISUAL_FIRST=True`. All Foundation `.cshtml/.js/.css` files are UTF-8 with BOM. See `09_Learun_Visual_Baseline.md` and `10_Frontend_Encoding_Audit.md`.
+
+> 2026-08-24 Pager debt closure: `WMS_FOUNDATION_PAGER_VISUAL_BASELINE=LEARUN_JFGRID_NATIVE_STYLE` and `WMS_PAGER_DATA_MODE=EXTERNAL_SERVER_PAGING`. The existing Thin Pager remains the only WMS pager renderer; jfGrid stays `isPage:false` for external async data sources. See `14_WMS_Server_Pager_Contract.md`.
 
 ## 1. 实施范围
 
@@ -47,7 +49,7 @@ Web 项目 `D:\com.delton.gz\Learun.Application.Web`：
 - `Wms.Registry.register/get/remove/destroyAll/count`
 - `Wms.Api.get/postForm/postJson/normalize`
 - `SearchPanel.values/reset/toggle/destroy`
-- `Grid.reload/clear/getSelected/getSelectedRows/setState/destroy`；可选 `loadData + responseAdapter` 以通过 `Wms.Api` 驱动后端分页
+- `Grid.reload/refresh/clear/getSelected/getSelectedRows/setState/destroy`；可选 `loadData + responseAdapter` 以通过 `Wms.Api` 驱动后端分页。`reload` 从第 1 页查询，`refresh` 保留当前页。
 - `Select.value/refresh/disabled/destroy`
 - `DateRange.value/clear/destroy`
 - `DetailPanel.render/destroy`
@@ -117,3 +119,11 @@ GET 和 form POST 复用 Learun async helper；JSON POST 因现有 helper 不提
 - `jfGrid` / `lrselect` / `lrdate` 缺少统一 destroy API，包装层只能安全管理自己拥有的资源并复用底层实例。
 - 当前 API adapter 只覆盖已确认的 Learun response 形态；接入真实 WMS API 时需以正式接口合同补充字段映射测试。
 - Showcase 未注册菜单，不应作为生产业务入口。
+
+## 12. External Server Pager
+
+- DOM 职责固定为 `.wms-grid-host > .wms-grid-main + .wms-grid-pager`；Grid main 占剩余高度，Pager 正常占用 31px，不进入 jfGrid scroll body。
+- Human Runtime 已证明 absolute top/right/bottom/left Grid host 不能同时保留 Foundation 的 `height:100%`。这类 host 使用共享 `.wms-grid-absolute-fill` modifier，将 width/height 设为 `auto !important`，由四个 inset 决定实际尺寸。
+- Pager 只解析 navigation target，并通过 Grid 的 `onPageChange(targetPage)` 进入现有 `loadPage`；它不调用 `Wms.Api`，不拥有 filters、pageSize、loading 或 response lifecycle。
+- 左侧摘要、最多 10 个数字页、Learun 蓝色 active、首页/上一页/下一页/尾页、总页数和整数 Jump 均由同一 Foundation renderer 输出。
+- Page 01、02、04 使用 absolute-fill modifier；Page 07 的 grid 在 absolute pane 内使用 `height:100%`，不应用该 modifier。Page 03、05、06 不接入。业务 API、Proxy、数据库及 backend paging contract 未改变。

@@ -1,4 +1,4 @@
-# Page 03 — HU Detail / History V1
+﻿# Page 03 — HU Detail / History V1
 
 ## Purpose
 
@@ -34,7 +34,7 @@ PALLET, OUTER_BOX and INNER_PACK are valid entry points. The selected HU is elev
 
 ## Direct vs effective location
 
-The frontend never derives location from the tree. The existing location service returns direct location fields, effective location fields after the verified ACTIVE-parent fallback, and `IsInherited`/`LocationSourceHuCode`. The page displays direct and effective values separately, including explicit `—` for a missing direct location.
+The frontend never derives location from the tree. The existing location service returns direct location fields, effective location fields after the verified ACTIVE-parent fallback, and `IsInherited`/`LocationSourceHuCode`. Both direct and effective locations include `LocationName` and `LocationCode`. Page03 displays the business-facing location name first (for example `待上架`) and retains the location code (for example `INBOUND-PENDING`) as a separate technical identifier. If legacy data has no name, the page falls back to the code. Direct and effective values remain separate, including explicit `—` for a missing direct location.
 
 ## Item contract
 

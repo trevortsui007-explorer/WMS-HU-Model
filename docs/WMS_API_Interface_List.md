@@ -49,6 +49,11 @@
 | 41 | 周码治理核心接口 | 周码审计 | GET | `/api/wms/weekcode/audit` | R | ACTIVE |
 | 42 | 周码治理核心接口 | 周码重算 | POST | `/api/wms/weekcode/recalculate` | W | ACTIVE |
 | 43 | PDA 库存查询 | 货架 / 外箱 / 内包统一查询 | GET | `/api/wms/inventory/lookup` | R | ACTIVE |
+| 44 | 上架 | 扫外箱查询整托上架上下文 | GET | `/api/wms/putaway/pallet/by-box/{boxHuCode}` | R | ACTIVE |
+| 45 | 上架 | 整托原子上架 | POST | `/api/wms/putaway/pallet` | W | ACTIVE |
+| 46 | Location / Move | 批量原子移库 | POST | `/api/wms/relocation/batch` | W | ACTIVE |
+| 47 | Outbound / Picking | 查询当前拣货状态 | GET | `/api/wms/outbound/orders/{vbeln}/picking-state` | R | ACTIVE |
+| 48 | Repack | 整箱原子拆包 | POST | `/api/wms/repack/unpack-box` | W | ACTIVE |
 
 ## Project API Conventions
 
@@ -162,10 +167,13 @@ flowchart LR
 | 接口（对应 Service） | Request | 用途 / Response | DB、事务、幂等、OperationLog |
 |---|---|---|---|
 | `GET /api/wms/putaway/pallet/{palletHuCode}` (`PutawayService.GetPalletStatus`) | path `palletHuCode` | 扫托盘，返回 `PalletPutawayStatusDto`。 | R：HU、Relation、Location/CurrentLocation；无；天然幂等；否。 |
-| `POST /api/wms/putaway/box` (`PutawayService.PutawayBox`) | `PutawayBoxRequest`: `PalletHuCode`,`BoxHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`Operator`,`Remark?` | 扫外箱上架；`Data` 含 OperationNo、MoveLogId、剩余箱数、是否关闭托盘、IsDuplicate。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`PUTAWAY`/移动日志。 |
+| `GET /api/wms/putaway/pallet/by-box/{boxHuCode}` (`PutawayService.GetPalletContextByBox`) | path `boxHuCode` | 由 active OUTER_BOX 反查运输托，返回托盘有效库位、仓库、箱数/总数量和当前 active child boxes 的物料、版本、周、Hold、状态、EffectiveLocation。 | R：HU、Relation、Item、CurrentLocation；无；天然幂等；否。 |
+| `POST /api/wms/putaway/box` (`PutawayService.PutawayBox`) | `PutawayBoxRequest`: `BoxHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`Operator`,`Remark?` | 扫外箱上架；`Data` 含 OperationNo、MoveLogId、剩余箱数、是否关闭托盘、IsDuplicate。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`PUTAWAY`/移动日志。 |
+| `POST /api/wms/putaway/pallet` (`PutawayService.PutawayPallet`) | `WholePalletPutawayRequest`: `PalletHuCode`,`WarehouseCode`,`TargetLocationCode`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 当前托盘全部 active OUTER_BOX 一次原子拆托上架；返回 Pallet、From/To、BoxCodes、MovedCount、IsPalletClosed、IsDuplicate。 | W：HU、Relation、CurrentLocation、MoveLog、OperationLog；单个 Serializable 事务，事务内重载托盘/箱/货位/Hold/厂别；base RequestId 判重，子 MoveLog 使用确定性后缀；`PUTAWAY_PALLET`,`DETACH_HU`,`PUTAWAY`,`CLOSE_HU`。任一箱失败整体回滚。 |
 | `GET /api/wms/repack/boxes/{boxHuCode}` (`RepackService.GetBoxStatus`) | path `boxHuCode` | 查询外箱及内包状态。 | R：HU、Relation、Item、Location；无；天然幂等；否。 |
 | `POST /api/wms/repack/transfer-inner` (`RepackService.TransferInner`) | `TransferInnerRequest`: `SourceBoxHuCode`,`TargetBoxHuCode`,`InnerHuCode`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将内包在两个外箱间转移。 | W：Relation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_TRANSFER`。 |
 | `POST /api/wms/repack/unpack-inner` (`RepackService.UnpackInner`) | `UnpackInnerRequest`: `SourceBoxHuCode`,`InnerHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 内包从箱拆到库位。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_UNPACK`。 |
+| `POST /api/wms/repack/unpack-box` (`RepackService.UnpackBox`) | `UnpackBoxRequest`: `BoxHuCode`,`WarehouseCode`,`ToLocationCode?`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将外箱全部 active INNER_PACK 一次原子解绑；未传 ToLocationCode 时使用源箱当前直接 STORAGE 货位；返回 InnerPackCodes/UnpackedCount。 | W：Relation、CurrentLocation、MoveLog、OperationLog；单个 Serializable 事务；复用 unpack-inner 的“解绑并给内包建立实体 STORAGE 直接库位”语义；base RequestId 判重，子 MoveLog 使用确定性后缀；任一子项失败整体回滚。 |
 | `POST /api/wms/repack/pack-inner` (`RepackService.PackInner`) | `PackInnerRequest`: `TargetBoxHuCode`,`InnerHuCode`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将库位内包加入外箱。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_PACK`。 |
 
 所有表中成功响应均为 `ApiResult.Success(Data, Message)`；失败为 Service 的 `ApiResult.Fail(Message)`。请求示例格式：`POST {{localUrl}}/api/wms/putaway/box`，JSON 按 Request 字段填入有效 HU/库位；其余路径同总览。
@@ -178,6 +186,7 @@ flowchart LR
 |---|---|---|---|
 | `GET /orders` | query 经 `OutboundOrderQuery` 绑定（`OrderStatus?`,`PlantCode?`,`WarehouseCode?`,`Top:int`） | `OutboundOrderDto[]`（订单与 Lines） | R：OutboundOrder/Line；无；天然幂等；否。 |
 | `GET /orders/{vbeln}` | path `vbeln` | `OutboundOrderDto` | R：OutboundOrder/Line；无；天然幂等；否。 |
+| `GET /orders/{vbeln}/picking-state` | path `vbeln` | `OutboundPickingStateDto`：订单/Lines、选定 Allocation、PickBatches、active Reservations 对应 RemainingTasks、已落库 PickDetails、完成标记 | R：OutboundOrder/Line、Allocation、Reservation、PickBatch/PickDetail、HU、Location；严格只读；不调用 StartPicking、不创建或更新任何拣货事实。WAIT_PICK 不伪造批次；PICKING 恢复现有任务；同一订单多个 active Allocation 或同一 GroupKey 多个 active PickBatch 返回 `PICKING_STATE_CONFLICT:`。 |
 | `POST /orders/{vbeln}/preview` | path `vbeln`；无 Body | `OutboundPreviewDto`、分组 Allocation Plan | R：订单、HU/Item/Location；无；天然幂等；否。 |
 | `POST /orders/{vbeln}/start-picking` | `StartPickingRequest`: `RequestId`,`Operator`,`Remark?` | AllocationNo、Status、ExpireTime、Batches/Reservations、IsDuplicate | W：订单、Allocation、Reservation、PickBatch、OperationLog；整张 delivery 在事务中分配；RequestId 幂等；开始分配日志。 |
 | `POST /orders/{vbeln}/void` | `OutboundActionRequest`: `RequestId`,`Operator`,`Reason?` | `BusinessNo`,`Status`,`IsDuplicate` | W：OutboundOrder/Allocation/Reservation；事务；RequestId 幂等；动作日志。 |
@@ -193,6 +202,19 @@ flowchart LR
 | `POST /pick-batch` | 无 | 固定失败 | 不访问 DB；无；不适用；否；固定 `Code=410`，提示使用 StartPicking/Scan。 |
 
 请求示例：`POST {{localUrl}}/api/wms/outbound/orders/80000001/start-picking`，Body `{"RequestId":"PICK-1","Operator":"OP01","Remark":""}`；所有正式接口成功 JSON 均遵循通用包络。
+
+## Relocation
+
+| 接口 | Request | Data 核心字段 | DB / 事务 / 幂等 / OperationLog |
+|---|---|---|---|
+| `POST /api/wms/relocation/batch` | `BatchRelocationRequest`: `WarehouseCode`,`SourceLocationCode`,`TargetLocationCode`,`BoxHuCodes[]`,`RequestId`,`Operator`,`Reason?`,`Remark?` | Source/Target、BoxCodes、MovedCount、OperationNo、IsDuplicate、MoveTime | 仅 OUTER_BOX；去重输入；源/目标必须是指定仓库 active physical STORAGE；箱必须 ACTIVE、非 Hold、无 active parent，事务内有效源位置等于 Source；单个 Serializable 事务，集合锁定/验证并写 CurrentLocation、MoveLog、OperationLog；base RequestId 判重，子 MoveLog 使用确定性后缀；无 partial success。 |
+
+## PDA Phase-1 Known Gaps
+
+- `RECOMMENDED_PUTAWAY_RULE_UNDEFINED`：当前 Location master、Putaway Service/Repository 和项目文档不存在确定的推荐策略；未实现 `TOP 1` 或其他猜测算法。正常实际上架继续复用 `POST /api/wms/putaway/box`，实际货位与未来推荐不同不应成为后端失败。
+- `NEW_OUTER_BOX_CODE_OWNERSHIP_UNCLEAR`：现有 `POST /api/wms/hus` / `HuService.Create` 要求调用者提供 HUCode；MES inbound 只接收 MES canonical BoxBarCode，工程内没有 WMS 合箱新外箱的权威生成器。因此未公开 `merge-box` 写接口，未生成 GUID/时间戳/随机正式箱码。
+- `LABEL_PRINT_INTEGRATION_PENDING`：未找到正式箱标签打印 API、打印机协议或服务；未新增打印基础设施。
+- `UNPACK_LOCATION_SEMANTICS_UNCLEAR=False`：现有 unpack-inner 明确关闭 active Relation，并给拆出的 INNER_PACK 建立实体 STORAGE DirectLocation；whole-box command 复用同一语义。
 
 ## SAP Integration
 

@@ -1,6 +1,6 @@
 # WMS HTTP API 接口清单（基于当前代码）
 
-> 文档范围：`WMS/Modules` 中当前可发现的 Nancy Module 和 Route；不依据历史需求补写接口。扫描日期：2026-08-21。所有响应 JSON 均为 `ApiResult`：`{ Code, Message, Data }`；Service 内部返回 `OperationResult<T>`（`IsSuccess/Message/Data`），由 Module 转换为 `ApiResult`。
+> 文档范围：`WMS/Modules` 中当前可发现的 Nancy Module 和 Route；不依据历史需求补写接口。扫描日期：2026-08-26；PDA Phase-1 Runtime 验证结果更新日期：2026-08-26。所有响应 JSON 均为 `ApiResult`：`{ Code, Message, Data }`；Service 内部返回 `OperationResult<T>`（`IsSuccess/Message/Data`），由 Module 转换为 `ApiResult`。
 
 ## 接口总览
 
@@ -54,6 +54,8 @@
 | 46 | Location / Move | 批量原子移库 | POST | `/api/wms/relocation/batch` | W | ACTIVE |
 | 47 | Outbound / Picking | 查询当前拣货状态 | GET | `/api/wms/outbound/orders/{vbeln}/picking-state` | R | ACTIVE |
 | 48 | Repack | 整箱原子拆包 | POST | `/api/wms/repack/unpack-box` | W | ACTIVE |
+| 49 | Repack | 内包原子合箱 | POST | `/api/wms/repack/merge-box` | W | ACTIVE |
+| 50 | 上架 | OUTER_BOX TOP 3 推荐货位 | GET | `/api/wms/putaway/recommendations` | R | ACTIVE |
 
 ## Project API Conventions
 
@@ -168,25 +170,35 @@ flowchart LR
 |---|---|---|---|
 | `GET /api/wms/putaway/pallet/{palletHuCode}` (`PutawayService.GetPalletStatus`) | path `palletHuCode` | 扫托盘，返回 `PalletPutawayStatusDto`。 | R：HU、Relation、Location/CurrentLocation；无；天然幂等；否。 |
 | `GET /api/wms/putaway/pallet/by-box/{boxHuCode}` (`PutawayService.GetPalletContextByBox`) | path `boxHuCode` | 由 active OUTER_BOX 反查运输托，返回托盘有效库位、仓库、箱数/总数量和当前 active child boxes 的物料、版本、周、Hold、状态、EffectiveLocation。 | R：HU、Relation、Item、CurrentLocation；无；天然幂等；否。 |
-| `POST /api/wms/putaway/box` (`PutawayService.PutawayBox`) | `PutawayBoxRequest`: `BoxHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`Operator`,`Remark?` | 扫外箱上架；`Data` 含 OperationNo、MoveLogId、剩余箱数、是否关闭托盘、IsDuplicate。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`PUTAWAY`/移动日志。 |
+| `GET /api/wms/putaway/recommendations` (`PutawayRecommendationService.GetRecommendations`) | query `warehouseCode`（必填/最大30）、`boxHuCode`（必填/最大100） | 为 RECEIVE 中的 ACTIVE、非 Hold OUTER_BOX 返回最多 3 个 `V1_DYNAMIC_CLUSTER` 决策辅助位置；`Data` 含 Box/Warehouse/Material/Revision、`RecommendationVersion`,`RecommendedLocationCode`,`Recommendations[]`。 | 严格只读：读取 HU/Relation/Item/CurrentLocation、WarehousePlant、Location/Zone 和物理拓扑；无事务写入、无 reservation/MoveLog/OperationLog，天然幂等但库存变化可导致排序变化。 |
+| `POST /api/wms/putaway/box` (`PutawayService.PutawayBox`) | `PutawayBoxRequest`: `BoxHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?`；不接受 SourceMode | 通用外箱上架；后端从 active parent/direct location 派生 `PALLET_INHERITED` 或 `DIRECT_RECEIVE`。`Data` 向后兼容增加 `SourceMode`，其余保留 OperationNo、MoveLogId、PalletHuCode、From/To、RemainingBoxCount、IsPalletEmpty/Closed、IsDuplicate。 | 两种模式均为原子事务和 RequestId 幂等。PALLET_INHERITED 保留 Relation detach、Box CurrentLocation、剩余箱数/关托及 DETACH_HU/PUTAWAY；DIRECT_RECEIVE 仅允许无父级、SELF/active RECEIVE 的 ACTIVE 非 Hold OUTER_BOX，直接移动到同仓 physical STORAGE，只更新外箱 CurrentLocation并写 PUTAWAY，不创建/解绑 PALLET，也不更新 child INNER_PACK。 |
 | `POST /api/wms/putaway/pallet` (`PutawayService.PutawayPallet`) | `WholePalletPutawayRequest`: `PalletHuCode`,`WarehouseCode`,`TargetLocationCode`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 当前托盘全部 active OUTER_BOX 一次原子拆托上架；返回 Pallet、From/To、BoxCodes、MovedCount、IsPalletClosed、IsDuplicate。 | W：HU、Relation、CurrentLocation、MoveLog、OperationLog；单个 Serializable 事务，事务内重载托盘/箱/货位/Hold/厂别；base RequestId 判重，子 MoveLog 使用确定性后缀；`PUTAWAY_PALLET`,`DETACH_HU`,`PUTAWAY`,`CLOSE_HU`。任一箱失败整体回滚。 |
 | `GET /api/wms/repack/boxes/{boxHuCode}` (`RepackService.GetBoxStatus`) | path `boxHuCode` | 查询外箱及内包状态。 | R：HU、Relation、Item、Location；无；天然幂等；否。 |
 | `POST /api/wms/repack/transfer-inner` (`RepackService.TransferInner`) | `TransferInnerRequest`: `SourceBoxHuCode`,`TargetBoxHuCode`,`InnerHuCode`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将内包在两个外箱间转移。 | W：Relation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_TRANSFER`。 |
 | `POST /api/wms/repack/unpack-inner` (`RepackService.UnpackInner`) | `UnpackInnerRequest`: `SourceBoxHuCode`,`InnerHuCode`,`WarehouseCode`,`ToLocationCode`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 内包从箱拆到库位。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_UNPACK`。 |
 | `POST /api/wms/repack/unpack-box` (`RepackService.UnpackBox`) | `UnpackBoxRequest`: `BoxHuCode`,`WarehouseCode`,`ToLocationCode?`,`ScannedLocationCode?`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将外箱全部 active INNER_PACK 一次原子解绑；未传 ToLocationCode 时使用源箱当前直接 STORAGE 货位；返回 InnerPackCodes/UnpackedCount。 | W：Relation、CurrentLocation、MoveLog、OperationLog；单个 Serializable 事务；复用 unpack-inner 的“解绑并给内包建立实体 STORAGE 直接库位”语义；base RequestId 判重，子 MoveLog 使用确定性后缀；任一子项失败整体回滚。 |
+| `POST /api/wms/repack/merge-box` (`RepackService.MergeBox`) | `MergeBoxRequest`: `WarehouseCode`,`InnerPackHuCodes[]`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?`；不接收新箱码、厂别、序号或目标库位 | 将不同 STORAGE 货架的 detached INNER_PACK 原子合并为新 OUTER_BOX；返回 `NewBoxHuCode`,`PlantCode`,`WarehouseCode`,`MaterialCode`,`MaterialRevision`,`InnerPackCount`,`TotalQty`,`InnerPackHuCodes`,`LocationCode`,`ZoneCode`,`IsDuplicate`。箱码由后端按 `B{YYMMDD}{NNNN}{PlantSuffix}` 生成，1010=A、1020=B。 | W：BoxCodeSequence、HU、Relation、CurrentLocation、MoveLog、OperationLog；单个 Serializable 事务，`UPDLOCK/HOLDLOCK` 序列分配；同厂/仓/物料/版本，Batch/Week/源货架可不同；新箱 ACTIVE/INBOUND-PENDING，内包 DirectLocation 清空并从 PARENT_BOX 继承 EffectiveLocation；RequestId 快照幂等，重放不消耗新序号。 |
 | `POST /api/wms/repack/pack-inner` (`RepackService.PackInner`) | `PackInnerRequest`: `TargetBoxHuCode`,`InnerHuCode`,`RequestId`,`BusinessNo?`,`Operator`,`Remark?` | 将库位内包加入外箱。 | W：Relation、CurrentLocation、MoveLog、OperationLog；事务；RequestId 幂等；`REPACK_PACK`。 |
 
 所有表中成功响应均为 `ApiResult.Success(Data, Message)`；失败为 Service 的 `ApiResult.Fail(Message)`。请求示例格式：`POST {{localUrl}}/api/wms/putaway/box`，JSON 按 Request 字段填入有效 HU/库位；其余路径同总览。
+
+外箱上架来源模式完全由后端当前事实决定：active PALLET parent + box 无 DirectLocation + 有效位置继承 PALLET 为 `PALLET_INHERITED`；无 active parent + box SELF DirectLocation 位于有效 RECEIVE 为 `DIRECT_RECEIVE`。无父级 SELF/STORAGE 明确拒绝并提示使用移库。Merge Box 创建的 `ACTIVE / SELF / INBOUND-PENDING / RECEIVE` 新箱可直接走同一路由到 STORAGE；其 child INNER_PACK 不建立直接库位，继续通过 `PARENT_BOX` 继承新货架。推荐上架 PDA 不发送 SourceMode，并为同一 Box+Target 网络重试保留同一 RequestId。
+
+推荐算法固定为 `V1_DYNAMIC_CLUSTER` / `DECISION_ASSISTANCE` / TOP 3，主维度为 `MaterialCode + MaterialRevision`。它按统一 EffectiveLocation 统计当前 ACTIVE OUTER_BOX（HOLD 箱仍占用实体空间，不按 INNER_PACK 重复计数）：主簇多货位且 `Max > Min` 时以 `CLUSTER_FILL` 补低箱数位置；多货位平衡后以 `CLUSTER_EXPANSION` 优先同排前向相邻空位；单货位簇以 `EXISTING_CLUSTER` 保持原位为 TOP1。后续层级依次为 `PAIRED_ROW_NEARBY`、`EMPTY`、`SAME_MATERIAL_OTHER_REV`、允许混料时的 `MIXED_FALLBACK`。WeekCode 仅在相同推荐层级等强业务条件下作真实 ISO 周距离 tie-break；Batch、AllowMixedBatch、AllowMixedOrder、CapacityQty、MaxWeightKg 和固定 PreferredFillCount 不参与 V1 硬过滤或主排序。
+
+物理连续性只使用 `WMS_Location.PhysicalRackGroupCode + PhysicalRowCode + PositionSequence`；不解析 LocationCode/Remark，不复用 RouteSequence，也不创建 LocationAdjacency。迁移草案为 `docs/database/017_LocationPhysicalTopology.sql`，包含确认的 H1–H9 拓扑（H913 有效且不虚构 H813），本轮未对 WMS_DEV 执行。推荐不分配、不预留、不自动上架；PDA 必须继续扫描实际 STORAGE 货位，实际扫描值仍由现有 `POST /api/wms/putaway/box` 事务重新校验并作为权威事实，选择非 TOP1 的合法货位不会因推荐不一致而失败。
 
 ## Outbound / Picking
 
 **对应 Module**：均为 `OutboundModule`；正式订单接口使用 `FormalOutboundService`，`queue`/`plan` 使用 `OutboundService`。正式预览只读，不创建 Reservation 或变更状态。
 
+正式出库状态机为 `WAIT_PICK → ALLOCATED → PICKING → PICKED → SHIPPED`。PDA Picking Resume 对 `ALLOCATED` 和 `PICKING` 均适用：`ALLOCATED` 恢复已分配但尚未发生首个实体扫描的任务，`PICKING` 恢复首个实体扫描后的在途任务；Resume 只读取并返回既有 Allocation、PickBatch、Reservation 和 PickDetail，不创建新的拣货事实。
+
 | 接口 | Request | Data 核心字段 | DB / 事务 / 幂等 / OperationLog |
 |---|---|---|---|
 | `GET /orders` | query 经 `OutboundOrderQuery` 绑定（`OrderStatus?`,`PlantCode?`,`WarehouseCode?`,`Top:int`） | `OutboundOrderDto[]`（订单与 Lines） | R：OutboundOrder/Line；无；天然幂等；否。 |
 | `GET /orders/{vbeln}` | path `vbeln` | `OutboundOrderDto` | R：OutboundOrder/Line；无；天然幂等；否。 |
-| `GET /orders/{vbeln}/picking-state` | path `vbeln` | `OutboundPickingStateDto`：订单/Lines、选定 Allocation、PickBatches、active Reservations 对应 RemainingTasks、已落库 PickDetails、完成标记 | R：OutboundOrder/Line、Allocation、Reservation、PickBatch/PickDetail、HU、Location；严格只读；不调用 StartPicking、不创建或更新任何拣货事实。WAIT_PICK 不伪造批次；PICKING 恢复现有任务；同一订单多个 active Allocation 或同一 GroupKey 多个 active PickBatch 返回 `PICKING_STATE_CONFLICT:`。 |
+| `GET /orders/{vbeln}/picking-state` | path `vbeln` | `OutboundPickingStateDto`：订单/Lines、选定 Allocation、PickBatches、active Reservations 对应 RemainingTasks、已落库 PickDetails、完成标记 | R：OutboundOrder/Line、Allocation、Reservation、PickBatch/PickDetail、HU、Location；严格只读；不调用 StartPicking、不创建或更新任何拣货事实。WAIT_PICK 不伪造批次；ALLOCATED 与 PICKING 均恢复既有任务；同一订单多个 active Allocation 或同一 GroupKey 多个 active PickBatch 返回 `PICKING_STATE_CONFLICT:`。 |
 | `POST /orders/{vbeln}/preview` | path `vbeln`；无 Body | `OutboundPreviewDto`、分组 Allocation Plan | R：订单、HU/Item/Location；无；天然幂等；否。 |
 | `POST /orders/{vbeln}/start-picking` | `StartPickingRequest`: `RequestId`,`Operator`,`Remark?` | AllocationNo、Status、ExpireTime、Batches/Reservations、IsDuplicate | W：订单、Allocation、Reservation、PickBatch、OperationLog；整张 delivery 在事务中分配；RequestId 幂等；开始分配日志。 |
 | `POST /orders/{vbeln}/void` | `OutboundActionRequest`: `RequestId`,`Operator`,`Reason?` | `BusinessNo`,`Status`,`IsDuplicate` | W：OutboundOrder/Allocation/Reservation；事务；RequestId 幂等；动作日志。 |
@@ -209,12 +221,22 @@ flowchart LR
 |---|---|---|---|
 | `POST /api/wms/relocation/batch` | `BatchRelocationRequest`: `WarehouseCode`,`SourceLocationCode`,`TargetLocationCode`,`BoxHuCodes[]`,`RequestId`,`Operator`,`Reason?`,`Remark?` | Source/Target、BoxCodes、MovedCount、OperationNo、IsDuplicate、MoveTime | 仅 OUTER_BOX；去重输入；源/目标必须是指定仓库 active physical STORAGE；箱必须 ACTIVE、非 Hold、无 active parent，事务内有效源位置等于 Source；单个 Serializable 事务，集合锁定/验证并写 CurrentLocation、MoveLog、OperationLog；base RequestId 判重，子 MoveLog 使用确定性后缀；无 partial success。 |
 
+## PDA Phase-1 Runtime Verification — 2026-08-26
+
+- `RUNTIME_MUTATION_TESTS_EXECUTED=True`。本轮由 Human Review 使用 Postman 在 `WMS_DEV` 执行了真实 WMS 写入；环境为 .NET Framework 4.7.2、Nancy 2.0、SQL Server，`WarehouseCode=FG01`、`PlantCode=1010`、Storage Location 为 `H201` / `H305`，Inbound virtual location 为 `INBOUND-PENDING`。
+- Whole Pallet Putaway：`GET /api/wms/putaway/pallet/by-box/{boxHuCode}` 与 `POST /api/wms/putaway/pallet` 已 Runtime Verified。样本为 1 个 PALLET、3 个 OUTER_BOX、4 个 INNER_PACK；箱数量分别为 40、30、30 PCS，总计 100 PCS，`Material=14A890336C`、`Revision=41`。
+- Batch Relocation：`POST /api/wms/relocation/batch` 已 Runtime Verified。
+- PDA Picking Resume：`GET /api/wms/outbound/orders/{vbeln}/picking-state` 已 Runtime Verified；`ALLOCATED` 与 `PICKING` 两种状态均适用 Resume，且不改变既有公共 Contract。
+- Whole-box Unpack：`POST /api/wms/repack/unpack-box` 已 Runtime Verified。
+- `UNPACK_LOCATION_SEMANTICS_UNCLEAR=False`：现有 unpack-inner 明确关闭 active Relation，并给拆出的 INNER_PACK 建立实体 STORAGE DirectLocation；whole-box command 复用同一语义，此项不是 Known Gap。
+- 本轮仅验证 `WMS_DEV`，未在 Production 执行；未调用最终 `SHIP`，未执行推荐上架、Merge Box Runtime 或 Label Print。Merge Box 后端现已实现，但迁移和 Runtime POST 尚未执行。状态机末态 `SHIPPED` 是正式公共 Contract，不表示本轮已执行 SHIP Runtime 测试。
+
 ## PDA Phase-1 Known Gaps
 
-- `RECOMMENDED_PUTAWAY_RULE_UNDEFINED`：当前 Location master、Putaway Service/Repository 和项目文档不存在确定的推荐策略；未实现 `TOP 1` 或其他猜测算法。正常实际上架继续复用 `POST /api/wms/putaway/box`，实际货位与未来推荐不同不应成为后端失败。
-- `NEW_OUTER_BOX_CODE_OWNERSHIP_UNCLEAR`：现有 `POST /api/wms/hus` / `HuService.Create` 要求调用者提供 HUCode；MES inbound 只接收 MES canonical BoxBarCode，工程内没有 WMS 合箱新外箱的权威生成器。因此未公开 `merge-box` 写接口，未生成 GUID/时间戳/随机正式箱码。
+- `RECOMMENDED_PUTAWAY_RULE_UNDEFINED=False`：已由 `V1_DYNAMIC_CLUSTER` TOP 3 只读决策辅助闭环；仍待人工审批/执行 017 拓扑迁移和 Runtime GET 场景验证。
+- `NEW_OUTER_BOX_CODE_OWNERSHIP_UNCLEAR=False`：合箱新 OUTER_BOX 箱码由 WMS Backend 在正式事务中生成；格式 `B{YYMMDD}{NNNN}{PlantSuffix}`，厂别 1010=A、1020=B，序列范围 `BusinessDate + PlantCode`。迁移草案 `016_MergeBoxCodeSequence.sql` 新增最小序列表，尚未执行。
+- `MERGE_BOX_LOCATION_SEMANTICS_UNCLEAR=False`：新箱为 ACTIVE 且 DirectLocation=`INBOUND-PENDING`/Zone=`RECEIVE`；子 INNER_PACK 的直接 STORAGE 库位清空，active parent 指向新箱，EffectiveLocation/LocationSource 由现有 resolver 返回 `INBOUND-PENDING`/`PARENT_BOX`。跨 STORAGE 货架合箱允许。
 - `LABEL_PRINT_INTEGRATION_PENDING`：未找到正式箱标签打印 API、打印机协议或服务；未新增打印基础设施。
-- `UNPACK_LOCATION_SEMANTICS_UNCLEAR=False`：现有 unpack-inner 明确关闭 active Relation，并给拆出的 INNER_PACK 建立实体 STORAGE DirectLocation；whole-box command 复用同一语义。
 
 ## SAP Integration
 

@@ -136,6 +136,7 @@
     <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
     <Compile Include="Models\Putaway\PutawayResultDto.cs" />
     <Compile Include="Models\Putaway\WholePalletPutawayModels.cs" />
+    <Compile Include="Models\Relocation\RelocationModels.cs" />
     <Compile Include="Models\Repack\BoxRepackStatusDto.cs" />
     <Compile Include="Models\Repack\PackInnerCommand.cs" />
     <Compile Include="Models\Repack\PackInnerPersistenceResult.cs" />
@@ -191,6 +192,7 @@
     <Compile Include="Repositories\Impl\MonitoringRepository.cs" />
     <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
+    <Compile Include="Repositories\Impl\RelocationRepository.cs" />
     <Compile Include="Repositories\Impl\WholeBoxUnpackRepository.cs" />
     <Compile Include="Repositories\IOutboundRepository.cs" />
     <Compile Include="Repositories\IFormalOutboundRepository.cs" />
@@ -200,6 +202,7 @@
     <Compile Include="Repositories\Impl\FormalOutboundRepository.cs" />
     <Compile Include="Repositories\Impl\SapOutboundOrderReceiveRepository.cs" />
     <Compile Include="Repositories\IRepackRepository.cs" />
+    <Compile Include="Repositories\IRelocationRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IInventoryQueryService.cs" />
     <Compile Include="Services\IFinishedGoodsInboundService.cs" />
@@ -232,6 +235,7 @@
     <Compile Include="Services\Impl\OutboundService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />
     <Compile Include="Services\Impl\RepackService.cs" />
+    <Compile Include="Services\Impl\RelocationService.cs" />
     <Compile Include="Services\Impl\UnavailableWeekCodeRuleProvider.cs" />
     <Compile Include="Services\Impl\WeekCodeResolver.cs" />
     <Compile Include="Services\Impl\FormalOutboundService.cs" />
@@ -241,6 +245,7 @@
     <Compile Include="Services\ISapOutboundOrderReceiveService.cs" />
     <Compile Include="Services\IPutawayService.cs" />
     <Compile Include="Services\IRepackService.cs" />
+    <Compile Include="Services\IRelocationService.cs" />
     <Compile Include="Services\IWeekCodeResolver.cs" />
     <Compile Include="Services\IWeekCodeRuleProvider.cs" />
     <Compile Include="Services\IWeekCodeAuditService.cs" />
@@ -252,6 +257,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+
 
 
 

@@ -99,6 +99,7 @@
     <Compile Include="Modules\WeekCodeRecalculateModule.cs" />
     <Compile Include="Modules\PutawayModule.cs" />
     <Compile Include="Modules\RepackModule.cs" />
+    <Compile Include="Modules\RelocationModule.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -155,6 +156,7 @@
   </Target>
   -->
 </Project>
+
 
 
 

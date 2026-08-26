@@ -79,11 +79,40 @@ namespace WMS_HU_Model.Tests
                 InventoryLookupAggregatesAndRejectsConflictingInnerItems();
                 InventoryLookupEnforcesResolutionAndWarehouseRules();
                 WholePalletPutawayContextAndCommandAreAligned();
+                PutawayBoxResolvesPalletInheritedMode();
+                PutawayBoxResolvesDirectReceiveMode();
+                PutawayBoxKeepsMergedChildrenBelowDirectReceiveBox();
+                PutawayBoxRejectsInvalidDirectStates();
+                PutawayBoxDirectReplayIsSafe();
+                DirectReceivePutawayRepositoryIsAtomic();
+                PalletPutawayRepositoryContractRemains();
+                PutawayReplayAndChildInheritanceContractsAlign();
+                PutawayRecommendationValidatesSourcesAndConflicts();
+                PutawayRecommendationKeepsSingleLocationCluster();
+                PutawayRecommendationKeepsExistingClusterInMixedLegacyLocation();
+                PutawayRecommendationDynamicallyFillsAndExpands();
+                PutawayRecommendationRanksMultiLocationAndTop3();
+                PutawayRecommendationPrefersForwardExpansion();
+                PutawayRecommendationUsesPairedRowsWithoutInventingLocations();
+                PutawayRecommendationUsesWeekOnlyAsTieBreaker();
+                PutawayRecommendationDoesNotGuessMissingTopology();
+                PutawayRecommendationRepositoryIsReadOnlyAndCapacityFree();
+                PutawayRecommendationDoesNotBlockManualOverride();
                 BatchRelocationValidatesAtomicRequest();
                 BatchRelocationHandlesReplayAndWarehouseValidationFailures();
                 OutboundPickingStateResumesWithoutWrites();
                 WholeBoxUnpackUsesAtomicCommandContract();
                 PdaClosureRepositoriesAreAtomicAndTyped();
+                CanonicalBoxCodeFormatsPlants();
+                CanonicalBoxCodeScopesAndResetsSequence();
+                CanonicalBoxCodeRejectsInvalidInputs();
+                MergeBoxRulesAllowCrossLocationInventory();
+                MergeBoxRulesRejectInvalidInventory();
+                MergeBoxRulesRejectDimensionMismatch();
+                MergeBoxServiceNormalizesAndPersists();
+                MergeBoxServiceReplaysIdempotently();
+                MergeBoxRepositoryIsAtomicAndConcurrentSafe();
+                MergeBoxPublicContractKeepsServerOwnedFieldsOutOfRequest();
                 HuDetailElevatesRootAndPreservesLocationSemantics();
                 HuDetailSupportsShippedAndUnknownHu();
                 HuDetailHistoryIsBoundedAndOrdered();
@@ -1205,6 +1234,484 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void PutawayBoxResolvesPalletInheritedMode()
+        {
+            FakeHuRepository hus = HuHierarchy();
+            hus.Hus["PALLET-1"].PlantCode = "1010";
+            hus.Hus["BOX-1"].PlantCode = "1010";
+            FakePutawayRepository repository = new FakePutawayRepository
+            {
+                Status = new PalletPutawayStatusDto { PalletHuId = 1, PalletHuCode = "PALLET-1", RemainingBoxCodes = new List<string> { "BOX-1" }, RemainingBoxCount = 1 }
+            };
+            FakeHuLocationRepository huLocations = new FakeHuLocationRepository();
+            huLocations.Locations.Add(new HuLocationDto { HuId = 1, DirectLocationId = 100, DirectLocationCode = "INBOUND-PENDING", DirectZoneCode = "RECEIVE", DirectWarehouseCode = "FG01", LocationSource = "SELF" });
+            huLocations.Locations.Add(new HuLocationDto { HuId = 2, EffectiveLocationId = 100, EffectiveLocationCode = "INBOUND-PENDING", LocationSourceHuId = 1, LocationSource = "PARENT_PALLET" });
+            FakeLocationMaintenanceRepository locations = PutawayLocations();
+            PutawayService service = new PutawayService(hus, locations, huLocations, repository);
+
+            OperationResult<PutawayResultDto> result = service.PutawayBox(new PutawayBoxRequest
+            {
+                BoxHuCode = "BOX-1", WarehouseCode = "FG01", ToLocationCode = "H208", RequestId = "REQ-PALLET-BOX", Operator = "tester"
+            });
+            Equal(true, result.IsSuccess, "pallet inherited box putaway succeeds");
+            Equal("PALLET_INHERITED", result.Data.SourceMode, "pallet source mode returned");
+            Equal(1, repository.PalletBoxCalls, "pallet transaction path retained");
+            Equal(0, repository.DirectCalls, "pallet path does not dispatch direct transaction");
+            locations.Locations["H208"].MasterStatus = "INACTIVE";
+            Equal(false, service.PutawayBox(new PutawayBoxRequest { BoxHuCode = "BOX-1", WarehouseCode = "FG01", ToLocationCode = "H208", RequestId = "REQ-BAD-TARGET", Operator = "tester" }).IsSuccess, "invalid pallet target rejected before mutation");
+            Equal(1, repository.PalletBoxCalls, "invalid pallet target performs no write");
+            Pass();
+        }
+
+        private static void PutawayBoxResolvesDirectReceiveMode()
+        {
+            DirectPutawayFixture fixture = DirectPutaway();
+            OperationResult<PutawayResultDto> result = fixture.Service.PutawayBox(new PutawayBoxRequest
+            {
+                BoxHuCode = "MERGED-1", WarehouseCode = "FG01", ToLocationCode = "H208", ScannedLocationCode = "H208",
+                RequestId = "REQ-DIRECT", BusinessNo = "PDA-PUTAWAY-1", Operator = "tester"
+            });
+            Equal(true, result.IsSuccess, "direct receive box putaway succeeds");
+            Equal("DIRECT_RECEIVE", result.Data.SourceMode, "direct receive source mode returned");
+            Equal(null, result.Data.PalletHuCode, "direct receive response has no pallet");
+            Equal("INBOUND-PENDING", fixture.Repository.LastDirectCommand.FromLocationCode, "direct source location preserved");
+            Equal("H208", fixture.Repository.LastDirectCommand.ToLocationCode, "direct target dispatched");
+            Equal(1, fixture.Repository.DirectCalls, "direct transaction dispatched once");
+            Equal(0, fixture.Repository.PalletBoxCalls, "direct mode does not invoke pallet transaction");
+            Pass();
+        }
+
+        private static void PutawayBoxKeepsMergedChildrenBelowDirectReceiveBox()
+        {
+            DirectPutawayFixture fixture = DirectPutaway();
+            HuDto box = fixture.Hus.Hus["MERGED-1"];
+            fixture.Hus.Hus.Remove("MERGED-1");
+            box.HuCode = "B-MERGED";
+            fixture.Hus.Hus[box.HuCode] = box;
+            for (int index = 0; index < 3; index++)
+            {
+                long childId = 11 + index;
+                string childCode = "INNER_PACK-" + Convert.ToChar('A' + index);
+                fixture.Hus.Hus[childCode] = new HuDto { Id = childId, HuCode = childCode, HuType = "INNER_PACK", PlantCode = "1010", LifecycleStatus = "ACTIVE" };
+                fixture.Hus.ParentIds[childId] = box.Id;
+                fixture.Resolver.Locations[childId] = new HuLocationDto
+                {
+                    HuId = childId,
+                    HuCode = childCode,
+                    DirectLocationId = null,
+                    EffectiveLocationId = 100,
+                    EffectiveLocationCode = "INBOUND-PENDING",
+                    EffectiveWarehouseCode = "FG01",
+                    EffectiveZoneCode = "RECEIVE",
+                    LocationSourceHuId = box.Id,
+                    LocationSourceHuCode = box.HuCode,
+                    LocationSourceHuType = "OUTER_BOX",
+                    LocationSource = "PARENT_BOX"
+                };
+            }
+
+            fixture.Repository.OnDirectExecute = command =>
+            {
+                HuLocationDto boxLocation = fixture.Resolver.Locations[box.Id];
+                boxLocation.DirectLocationId = command.ToLocationId;
+                boxLocation.DirectLocationCode = command.ToLocationCode;
+                boxLocation.DirectZoneCode = "STORAGE";
+                boxLocation.EffectiveLocationId = command.ToLocationId;
+                boxLocation.EffectiveLocationCode = command.ToLocationCode;
+                boxLocation.EffectiveZoneCode = "STORAGE";
+                foreach (long childId in fixture.Hus.ParentIds.Where(x => x.Value == box.Id).Select(x => x.Key))
+                {
+                    HuLocationDto childLocation = fixture.Resolver.Locations[childId];
+                    childLocation.EffectiveLocationId = command.ToLocationId;
+                    childLocation.EffectiveLocationCode = command.ToLocationCode;
+                    childLocation.EffectiveZoneCode = "STORAGE";
+                }
+            };
+
+            Equal(null, fixture.Hus.GetActiveParent(box.Id), "merged INNER_PACK children do not make OUTER_BOX appear to have a parent");
+            Equal(null, fixture.HuLocations.Locations[0].LocationSource, "legacy direct-location projection reproduces missing source enum");
+            OperationResult<PutawayResultDto> result = fixture.Service.PutawayBox(new PutawayBoxRequest
+            {
+                BoxHuCode = box.HuCode,
+                WarehouseCode = "FG01",
+                ToLocationCode = "H208",
+                ScannedLocationCode = "H208",
+                RequestId = "REQ-MERGED-DIRECT",
+                Operator = "tester"
+            });
+
+            Equal(true, result.IsSuccess, "merged box direct receive putaway succeeds through effective resolver");
+            Equal("DIRECT_RECEIVE", result.Data.SourceMode, "merged box resolves direct receive source mode");
+            HuLocationDto movedBox = fixture.Resolver.Resolve(box.Id);
+            Equal("H208", movedBox.DirectLocationCode, "merged box direct location moves to storage");
+            Equal("SELF", movedBox.LocationSource, "merged box remains self located");
+            foreach (long childId in fixture.Hus.ParentIds.Where(x => x.Value == box.Id).Select(x => x.Key))
+            {
+                HuLocationDto child = fixture.Resolver.Resolve(childId);
+                Equal(null, child.DirectLocationId, "merged child direct location remains null");
+                Equal(box.Id, child.LocationSourceHuId, "merged child parent box remains unchanged");
+                Equal("H208", child.EffectiveLocationCode, "merged child inherits moved box location");
+                Equal("PARENT_BOX", child.LocationSource, "merged child location source remains parent box");
+            }
+            Pass();
+        }
+
+        private static void PutawayBoxRejectsInvalidDirectStates()
+        {
+            DirectPutawayFixture fixture = DirectPutaway();
+            fixture.Resolver.Locations[10].DirectZoneCode = "STORAGE";
+            Equal(true, fixture.Service.PutawayBox(PutawayRequest("REQ-STORAGE")).Message.Contains("移库"), "self storage directs operator to relocation");
+
+            fixture = DirectPutaway();
+            fixture.Resolver.Locations.Clear();
+            Equal(true, fixture.Service.PutawayBox(PutawayRequest("REQ-NO-LOCATION")).Message.Contains("位置状态不完整"), "missing direct location rejected");
+
+            fixture = DirectPutaway();
+            fixture.Resolver.Locations[10].EffectiveLocationId = 101;
+            fixture.Resolver.Locations[10].LocationSourceHuId = 11;
+            fixture.Resolver.Locations[10].LocationSource = "PARENT_BOX";
+            Equal("外箱直接位置与有效位置来源不一致，无法执行上架。", fixture.Service.PutawayBox(PutawayRequest("REQ-LOCATION-CONFLICT")).Message, "true direct and effective location conflict remains rejected");
+
+            fixture = DirectPutaway();
+            fixture.Hus.Hus["MERGED-1"].IsHold = true;
+            Equal(true, fixture.Service.PutawayBox(PutawayRequest("REQ-HOLD")).Message.Contains("冻结"), "direct hold rejected");
+
+            fixture = DirectPutaway();
+            fixture.Hus.Hus["MERGED-1"].LifecycleStatus = "SHIPPED";
+            Equal(true, fixture.Service.PutawayBox(PutawayRequest("REQ-SHIPPED")).Message.Contains("ACTIVE"), "direct non-active rejected");
+
+            fixture = DirectPutaway();
+            fixture.Hus.Hus["PARENT-BOX"] = new HuDto { Id = 11, HuCode = "PARENT-BOX", HuType = "OUTER_BOX", PlantCode = "1010", LifecycleStatus = "ACTIVE" };
+            fixture.Hus.ParentIds[10] = 11;
+            Equal(true, fixture.Service.PutawayBox(PutawayRequest("REQ-BAD-PARENT")).Message.Contains("不是PALLET"), "non-pallet parent rejected");
+            Equal(0, fixture.Repository.DirectCalls, "invalid direct states perform no mutation");
+            Pass();
+        }
+
+        private static void PutawayBoxDirectReplayIsSafe()
+        {
+            DirectPutawayFixture fixture = DirectPutaway();
+            fixture.Repository.Existing = new PutawayResultDto
+            {
+                SourceMode = "DIRECT_RECEIVE", BoxHuCode = "MERGED-1", FromLocationCode = "INBOUND-PENDING",
+                ToLocationCode = "H208", IsDuplicate = false
+            };
+            OperationResult<PutawayResultDto> replay = fixture.Service.PutawayBox(PutawayRequest("REQ-REPLAY"));
+            Equal(true, replay.IsSuccess, "direct retry succeeds without pallet");
+            Equal(true, replay.Data.IsDuplicate, "direct retry marked duplicate");
+            Equal("DIRECT_RECEIVE", replay.Data.SourceMode, "direct replay preserves source mode");
+            Equal(0, fixture.Repository.DirectCalls, "direct replay performs no second move");
+            PutawayBoxRequest conflict = PutawayRequest("REQ-REPLAY");
+            conflict.ToLocationCode = "H305";
+            Equal(false, fixture.Service.PutawayBox(conflict).IsSuccess, "same request id with different target rejected");
+            Pass();
+        }
+
+        private static void DirectReceivePutawayRepositoryIsAtomic()
+        {
+            string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "DirectReceivePutawayRepository.cs"));
+            Equal(true, repository.Contains("IsolationLevel.Serializable") && repository.Contains("WITH (UPDLOCK,HOLDLOCK)"), "direct receive uses serializable locks");
+            Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"PUTAWAY\"") && repository.Contains("UPDATE dbo.WMS_HU_CurrentLocation"), "direct receive atomically moves box and audits putaway");
+            Equal(true, repository.Contains("RequestIdExists") && repository.Contains("PutawayIdempotencyReader.Read"), "direct transaction rechecks idempotency before mutation");
+            Equal(false, repository.Contains("INSERT INTO dbo.WMS_HU_Relation") || repository.Contains("UPDATE dbo.WMS_HU_Relation") || repository.Contains("\"DETACH_HU\""), "direct receive creates no fake pallet and no detach audit");
+            Equal(false, repository.Contains("INNER_PACK") || repository.Contains("AddWithValue") || repository.Contains("dynamic"), "direct receive does not mutate children and uses typed code");
+            Pass();
+        }
+
+        private static void PalletPutawayRepositoryContractRemains()
+        {
+            string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayRepository.cs"));
+            Equal(true, repository.Contains("CloseReason = N'PUTAWAY'") && repository.Contains("\"DETACH_HU\""), "pallet relation detach remains");
+            Equal(true, repository.Contains("RemainingBoxCount") && repository.Contains("CLOSE_HU"), "pallet remaining and close semantics remain");
+            Equal(true, repository.Contains("SourceMode = \"PALLET_INHERITED\""), "pallet response identifies derived source mode");
+            Equal(true, repository.Contains("ExecuteDirectReceivePutaway") && repository.Contains("new DirectReceivePutawayRepository().Execute"), "putaway repository cleanly separates direct transaction");
+            Pass();
+        }
+
+        private static void PutawayReplayAndChildInheritanceContractsAlign()
+        {
+            string reader = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayIdempotencyReader.cs"));
+            string resolver = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "EffectiveLocationResolver.cs"));
+            Equal(true, reader.Contains("LEFT JOIN dbo.WMS_HU pallet") && reader.Contains("DIRECT_RECEIVE") && reader.Contains("PALLET_INHERITED"), "idempotency reader supports nullable pallet relation");
+            Equal(false, reader.Contains("INNER JOIN dbo.WMS_HU pallet"), "direct replay does not require pallet join");
+            Equal(true, resolver.Contains("PARENT_BOX") && resolver.Contains("CurrentLocation"), "children continue inheriting moved parent box location");
+            Pass();
+        }
+
+        private static void PutawayRecommendationValidatesSourcesAndConflicts()
+        {
+            PutawayRecommendationSnapshot direct = RecommendationSnapshot("SELF");
+            direct.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            OperationResult<PutawayRecommendationResultDto> directResult = Recommend(direct);
+            Equal(true, directResult.IsSuccess, "direct receive recommendation succeeds");
+            Equal("V1_DYNAMIC_CLUSTER", directResult.Data.RecommendationVersion, "recommendation version returned");
+
+            PutawayRecommendationSnapshot inherited = RecommendationSnapshot("PARENT_PALLET");
+            inherited.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            Equal(true, Recommend(inherited).IsSuccess, "pallet inherited recommendation succeeds");
+
+            inherited.Box.EffectiveZoneCode = "STORAGE";
+            Equal(false, Recommend(inherited).IsSuccess, "already stored box is not a putaway recommendation input");
+            inherited.Box.EffectiveZoneCode = "RECEIVE";
+            inherited.IncomingItems.Add(new PutawayRecommendationItemSnapshot { MaterialCode = "MAT-B", MaterialRevision = "82" });
+            Equal(true, Recommend(inherited).Message.StartsWith("PUTAWAY_RECOMMENDATION_ITEM_CONFLICT:"), "material conflict is explicit");
+            Pass();
+        }
+
+        private static void PutawayRecommendationKeepsSingleLocationCluster()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(209, "H209", "H12", "H2", 9));
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            AddRecommendationBoxes(snapshot, 210, 3, "MAT-A", "82", 2026, 34, 1000);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H210", result.RecommendedLocationCode, "single cluster remains at occupied location");
+            Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "single cluster level");
+            Equal("H211", result.Recommendations[1].LocationCode, "single cluster forward expansion is second");
+            Equal("H209", result.Recommendations[2].LocationCode, "single cluster backward expansion is third");
+            Pass();
+        }
+
+        private static void PutawayRecommendationKeepsExistingClusterInMixedLegacyLocation()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.IncomingItems[0].MaterialCode = "16I080019D";
+            snapshot.IncomingItems[0].MaterialRevision = "82";
+            snapshot.IncomingItems[0].WeekYear = 2026;
+            snapshot.IncomingItems[0].WeekNo = 32;
+            snapshot.Locations.Add(RecommendationLocation(25, "H207", "H12", "H2", 7));
+            snapshot.Locations.Add(RecommendationLocation(26, "H208", "H12", "H2", 8));
+            snapshot.Locations.Add(RecommendationLocation(27, "H209", "H12", "H2", 9));
+            AddRecommendationBoxes(snapshot, 26, 4, "16I080019D", "82", 2026, 32, 1951241);
+            AddRecommendationBoxes(snapshot, 26, 1, "OTHER-MATERIAL", "01", 2026, 32, 1951122);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H208", result.RecommendedLocationCode, "existing target cluster survives legacy mixed inventory at no-mix location");
+            Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "legacy mixed location keeps existing-cluster level");
+            Equal("H209", result.Recommendations[1].LocationCode, "forward expansion follows existing H208 cluster");
+            Equal("H207", result.Recommendations[2].LocationCode, "backward expansion remains third");
+            Pass();
+        }
+
+        private static void PutawayRecommendationDynamicallyFillsAndExpands()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            snapshot.Locations.Add(RecommendationLocation(212, "H212", "H12", "H2", 12));
+            AddRecommendationBoxes(snapshot, 210, 10, "MAT-A", "82", 2026, 33, 2000);
+            AddRecommendationBoxes(snapshot, 211, 9, "MAT-A", "82", 2026, 34, 3000);
+
+            PutawayRecommendationResultDto unbalanced = Recommend(snapshot).Data;
+            Equal("H211", unbalanced.RecommendedLocationCode, "lower cluster count fills first");
+            Equal("CLUSTER_FILL", unbalanced.Recommendations[0].RecommendationLevel, "unbalanced level");
+            Equal(1, unbalanced.Recommendations[0].ClusterFillGap, "dynamic fill gap");
+
+            AddRecommendationBoxes(snapshot, 211, 1, "MAT-A", "82", 2026, 34, 4000);
+            PutawayRecommendationResultDto balanced = Recommend(snapshot).Data;
+            Equal("H212", balanced.RecommendedLocationCode, "balanced cluster expands");
+            Equal("CLUSTER_EXPANSION", balanced.Recommendations[0].RecommendationLevel, "balanced expansion level");
+            Equal(0, balanced.Recommendations[0].ClusterFillGap, "balanced dynamic gap");
+            Pass();
+        }
+
+        private static void PutawayRecommendationRanksMultiLocationAndTop3()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            for (int position = 8; position <= 12; position++)
+                snapshot.Locations.Add(RecommendationLocation(position, "H2" + position.ToString("00"), "H12", "H2", position));
+            AddRecommendationBoxes(snapshot, 8, 10, "MAT-A", "82", 2026, 34, 5000);
+            AddRecommendationBoxes(snapshot, 9, 10, "MAT-A", "82", 2026, 34, 5100);
+            AddRecommendationBoxes(snapshot, 10, 8, "MAT-A", "82", 2026, 34, 5200);
+            AddRecommendationBoxes(snapshot, 11, 9, "MAT-A", "82", 2026, 34, 5300);
+            AddRecommendationBoxes(snapshot, 12, 9, "MAT-A", "82", 2026, 34, 5400);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal(3, result.Recommendations.Count, "recommendation takes global top three");
+            Equal("H210", result.Recommendations[0].LocationCode, "count eight ranks first");
+            Equal("H211", result.Recommendations[1].LocationCode, "count nine ranks second");
+            Equal("CLUSTER_FILL", result.Recommendations[0].RecommendationLevel, "first tier is fill");
+            Equal(true, result.Recommendations.All(x => x.RecommendationLevel == "CLUSTER_FILL"), "all top three may share one level");
+            Equal(1, result.Recommendations[0].Rank, "first rank assigned");
+            Equal(3, result.Recommendations[2].Rank, "third rank assigned");
+            Equal(result.Recommendations[0].LocationCode, result.RecommendedLocationCode, "top one mirrors recommended location");
+            Pass();
+        }
+
+        private static void PutawayRecommendationPrefersForwardExpansion()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(209, "H209", "H12", "H2", 9));
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            snapshot.Locations.Add(RecommendationLocation(212, "H212", "H12", "H2", 12));
+            AddRecommendationBoxes(snapshot, 210, 4, "MAT-A", "82", 2026, 34, 6000);
+            AddRecommendationBoxes(snapshot, 211, 4, "MAT-A", "82", 2026, 34, 6100);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H212", result.Recommendations[0].LocationCode, "forward boundary ranks before backward");
+            Equal("H209", result.Recommendations[1].LocationCode, "backward boundary remains candidate");
+            Equal("CLUSTER_EXPANSION", result.Recommendations[0].RecommendationLevel, "forward expansion level");
+            Pass();
+        }
+
+        private static void PutawayRecommendationUsesPairedRowsWithoutInventingLocations()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            snapshot.Locations.Add(RecommendationLocation(212, "H212", "H12", "H2", 12));
+            snapshot.Locations.Add(RecommendationLocation(110, "H110", "H12", "H1", 10));
+            snapshot.Locations.Add(RecommendationLocation(111, "H111", "H12", "H1", 11));
+            snapshot.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            AddRecommendationBoxes(snapshot, 210, 2, "MAT-A", "82", 2026, 34, 7000);
+            AddRecommendationBoxes(snapshot, 211, 2, "MAT-A", "82", 2026, 34, 7100);
+            AddRecommendationBoxes(snapshot, 212, 2, "MAT-A", "82", 2026, 34, 7200);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H111", result.Recommendations[0].LocationCode, "nearest paired row position ranks first");
+            Equal("PAIRED_ROW_NEARBY", result.Recommendations[0].RecommendationLevel, "paired row level");
+            Equal(false, result.Recommendations.Any(x => x.LocationCode == "H813"), "algorithm never invents missing H813");
+            Equal(true, result.Recommendations.FindIndex(x => x.LocationCode == "H301") < 0 || result.Recommendations.FindIndex(x => x.LocationCode == "H111") < result.Recommendations.FindIndex(x => x.LocationCode == "H301"), "paired rack precedes unrelated rack");
+
+            PutawayRecommendationSnapshot h913 = RecommendationSnapshot("SELF");
+            h913.Locations.Add(RecommendationLocation(913, "H913", "H89", "H9", 13));
+            h913.Locations.Add(RecommendationLocation(812, "H812", "H89", "H8", 12));
+            AddRecommendationBoxes(h913, 913, 1, "MAT-A", "82", 2026, 34, 7300);
+            PutawayRecommendationResultDto edge = Recommend(h913).Data;
+            Equal("H913", edge.RecommendedLocationCode, "H913 remains a valid single-location cluster");
+            Equal(false, edge.Recommendations.Any(x => x.LocationCode == "H813"), "H913 pairing does not create H813");
+            Pass();
+        }
+
+        private static void PutawayRecommendationUsesWeekOnlyAsTieBreaker()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(209, "H209", "H12", "H2", 9));
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
+            snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
+            PutawayRecommendationLocationSnapshot mixed = RecommendationLocation(305, "H305", "H34", "H3", 5);
+            mixed.AllowMixedMaterial = true;
+            snapshot.Locations.Add(mixed);
+            AddRecommendationBoxes(snapshot, 209, 1, "MAT-A", "82", 2025, 1, 8000);
+            AddRecommendationBoxes(snapshot, 210, 1, "MAT-A", "82", 2026, 34, 8100);
+            AddRecommendationBoxes(snapshot, 211, 2, "MAT-A", "82", 2026, 20, 8200);
+            AddRecommendationBoxes(snapshot, 305, 1, "MAT-A", "82", 2026, 34, 8300);
+            AddRecommendationBoxes(snapshot, 305, 1, "MAT-X", "01", 2026, 34, 8400);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H210", result.Recommendations[0].LocationCode, "exact week wins equal fill candidates");
+            Equal("SAME", result.Recommendations[0].WeekAffinity, "exact week affinity exposed");
+            Equal("CLUSTER_FILL", result.Recommendations[0].RecommendationLevel, "week does not change recommendation tier");
+            Equal(true, result.Recommendations.All(x => x.RecommendationLevel != "MIXED_FALLBACK") || result.Recommendations.FindIndex(x => x.RecommendationLevel == "CLUSTER_FILL") < result.Recommendations.FindIndex(x => x.RecommendationLevel == "MIXED_FALLBACK"), "lower mixed tier cannot jump by week");
+            Pass();
+        }
+
+        private static void PutawayRecommendationDoesNotGuessMissingTopology()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(210, "H210", null, null, null));
+            PutawayRecommendationLocationSnapshot numericNeighbor = RecommendationLocation(211, "H211", null, null, null);
+            numericNeighbor.PutawayPriority = 1;
+            snapshot.Locations.Add(numericNeighbor);
+            snapshot.Locations.Add(RecommendationLocation(212, "H212", "H12", "H2", 12));
+            snapshot.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            AddRecommendationBoxes(snapshot, 210, 3, "MAT-A", "82", 2026, 34, 9000);
+
+            PutawayRecommendationResultDto result = Recommend(snapshot).Data;
+            Equal("H210", result.RecommendedLocationCode, "missing topology still keeps existing material location");
+            Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "missing topology remains single cluster");
+            Equal("EMPTY", result.Recommendations.First(x => x.LocationCode == "H211").RecommendationLevel, "numeric neighbor is not guessed as expansion");
+            Equal(false, result.Recommendations.Any(x => x.RecommendationLevel == "PAIRED_ROW_NEARBY"), "missing topology has no paired-row semantics");
+
+            PutawayRecommendationSnapshot legality = RecommendationSnapshot("SELF");
+            PutawayRecommendationLocationSnapshot dedicated = RecommendationLocation(401, "H401", "H34", "H4", 1);
+            dedicated.PlantPolicy = "DEDICATED";
+            dedicated.DedicatedPlantCode = "1020";
+            legality.Locations.Add(dedicated);
+            PutawayRecommendationLocationSnapshot noMix = RecommendationLocation(402, "H402", "H34", "H4", 2);
+            legality.Locations.Add(noMix);
+            legality.Locations.Add(RecommendationLocation(403, "H403", "H34", "H4", 3));
+            AddRecommendationBoxes(legality, 402, 1, "MAT-X", "01", 2026, 34, 9100);
+            PutawayRecommendationResultDto legalResult = Recommend(legality).Data;
+            Equal(1, legalResult.Recommendations.Count, "illegal candidates are not added to reach top three");
+            Equal("H403", legalResult.RecommendedLocationCode, "only legal storage candidate remains");
+            Pass();
+        }
+
+        private static void PutawayRecommendationRepositoryIsReadOnlyAndCapacityFree()
+        {
+            string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayRecommendationRepository.cs"));
+            string service = File.ReadAllText(Path.Combine("WMS-HU-Model", "Services", "Impl", "PutawayRecommendationService.cs"));
+            string migration = File.ReadAllText(Path.Combine("docs", "database", "017_LocationPhysicalTopology.sql"));
+            string module = File.ReadAllText(Path.Combine("WMS", "Modules", "PutawayModule.cs"));
+            Equal(false, repository.Contains("INSERT INTO") || repository.Contains("UPDATE dbo") || repository.Contains("DELETE FROM") || repository.Contains("MERGE "), "recommendation repository is read-only");
+            Equal(false, repository.Contains("AddWithValue") || repository.Contains("dynamic"), "recommendation repository uses typed ADO.NET");
+            Equal(true, repository.Contains("EffectiveLocationResolver.ActiveParentPredicateSql") && repository.Contains("relation.IsActive = 1"), "recommendation inventory uses effective location ancestry");
+            Equal(true, repository.Contains("zone.ZoneCode = 'STORAGE'") && repository.Contains("location.MasterStatus = 'ACTIVE'") && repository.Contains("location.IsVirtual = 0") && repository.Contains("location.IsScannable = 1"), "recommendation repository applies hard storage filters");
+            Equal(false, repository.Contains("box.IsHold = 0"), "held boxes remain in physical occupancy");
+            Equal(false, service.Contains("CapacityQty") || service.Contains("MaxWeightKg") || service.Contains("PreferredFillCount"), "V1 ranking has no capacity assumption");
+            Equal(true, migration.Contains("PhysicalRackGroupCode") && migration.Contains("PhysicalRowCode") && migration.Contains("PositionSequence"), "topology migration adds minimal fields");
+            Equal(true, migration.Contains("'H913','H89','H9',13") && !migration.Contains("H813"), "confirmed H topology includes H913 without H813");
+            Equal(false, migration.Contains("LocationAdjacency"), "no adjacency table created");
+            Equal(true, module.Contains("Get(\"/recommendations\"") && module.Contains("Request.Query.warehouseCode") && module.Contains("Request.Query.boxHuCode"), "public recommendation route registered");
+            Pass();
+        }
+
+        private static void PutawayRecommendationDoesNotBlockManualOverride()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(208, "H208", "H12", "H2", 8));
+            PutawayRecommendationResultDto recommendation = Recommend(snapshot).Data;
+            Equal("H208", recommendation.RecommendedLocationCode, "test has a top recommendation");
+
+            DirectPutawayFixture fixture = DirectPutaway();
+            PutawayBoxRequest request = PutawayRequest("REQ-MANUAL-OVERRIDE");
+            request.ToLocationCode = "H305";
+            request.ScannedLocationCode = "H305";
+            OperationResult<PutawayResultDto> actual = fixture.Service.PutawayBox(request);
+            Equal(true, actual.IsSuccess, "valid manually scanned location still succeeds");
+            Equal("H305", fixture.Repository.LastDirectCommand.ToLocationCode, "actual scan remains authoritative");
+            Pass();
+        }
+
+        private static DirectPutawayFixture DirectPutaway()
+        {
+            DirectPutawayFixture fixture = new DirectPutawayFixture();
+            fixture.Hus.Hus["MERGED-1"] = new HuDto { Id = 10, HuCode = "MERGED-1", HuType = "OUTER_BOX", PlantCode = "1010", LifecycleStatus = "ACTIVE", IsHold = false };
+            fixture.HuLocations.Locations.Add(new HuLocationDto
+            {
+                HuId = 10, DirectLocationId = 100, DirectLocationCode = "INBOUND-PENDING", DirectWarehouseCode = "FG01",
+                DirectZoneCode = "RECEIVE", EffectiveLocationId = 100, EffectiveLocationCode = "INBOUND-PENDING", LocationSourceHuId = 10
+            });
+            fixture.Resolver.Locations[10] = new HuLocationDto
+            {
+                HuId = 10, HuCode = "MERGED-1", HuType = "OUTER_BOX", DirectLocationId = 100, DirectLocationCode = "INBOUND-PENDING",
+                DirectWarehouseCode = "FG01", DirectZoneCode = "RECEIVE", EffectiveLocationId = 100, EffectiveLocationCode = "INBOUND-PENDING",
+                EffectiveWarehouseCode = "FG01", EffectiveZoneCode = "RECEIVE", LocationSourceHuId = 10, LocationSourceHuCode = "MERGED-1",
+                LocationSourceHuType = "OUTER_BOX", LocationSource = "SELF"
+            };
+            fixture.Locations = PutawayLocations();
+            fixture.Service = new PutawayService(fixture.Hus, fixture.Locations, fixture.HuLocations, fixture.Repository, new FakeInventoryQueryRepository(), fixture.Resolver);
+            return fixture;
+        }
+
+        private static FakeLocationMaintenanceRepository PutawayLocations()
+        {
+            FakeLocationMaintenanceRepository result = new FakeLocationMaintenanceRepository();
+            result.Locations["INBOUND-PENDING"] = new LocationDto { Id = 100, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", MasterStatus = "ACTIVE", IsVirtual = true, PlantPolicy = "ANY" };
+            result.Locations["H208"] = new LocationDto { Id = 200, WarehouseCode = "FG01", LocationCode = "H208", ZoneCode = "STORAGE", MasterStatus = "ACTIVE", IsVirtual = false, PlantPolicy = "ANY" };
+            result.Locations["H305"] = new LocationDto { Id = 201, WarehouseCode = "FG01", LocationCode = "H305", ZoneCode = "STORAGE", MasterStatus = "ACTIVE", IsVirtual = false, PlantPolicy = "ANY" };
+            return result;
+        }
+
+        private static PutawayBoxRequest PutawayRequest(string requestId)
+        {
+            return new PutawayBoxRequest { BoxHuCode = "MERGED-1", WarehouseCode = "FG01", ToLocationCode = "H208", RequestId = requestId, Operator = "tester" };
+        }
+
         private static void BatchRelocationValidatesAtomicRequest()
         {
             FakeRelocationRepository repository = new FakeRelocationRepository();
@@ -1321,6 +1828,232 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void CanonicalBoxCodeFormatsPlants()
+        {
+            DateTime date = new DateTime(2026, 8, 26);
+            Equal("B2608260001A", CanonicalOuterBoxCode.Build(date, "1010", 1), "plant 1010 canonical box code");
+            Equal("B2608260001B", CanonicalOuterBoxCode.Build(date, "1020", 1), "plant 1020 canonical box code");
+            Equal(12, CanonicalOuterBoxCode.Build(date, "1010", 9999).Length, "canonical box code fixed length");
+            Pass();
+        }
+
+        private static void CanonicalBoxCodeScopesAndResetsSequence()
+        {
+            DateTime dayOne = new DateTime(2026, 8, 26);
+            DateTime dayTwo = dayOne.AddDays(1);
+            Equal("B2608260001A", CanonicalOuterBoxCode.Build(dayOne, "1010", 1), "1010 independent first sequence");
+            Equal("B2608260001B", CanonicalOuterBoxCode.Build(dayOne, "1020", 1), "1020 independent first sequence");
+            Equal("B2608260003A", CanonicalOuterBoxCode.Build(dayOne, "1010", 3), "same plant increments");
+            Equal("B2608270001A", CanonicalOuterBoxCode.Build(dayTwo, "1010", 1), "new date resets sequence scope");
+            Pass();
+        }
+
+        private static void CanonicalBoxCodeRejectsInvalidInputs()
+        {
+            bool exhaustedRejected = false;
+            bool unsupportedRejected = false;
+            try { CanonicalOuterBoxCode.Build(new DateTime(2026, 8, 26), "1010", 10000); }
+            catch (ArgumentOutOfRangeException) { exhaustedRejected = true; }
+            try { CanonicalOuterBoxCode.Build(new DateTime(2026, 8, 26), "9999", 1); }
+            catch (ArgumentException) { unsupportedRejected = true; }
+            Equal(true, exhaustedRejected, "five digit daily sequence rejected");
+            Equal(true, unsupportedRejected, "unsupported plant rejected");
+            Pass();
+        }
+
+        private static void MergeBoxRulesAllowCrossLocationInventory()
+        {
+            List<string> codes = new List<string> { "I001", "I002", "I003" };
+            List<MergeBoxPackFact> facts = new List<MergeBoxPackFact>
+            {
+                MergeFact(1, "I001", "H201", "1010", "FG01", "MAT-1", "41", 20m),
+                MergeFact(2, "I002", "H208", "1010", "FG01", "MAT-1", "41", 30m),
+                MergeFact(3, "I003", "H305", "1010", "FG01", "MAT-1", "41", 30m)
+            };
+            Equal(null, MergeBoxRules.Validate(codes, facts, "FG01"), "different STORAGE racks are accepted");
+            Equal(80m, facts.Sum(x => x.TotalQty), "merge quantity sums active inventory");
+            Pass();
+        }
+
+        private static void MergeBoxRulesRejectInvalidInventory()
+        {
+            List<string> codes = new List<string> { "I001", "I002" };
+            MergeBoxPackFact valid = MergeFact(1, "I001", "H201", "1010", "FG01", "MAT-1", "41", 20m);
+            MergeBoxPackFact invalid = MergeFact(2, "I002", "H208", "1010", "FG01", "MAT-1", "41", 30m);
+            invalid.IsHold = true;
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { valid, invalid }, "FG01").Contains("冻结"), "hold rejects whole merge");
+            invalid.IsHold = false; invalid.LifecycleStatus = "SHIPPED";
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { valid, invalid }, "FG01").Contains("ACTIVE"), "non-active rejects whole merge");
+            invalid.LifecycleStatus = "ACTIVE"; invalid.HasActiveParent = true;
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { valid, invalid }, "FG01").Contains("父HU"), "active parent rejects whole merge");
+            invalid.HasActiveParent = false; invalid.ZoneCode = "RECEIVE";
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { valid, invalid }, "FG01").Contains("STORAGE"), "non-storage source rejects whole merge");
+            Pass();
+        }
+
+        private static void MergeBoxRulesRejectDimensionMismatch()
+        {
+            List<string> codes = new List<string> { "I001", "I002" };
+            MergeBoxPackFact first = MergeFact(1, "I001", "H201", "1010", "FG01", "MAT-1", "41", 20m);
+            MergeBoxPackFact second = MergeFact(2, "I002", "H208", "1010", "FG01", "MAT-2", "41", 30m);
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { first, second }, "FG01").Contains("物料编码"), "material mismatch rejected");
+            second.MaterialCode = "MAT-1"; second.MaterialRevision = "42";
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { first, second }, "FG01").Contains("物料版本"), "revision mismatch rejected");
+            second.MaterialRevision = "41"; second.PlantCode = "1020";
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { first, second }, "FG01").Contains("厂别"), "cross-plant rejected");
+            second.PlantCode = "1010"; second.WarehouseCode = "FG02";
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { first, second }, "FG01").Contains("指定仓库"), "cross-warehouse rejected");
+            second.WarehouseCode = "FG01"; second.MaterialCodeCount = 2;
+            Equal(true, MergeBoxRules.Validate(codes, new List<MergeBoxPackFact> { first, second }, "FG01").StartsWith("INNER_PACK_ITEM_CONFLICT:"), "inner item conflict has stable code");
+            Pass();
+        }
+
+        private static void MergeBoxServiceNormalizesAndPersists()
+        {
+            FakeRepackRepository repository = new FakeRepackRepository();
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            OperationResult<MergeBoxResultDto> result = service.MergeBox(new MergeBoxRequest
+            {
+                WarehouseCode = " fg01 ", InnerPackHuCodes = new List<string> { " i001 ", " i002 " },
+                RequestId = " REQ-MERGE ", BusinessNo = " BIZ-1 ", Operator = " tester ", Remark = " merge "
+            });
+            Equal(true, result.IsSuccess, "merge service succeeds");
+            Equal("FG01", repository.LastMergeBoxCommand.WarehouseCode, "merge warehouse normalized");
+            Equal("I001,I002", string.Join(",", repository.LastMergeBoxCommand.InnerPackHuCodes), "merge pack codes normalized");
+            Equal("REQ-MERGE", repository.LastMergeBoxCommand.RequestId, "request id trimmed");
+            Equal(false, service.MergeBox(new MergeBoxRequest { WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I001", "i001" }, RequestId = "R", Operator = "u" }).IsSuccess, "duplicate request-list item rejected");
+            Pass();
+        }
+
+        private static void MergeBoxServiceReplaysIdempotently()
+        {
+            FakeRepackRepository repository = new FakeRepackRepository
+            {
+                ExistingMerge = new MergeBoxResultDto
+                {
+                    NewBoxHuCode = "B2608260019A", WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I001", "I002" }, IsDuplicate = false
+                }
+            };
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            OperationResult<MergeBoxResultDto> replay = service.MergeBox(new MergeBoxRequest
+            {
+                WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I002", "I001" }, RequestId = "REQ-19", Operator = "tester"
+            });
+            Equal(true, replay.IsSuccess, "same merge request replays");
+            Equal("B2608260019A", replay.Data.NewBoxHuCode, "replay returns original box code");
+            Equal(true, replay.Data.IsDuplicate, "replay marked duplicate");
+            Equal(0, repository.MergeCalls, "replay consumes no sequence through execute");
+            Equal(false, service.MergeBox(new MergeBoxRequest { WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I003" }, RequestId = "REQ-19", Operator = "tester" }).IsSuccess, "request id conflict rejected");
+            Pass();
+        }
+
+        private static void MergeBoxRepositoryIsAtomicAndConcurrentSafe()
+        {
+            string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "MergeBoxRepository.cs"));
+            string migration = File.ReadAllText(Path.Combine("docs", "database", "016_MergeBoxCodeSequence.sql"));
+            Equal(true, repository.Contains("IsolationLevel.Serializable") && repository.Contains("WITH (UPDLOCK,HOLDLOCK)"), "merge and sequence allocation use serializable locking");
+            Equal(true, repository.IndexOf("MergeBoxRules.Validate", StringComparison.Ordinal) < repository.IndexOf("AllocateSequence", StringComparison.Ordinal), "all pack rules run before sequence allocation");
+            Equal(true, repository.Contains("BOX_CODE_DAILY_SEQUENCE_EXHAUSTED") && repository.Contains("current.Value >= 9999"), "sequence exhaustion is stable business failure");
+            Equal(false, repository.Contains("MAX(HUCode)") || repository.Contains("AddWithValue"), "allocator avoids max HUCode and AddWithValue");
+            Equal(true, repository.Contains("DELETE FROM dbo.WMS_HU_CurrentLocation") && repository.Contains("'INBOUND-PENDING'") && repository.Contains("'RECEIVE'"), "merge clears child direct locations and resolves pending target");
+            Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"MERGE_BOX\"") && repository.Contains("\"ATTACH_HU\""), "merge writes movement and operation audit");
+            Equal(true, migration.Contains("PRIMARY KEY CLUSTERED (BusinessDate, PlantCode)") && migration.Contains("SET XACT_ABORT ON") && migration.Contains("BETWEEN 1 AND 9999"), "sequence migration is scoped and rerun-safe");
+            Pass();
+        }
+
+        private static void MergeBoxPublicContractKeepsServerOwnedFieldsOutOfRequest()
+        {
+            string module = File.ReadAllText(Path.Combine("WMS", "Modules", "RepackModule.cs"));
+            string models = File.ReadAllText(Path.Combine("WMS-HU-Model", "Models", "Repack", "MergeBoxModels.cs"));
+            Type requestType = typeof(MergeBoxRequest);
+            Equal(true, module.Contains("Post(\"/merge-box\"") && module.Contains("this.Bind<MergeBoxRequest>()"), "merge route uses typed binding");
+            Equal(null, requestType.GetProperty("NewBoxHuCode"), "request cannot provide new box code");
+            Equal(null, requestType.GetProperty("PlantCode"), "request cannot provide plant code");
+            Equal(null, requestType.GetProperty("SequenceNo"), "request cannot provide sequence");
+            Equal(null, requestType.GetProperty("TargetLocationCode"), "request cannot provide target location");
+            Equal(true, models.Contains("NewBoxHuCode") && models.Contains("InnerPackHuCodes") && models.Contains("LocationCode"), "response exposes merge result contract");
+            Pass();
+        }
+
+        private static PutawayRecommendationSnapshot RecommendationSnapshot(string locationSource)
+        {
+            PutawayRecommendationSnapshot snapshot = new PutawayRecommendationSnapshot
+            {
+                WarehouseAllowsPlant = true,
+                Box = new PutawayRecommendationBoxSnapshot
+                {
+                    HuId = 1,
+                    HuCode = "INCOMING-BOX",
+                    HuType = "OUTER_BOX",
+                    PlantCode = "1010",
+                    LifecycleStatus = "ACTIVE",
+                    IsHold = false,
+                    EffectiveLocationId = 100,
+                    EffectiveLocationCode = "INBOUND-PENDING",
+                    EffectiveWarehouseCode = "FG01",
+                    EffectiveZoneCode = "RECEIVE",
+                    LocationSource = locationSource
+                }
+            };
+            snapshot.IncomingItems.Add(new PutawayRecommendationItemSnapshot
+            {
+                MaterialCode = "MAT-A",
+                MaterialRevision = "82",
+                WeekYear = 2026,
+                WeekNo = 34,
+                WeekSortKey = 202634
+            });
+            return snapshot;
+        }
+
+        private static PutawayRecommendationLocationSnapshot RecommendationLocation(long id, string code, string rackGroup, string row, int? position)
+        {
+            return new PutawayRecommendationLocationSnapshot
+            {
+                LocationId = id,
+                LocationCode = code,
+                PlantPolicy = "SAME_PLANT",
+                AllowMixedMaterial = false,
+                PutawayPriority = 100,
+                PhysicalRackGroupCode = rackGroup,
+                PhysicalRowCode = row,
+                PositionSequence = position
+            };
+        }
+
+        private static void AddRecommendationBoxes(
+            PutawayRecommendationSnapshot snapshot,
+            long locationId,
+            int count,
+            string materialCode,
+            string materialRevision,
+            short weekYear,
+            byte weekNo,
+            long firstBoxId)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                snapshot.Inventory.Add(new PutawayRecommendationInventorySnapshot
+                {
+                    BoxHuId = firstBoxId + index,
+                    BoxHuCode = "BOX-" + (firstBoxId + index),
+                    PlantCode = "1010",
+                    LocationId = locationId,
+                    MaterialCode = materialCode,
+                    MaterialRevision = materialRevision,
+                    WeekYear = weekYear,
+                    WeekNo = weekNo,
+                    WeekSortKey = weekYear * 100 + weekNo
+                });
+            }
+        }
+
+        private static OperationResult<PutawayRecommendationResultDto> Recommend(PutawayRecommendationSnapshot snapshot)
+        {
+            return new PutawayRecommendationService(new FakePutawayRecommendationRepository { Snapshot = snapshot })
+                .GetRecommendations(" fg01 ", " incoming-box ");
+        }
+
         private static InventoryItemFact Fact(long boxId, string boxCode, long packId, string packCode, string material, string revision, string batch, short year, byte week, decimal qty, bool hold)
         {
             return new InventoryItemFact
@@ -1341,6 +2074,17 @@ namespace WMS_HU_Model.Tests
             };
         }
 
+        private static MergeBoxPackFact MergeFact(long id, string code, string locationCode, string plantCode, string warehouseCode, string materialCode, string revision, decimal qty)
+        {
+            return new MergeBoxPackFact
+            {
+                HuId = id, HuCode = code, HuType = "INNER_PACK", PlantCode = plantCode, LifecycleStatus = "ACTIVE", IsHold = false,
+                HasActiveParent = false, LocationId = id + 100, LocationCode = locationCode, WarehouseCode = warehouseCode,
+                WarehouseStatus = "ACTIVE", ZoneCode = "STORAGE", ZoneStatus = "ACTIVE", LocationStatus = "ACTIVE", IsVirtual = false,
+                ActiveItemCount = 1, MaterialCodeCount = 1, MaterialRevisionCount = 1, MaterialCode = materialCode, MaterialRevision = revision, TotalQty = qty
+            };
+        }
+
         private static HuIdentityDto Identity(long id, string code, string type)
         {
             return new HuIdentityDto { HuId = id, HuCode = code, HuType = type, MatchedHuCode = true };
@@ -1350,15 +2094,62 @@ namespace WMS_HU_Model.Tests
         {
             public PalletPutawayStatusDto Status;
             public WholePalletPutawayCommand LastWholeCommand;
+            public PutawayCommand LastBoxCommand;
+            public DirectReceivePutawayCommand LastDirectCommand;
+            public PutawayResultDto Existing;
+            public Action<DirectReceivePutawayCommand> OnDirectExecute;
+            public int PalletBoxCalls;
+            public int DirectCalls;
             public PalletPutawayStatusDto GetPalletStatus(long palletHuId) { return Status; }
-            public PutawayResultDto GetByRequestId(string requestId) { return null; }
-            public PutawayPersistenceResult ExecutePutaway(PutawayCommand command) { throw new NotSupportedException(); }
+            public PutawayResultDto GetByRequestId(string requestId) { return Existing; }
+            public PutawayPersistenceResult ExecutePutaway(PutawayCommand command)
+            {
+                PalletBoxCalls++;
+                LastBoxCommand = command;
+                return PutawayPersistenceResult.Success(new PutawayResultDto
+                {
+                    SourceMode = "PALLET_INHERITED", PalletHuCode = command.PalletHuCode, BoxHuCode = command.BoxHuCode,
+                    FromLocationCode = command.FromLocationCode, ToLocationCode = command.ToLocationCode, RemainingBoxCount = 1
+                });
+            }
+            public PutawayPersistenceResult ExecuteDirectReceivePutaway(DirectReceivePutawayCommand command)
+            {
+                DirectCalls++;
+                LastDirectCommand = command;
+                if (OnDirectExecute != null) OnDirectExecute(command);
+                return PutawayPersistenceResult.Success(new PutawayResultDto
+                {
+                    SourceMode = "DIRECT_RECEIVE", BoxHuCode = command.BoxHuCode, FromLocationCode = command.FromLocationCode,
+                    ToLocationCode = command.ToLocationCode, RemainingBoxCount = 0
+                });
+            }
             public WholePalletPutawayResultDto GetWholePalletPutawayByRequestId(string requestId) { return null; }
             public WholePalletPutawayPersistenceResult ExecuteWholePalletPutaway(WholePalletPutawayCommand command)
             {
                 LastWholeCommand = command;
                 return WholePalletPutawayPersistenceResult.Success(new WholePalletPutawayResultDto { PalletHuCode = command.PalletHuCode, ToLocationCode = command.TargetLocationCode, MovedCount = 1 });
             }
+        }
+
+        private class FakePutawayRecommendationRepository : IPutawayRecommendationRepository
+        {
+            public PutawayRecommendationSnapshot Snapshot;
+            public PutawayRecommendationSnapshot LoadSnapshot(string warehouseCode, string boxHuCode)
+            {
+                Equal("FG01", warehouseCode, "recommendation warehouse normalized");
+                Equal("INCOMING-BOX", boxHuCode, "recommendation box normalized");
+                return Snapshot;
+            }
+        }
+
+        private class DirectPutawayFixture
+        {
+            public FakeHuRepository Hus = new FakeHuRepository();
+            public FakeHuLocationRepository HuLocations = new FakeHuLocationRepository();
+            public FakePutawayRepository Repository = new FakePutawayRepository();
+            public FakeEffectiveLocationResolver Resolver = new FakeEffectiveLocationResolver();
+            public FakeLocationMaintenanceRepository Locations;
+            public PutawayService Service;
         }
 
         private class FakeRelocationRepository : IRelocationRepository
@@ -1377,6 +2168,9 @@ namespace WMS_HU_Model.Tests
         private class FakeRepackRepository : IRepackRepository
         {
             public UnpackBoxCommand LastUnpackBoxCommand;
+            public MergeBoxCommand LastMergeBoxCommand;
+            public MergeBoxResultDto ExistingMerge;
+            public int MergeCalls;
             public BoxRepackStatusDto GetBoxStatus(long boxHuId) { return null; }
             public TransferInnerResultDto GetTransferByRequestId(string requestId) { return null; }
             public TransferInnerPersistenceResult ExecuteTransferInner(TransferInnerCommand command) { throw new NotSupportedException(); }
@@ -1389,6 +2183,18 @@ namespace WMS_HU_Model.Tests
             {
                 LastUnpackBoxCommand = command;
                 return UnpackBoxPersistenceResult.Success(new UnpackBoxResultDto { BoxHuCode = command.BoxHuCode, ToLocationCode = command.ToLocationCode, UnpackedCount = 2 });
+            }
+            public MergeBoxResultDto GetMergeBoxByRequestId(string requestId) { return ExistingMerge; }
+            public MergeBoxPersistenceResult ExecuteMergeBox(MergeBoxCommand command)
+            {
+                MergeCalls++;
+                LastMergeBoxCommand = command;
+                return MergeBoxPersistenceResult.Success(new MergeBoxResultDto
+                {
+                    NewBoxHuCode = "B2608260001A", PlantCode = "1010", WarehouseCode = command.WarehouseCode,
+                    InnerPackHuCodes = new List<string>(command.InnerPackHuCodes), InnerPackCount = command.InnerPackHuCodes.Count,
+                    LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE"
+                });
             }
         }
 

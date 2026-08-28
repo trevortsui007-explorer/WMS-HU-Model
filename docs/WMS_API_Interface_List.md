@@ -146,7 +146,7 @@ flowchart LR
 
 - **对应 Module / Service**：`FinishedGoodsInboundIntegrationModule` / `FinishedGoodsInboundService`。
 - **用途**：接收调用方提供的完整成品快照；结构校验后解析每个内包的周码并持久化 HU 层级。
-- **Request Body**：`FinishedGoodsInboundReceiveRequest`：`Snapshot`（必填）、`RequestId:string?`（最多 100）、`Operator:string`（必填，最多 50）、`Remark:string?`（最多 1000）。`Snapshot`：`SourceSystem`, `SourceType`, `SourceEntityId`, `SourceReferenceNo?`, `PlantCode`, `Pallet?`（`SourceEntityId`,`PalletCode`），`Boxes[]`（`SourceEntityId`,`BoxCode`,`AlternateBoxCode?`,`MaterialCode`,`MaterialRevision?`,`Uom`,`WeekRuleSource?`,`WeekRuleValue?`,`InnerPacks[]`）；每个 pack：`SourceEntityId`,`PackCode`,`Qty:decimal`,`DateCode?`,`PackCreatedTime?`。客户端提交的 `WeekCode`/解析状态会由服务重新计算。
+- **Request Body**：`FinishedGoodsInboundReceiveRequest`：`Snapshot`（必填）、`RequestId:string?`（最多 100）、`Operator:string`（必填，最多 50）、`Remark:string?`（最多 1000）。`Snapshot`：`SourceSystem`, `SourceType`, `SourceEntityId`, `SourceReferenceNo?`, `PlantCode`, `Pallet?`（`SourceEntityId`,`PalletCode`），`Boxes[]`（`SourceEntityId`,`BoxCode`,`AlternateBoxCode?`,`MaterialCode`,`MaterialRevision?`,`Uom`,`WeekRuleSource?`,`WeekRuleValue?`,`InnerPacks[]`）；每个 pack：`SourceEntityId`,`PackId?`,`PackCode`,`IsSpecialSapCharg`,`Qty:decimal`,`DateCode?`,`PackCreatedTime?`。`PackId` 是 MES `PK_Packmaster.PackID` 源事实；MES canonical ingress 会从 `PK_PackLot → PP_LotCard.OrderType` 派生特殊分类。客户端提交的 `SapBatchNo`、`WeekCode` 和解析状态不作为权威值，Service 会重新生成。
 - **示例**：`POST {{localUrl}}/api/wms/integration/finished-goods/inbound`，Body：`{"RequestId":"FGI-001","Operator":"MES","Snapshot":{"SourceSystem":"MES","SourceType":"PlanStock","SourceEntityId":"PS-1","PlantCode":"P1","Boxes":[{"SourceEntityId":"B-1","BoxCode":"BOX-1","MaterialCode":"MAT-1","Uom":"PCS","InnerPacks":[{"SourceEntityId":"PK-1","PackCode":"PACK-1","Qty":10,"DateCode":"2401"}]}]}}`。
 - **Response**：`Data` 为 `ReceiptId`, `SourceSystem`, `SourceType`, `SourceEntityId`, `SnapshotHash`, `HashVersion`, `ReceiveTime`, `IsDuplicate`；例如 `{"Code":200,"Message":"SUCCESS","Data":{"ReceiptId":1,"IsDuplicate":false}}`。
 - **常见失败**：HTTP/Code 400：请求为空、`Operator`/快照必填项无效、结构校验失败、同一来源存在不同 `SnapshotHash` 或版本；绑定异常 400；未捕获异常 500。
@@ -204,7 +204,7 @@ flowchart LR
 | `POST /orders/{vbeln}/void` | `OutboundActionRequest`: `RequestId`,`Operator`,`Reason?` | `BusinessNo`,`Status`,`IsDuplicate` | W：OutboundOrder/Allocation/Reservation；事务；RequestId 幂等；动作日志。 |
 | `POST /allocations/{allocationNo}/release` | 同 `OutboundActionRequest` | `BusinessNo`,`Status`,`IsDuplicate` | W：Allocation/Reservation；事务；RequestId 幂等；动作日志。 |
 | `POST /pick-batches/{pickBatchNo}/scan` | `OutboundScanRequest`: `HuCodeOrIdentifier`,`RequestId`,`Operator`,`Remark?` | PickDetailId、Box、From/To、Qty、Batch/OrderStatus、MoveLogId、IsDuplicate | W：PickDetail、PickBatch、Order、CurrentLocation、MoveLog、OperationLog；单次扫描事务；RequestId 幂等；拣货/移动日志。 |
-| `POST /orders/{vbeln}/ship` | `ShipOutboundRequest`: `RequestId`,`Operator`,`Remark?` | `BusinessNo`,`Status`,`IsDuplicate` | W：Order/Line/Pick/Location；事务；RequestId 幂等；发运日志。 |
+| `POST /orders/{vbeln}/ship` | `ShipOutboundRequest`: `RequestId`,`Operator`,`Remark?` | typed shipping state | **DEPRECATED_ALIAS**：委托 `confirm-shipment`；仅 SAP 明确成功或 IT 人工确认成功后执行 Shipment Finalizer，不再直接出货。 |
 | `POST /pick-details/{detailId}/return` | `detailId:long`；`ReturnPickDetailRequest`: `RequestId`,`Operator`,`ExceptionType`,`ReasonCode?`,`Reason?`,`Remark?` | `BusinessNo`,`Status`,`IsDuplicate` | W：PickDetail、Exception、HU Hold/Location；事务；RequestId 幂等；退货异常日志。非法 detailId 立即返回 `Code=400`。 |
 | `POST /returned/{huCode}/putaway` | path `huCode`；`ReturnToStockRequest`: `ToLocationCode`,`RequestId`,`Operator`,`Remark?` | `BusinessNo`,`Status`,`IsDuplicate` | W：CurrentLocation、MoveLog、PickDetail；事务；RequestId 幂等；回库日志。 |
 | `POST /pick-batches/{pickBatchNo}/replace` | `ReplacementRequest`: `ExceptionNo`,`RequestId`,`Operator`,`Remark?` | `StartPickingResultDto` | W：Reservation/PickDetail/Exception；事务；RequestId 幂等；替换日志。 |
@@ -247,6 +247,28 @@ flowchart LR
 - **用途 / Response**：将 SAP 出库单转换为 WMS 的 WAIT_PICK 订单；`Data` 为 `SapOutboundOrderReceiveResultDto`。示例 URL：`POST {{localUrl}}/api/wms/integration/sap/outbound-orders`。
 - **数据库影响 / 事务 / 幂等 / Log**：WRITE：`WMS_OutboundOrder`,`WMS_OutboundOrderLine` 及接收日志相关表；Repository 事务；服务按其 SAP 请求标识/规范化内容判重；OperationLog 以实现为准。
 - **常见失败**：Service 失败消息包装为 `Code=400`（Module 未显式设置 HTTP 400）。
+
+### SAP Outbound Posting V1
+
+| 接口 | 用途与约束 |
+|---|---|
+| `GET /api/wms/outbound/orders/{vbeln}/sap-posting-preview` | 严格只读；使用与正式发送相同的 builder 返回完整 `data[]`、PayloadJson/Hash、行/箱/数量合计；不建 snapshot/attempt，不调用 SAP。 |
+| `GET /api/wms/outbound/orders/{vbeln}/shipping-state` | 返回 OutboundStatus、SapPostingStatus、PickedBoxCount/Qty、LastSapCode/Message、CanConfirmShipment、CanRetry、RequiresITReview。 |
+| `POST /api/wms/outbound/orders/{vbeln}/confirm-shipment` | Body 仅 `RequestId`,`Operator`,`Remark?`；后端冻结 VBELN 全量快照并一次调用 S0089。SAP S 才 SHIPPED；E 保持 PICKED/FAILED；可能已到 SAP 但结果未知时为 UNKNOWN。 |
+| `POST /api/wms/outbound/orders/{vbeln}/ship` | **DEPRECATED_ALIAS**；请求兼容旧 ShipOutboundRequest，但委托 confirm-shipment，不再允许直接 PICKED→SHIPPED。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-posted` | UNKNOWN 经 IT 外部核查后确认已过账；必须 RequestId/Operator/Remark，不调用 SAP，转 SUCCESS/SHIPPED/MANUAL_CONFIRM。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-not-posted` | UNKNOWN 经 IT 核查确认未过账；保留原 UNKNOWN 证据并转 retry-eligible FAILED。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/retry` | 仅上述 FAILED；新 RequestId、新 attempt，原 Posting/Detail/PayloadJson/PayloadHash 不变；无自动重试。 |
+| `GET /api/wms/outbound/shipping-orders` | 出货管理分页查询，支持 SAPDeliveryNo、OutboundStatus、PostingStatus。 |
+| `GET /api/wms/integration/sap/logs` / `logs/{id}` | 通用 SAP 通信日志列表/详情；列表不返回大 JSON，详情返回 Request/Response、异常与 PayloadHash。 |
+
+SAP字段固定：聚合=`VBELN`；`POSNR=OutboundOrderLine.SAPItemNo`；`MATNR=OutboundOrderLine.MaterialCode` 且校验 PickDetailItem 物料；`LGORT=OutboundOrderLine.SAPStorageLocation`；`BOXNO=canonical WMS_HU.HUCode`；`CHARG=PickDetailItem.SAPBatchNo`，禁止 BatchNo fallback。LFIMG 按 PickDetail+Line+SAPBatchNo 求和；LFIMG_BOX 等于当前 BOXNO+POSNR+CHARG 行的 LFIMG。所有 Payload 行按 BOXNO 汇总后仍必须等于对应 PickBatchDetail.EffectiveQty。LFIMG/LFIMG_BOX/NTGEW/BRGEW 是 JSON Number；VRKME/BOXSIZE 为空，NTGEW/BRGEW=0，GEWEI=KG。
+
+SAP CHARG 生成规则固定：`SAP_CHARG_RULE_SOURCE=Legacy PK_BoxTOSAP_API semantics`；`SAP_BATCH_MEANING=SAP CHARG snapshot`；`CHARG_INPUTS=PlantCode + PK_Packmaster.PackID + source production OrderType classification`；`SPECIAL_ORDER_TYPES=ZP02,ZP05,ZP06,ZP08`；`INTERNAL_BATCH_FALLBACK=FALSE`。普通规则为 1010→`A + RIGHT('00000000'+PackID,9)`、其他厂→B；特殊规则为 1010→`AY + RIGHT('00000000'+PackID,8)`、其他厂→BY。特殊分类只来自 PackID 对应 `PK_PackLot.LotNo → PP_LotCard.OrderType` 的任一命中，不使用 outbound LFART/PSTYV。入库时 PackID 以 `WMS_HU_Identifier.IdentifierType=MES_PACK_ID` 保存，生成值写入 `WMS_HU_Item.SAPBatchNo`；Formal Pick 原样冻结到 `WMS_OutboundPickDetailItem.SAPBatchNo`，S0089 只读该冻结值。S0089 不增加 UMCHA。
+
+发送前必须验证 WMS Host 配置 `Sap.S0089.Endpoint`；S0089 不使用账号密码或 Basic Authorization。`Sap.S0089.TimeoutMs` 是可选技术参数，未配置时使用 100000ms。Endpoint 无效或已配置的 TimeoutMs 非正整数时，不创建 Posting、SENDING 或 IntegrationLog attempt，也不分类 UNKNOWN。请求快照/claim 在 Serializable Transaction A 完成，网络调用在事务外，Transaction B 以当前 attempt ownership 完成。
+
+Phase 1 无 SAP 状态查询和自动 retry。安全模型为 `LEARUN_UI_AUTHORIZATION_ONLY`，`DIRECT_WMS_IT_RECOVERY_API_SERVER_AUTH=FALSE`；Operator 是 UI/application convention 值，不是服务端认证身份。能直接访问 WMS Host 的调用方可绕过 Learun 权限，因此部署必须限制到可信内部网络。
 
 ## WeekCode Audit
 

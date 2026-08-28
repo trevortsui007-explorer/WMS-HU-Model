@@ -73,6 +73,7 @@
     <Compile Include="Infrastructure\Database\HuOperationLogWriter.cs" />
     <Compile Include="Infrastructure\Inbound\FinishedGoodsInboundSnapshotHasher.cs" />
     <Compile Include="Infrastructure\Sap\SapPayloadCanonicalizer.cs" />
+    <Compile Include="Infrastructure\Sap\SapOutboundPayloadSerializer.cs" />
     <Compile Include="Models\Common\ApiResult.cs" />
     <Compile Include="Models\Common\OperationResult.cs" />
     <Compile Include="Models\Inbound\FinishedGoodsInboundModels.cs" />
@@ -131,6 +132,7 @@
     <Compile Include="Models\Outbound\Formal\OutboundPickingStateModels.cs" />
     <Compile Include="Models\Outbound\Integration\SapOutboundOrderReceiveModels.cs" />
     <Compile Include="Models\Putaway\PalletPutawayStatusDto.cs" />
+    <Compile Include="Models\Outbound\Integration\SapOutboundPostingModels.cs" />
     <Compile Include="Models\Putaway\PutawayBoxRequest.cs" />
     <Compile Include="Models\Putaway\PutawayCommand.cs" />
     <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
@@ -205,6 +207,7 @@
     <Compile Include="Repositories\ISapOutboundOrderReceiveRepository.cs" />
     <Compile Include="Repositories\IPutawayRepository.cs" />
     <Compile Include="Repositories\IPutawayRecommendationRepository.cs" />
+    <Compile Include="Repositories\ISapOutboundPostingRepository.cs" />
     <Compile Include="Repositories\Impl\PutawayRepository.cs" />
     <Compile Include="Repositories\Impl\DirectReceivePutawayRepository.cs" />
     <Compile Include="Repositories\Impl\PutawayIdempotencyReader.cs" />
@@ -215,12 +218,14 @@
     <Compile Include="Repositories\IRelocationRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IInventoryQueryService.cs" />
+    <Compile Include="Repositories\Impl\SapOutboundPostingRepository.cs" />
     <Compile Include="Services\IFinishedGoodsInboundService.cs" />
     <Compile Include="Services\IFinishedGoodsInboundReadService.cs" />
     <Compile Include="Services\IHuService.cs" />
     <Compile Include="Services\IHuDetailService.cs" />
     <Compile Include="Services\IHuIdentifierService.cs" />
     <Compile Include="Services\IHuHoldService.cs" />
+    <Compile Include="Services\ISapChargResolver.cs" />
     <Compile Include="Services\ILocationService.cs" />
     <Compile Include="Services\IMasterDataMaintenanceService.cs" />
     <Compile Include="Services\IAuditService.cs" />
@@ -256,11 +261,15 @@
     <Compile Include="Services\ISapOutboundOrderReceiveService.cs" />
     <Compile Include="Services\IPutawayService.cs" />
     <Compile Include="Services\IPutawayRecommendationService.cs" />
+    <Compile Include="Services\Impl\SapOutboundPostingService.cs" />
+    <Compile Include="Services\Impl\SapChargResolver.cs" />
     <Compile Include="Services\IRepackService.cs" />
     <Compile Include="Services\IRelocationService.cs" />
     <Compile Include="Services\IWeekCodeResolver.cs" />
     <Compile Include="Services\IWeekCodeRuleProvider.cs" />
     <Compile Include="Services\IWeekCodeAuditService.cs" />
+    <Compile Include="Services\ISapOutboundPostingClient.cs" />
+    <Compile Include="Services\ISapOutboundPostingService.cs" />
     <Compile Include="Services\IWeekCodeRecalculateService.cs" />
     <Compile Include="Services\IFinishedGoodsInventoryService.cs" />
     <Compile Include="Services\WeekCodeAuditService.cs" />

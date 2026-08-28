@@ -81,6 +81,7 @@
   <ItemGroup>
     <Compile Include="Bootstrapper.cs" />
     <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
+    <Compile Include="Infrastructure\Sap\S0089SapOutboundPostingClient.cs" />
     <Compile Include="Modules\FinishedGoodsInboundReadModule.cs" />
     <Compile Include="Modules\FinishedGoodsInventoryModule.cs" />
     <Compile Include="Modules\InventoryQueryModule.cs" />

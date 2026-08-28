@@ -1,5 +1,43 @@
 ﻿# WMS 成品仓正式出库后端交接
 
+## 2026-08-27 SAP CHARG Legacy Rule Alignment
+
+- Rule：`SAP_CHARG_RULE_SOURCE=Legacy PK_BoxTOSAP_API semantics`。新增纯 `ISapChargResolver/SapChargResolver`，输入 PlantCode+PackID+IsSpecialOrderType，严格复刻 SQL RIGHT：1010 普通 A、其他厂 B；特殊 AY/BY；示例 472425→A000472425/B000472425/AY00472425/BY00472425。`SPECIAL_ORDER_TYPES=ZP02,ZP05,ZP06,ZP08`，ZP01 等走普通规则。
+- Current persistence diagnosis：MES `PK_Packmaster.PackID` 此前未投影到 WMS。INNER_PACK 的 `WMS_HU.SourceEntityId=PK_Packmaster_Id`，HUCode/PackCode=`CustPackID`，均不是 PackID。`PACKID_CURRENT_SOURCE=adms705.dbo.PK_Packmaster.PackID`；新 ingress persistence 使用现有 `WMS_HU_Identifier` 的 `MES_PACK_ID` 类型，Item 级 SAP CHARG 写现有 `WMS_HU_Item.SAPBatchNo`。`SCHEMA_CHANGE_REQUIRED=False`、`NEW_MIGRATION_FILE=NONE`。
+- Special source：MES provider 在读取 PlanStock source graph 时同批投影 PackID，并用 `EXISTS(PK_PackLot INNER JOIN PP_LotCard ON LotNo)` 判断任一源 Lot 的 OrderType 是否特殊；不读取 outbound LFART/PSTYV，不调用 PK_BoxTOSAP_API，无 N+1、无 JavaScript/MES 查询。
+- Snapshot chain：FinishedGoodsInboundService 忽略客户端 SapBatchNo 并由 resolver 服务端生成；含 CHARG 源事实的新 snapshot 使用 `FGI_V2` hash，未含 PackID 的旧/通用 snapshot 保持 FGI_V1 hash 兼容。PackID→MES_PACK_ID，SAP CHARG→WMS_HU_Item.SAPBatchNo；Formal Pick 已原样复制到 WMS_OutboundPickDetailItem.SAPBatchNo；S0089 继续只读 PickDetailItem.SAPBatchNo、无 BatchNo fallback、缺失仍报 SAP_POSTING_CHARG_MISSING、Retry 复用冻结 PayloadJson。
+- Quantity/contract：`LFIMG_BOX_RULE=ROW_BATCH_QTY` 保持不变；UMCHA 未加入 S0089；Endpoint-only/no Basic Authorization 保持不变。MergeBox 只移动既有 INNER_PACK relation，不重建 HU Item，因此 SAPBatchNo 快照保留。
+- Historical null strategy：历史 WMS_HU_Item.SAPBatchNo 不自动写 BatchNo、不从 HUCode 推导。可通过 INNER_PACK SourceEntityId=PK_Packmaster_Id 回查 MES PackID+Lot OrderType；后续如需 backfill，应单独生成“只读审计结果→Human Review→受控写入”的工具。本轮未生成/执行 backfill，不修改 WMS_DEV。
+- PDA：当前 `WMS_OutboundPicking.cshtml` 已存在专用 SAP confirm dialog 样式并核对符合要求：左侧稍后处理为灰色次按钮、右侧确认出货并过账SAP为蓝色主按钮、5px 圆角，无“是否装车”，SAP V1 行为未改变。本轮不覆盖该既有页面改动。
+- Verification：WMS-HU-Model、WMS Host、Test Project、Learun Web Debug build 均 PASS；`BEFORE_TEST_COUNT=122`、`NEW_TEST_COUNT=3`、`TOTAL_TESTS=125`、`PASSED_TESTS=125`、`FAILED_TESTS=0`。本轮依据 MES provider/entity 与 WMS persistence 源码完成 PackID 链路核对，未执行 MES/WMS 数据库运行时查询。migration 018 未修改/执行；无真实 SAP POST、WMS_DEV DML/DDL、Git stage/commit。
+
+## 2026-08-27 SAP Outbound Posting V1 Runtime Preview Gate
+
+- Contract correction：SAP 确认 `LFIMG_BOX` 是当前 BOXNO+POSNR+CHARG 行数量。Repository 现在对分组只计算一次 `lineQuantity` 并同时赋给 LFIMG/LFIMG_BOX；仍按 PickDetail 汇总所有有效 PickDetailItem 并校验等于 PickBatchDetail.EffectiveQty。新增单批 70/70、混 CHARG 40/40+30/30、跨 POSNR+CHARG、禁止整箱数量重复四类回归。
+- S0089 configuration：必需项仅 `Sap.S0089.Endpoint`；删除 Username/Password 配置和 transport DTO 字段，不设置 Credentials/PreAuthenticate/Basic Authorization。`Sap.S0089.TimeoutMs` 保留为可选技术参数，空值使用 100000ms，已配置的非正整数仍拒绝。测试/正式 URL 未硬编码到业务代码，仓库 Endpoint 继续为空占位。
+- Build/regression：WMS-HU-Model、WMS Host、Test Project Debug build 均 PASS（0 warning/error）；Learun Web Debug build PASS，只有两个既有依赖项目 assembly-reference cache access-denied warning。`TOTAL_TESTS=122`、`PASSED_TESTS=122`、`FAILED_TESTS=0`。
+- Migration：migration 018 已由 Human 执行成功；Codex 未重新执行或修改。文件修改前后 SHA-256 均为 `F8C5B5E00C552945D93AB4A5E201ADE1344A6665AB0AB21F706A7D4995E731E5`。`MIGRATION_EXECUTED_BY_HUMAN=True`、`MIGRATION_EXECUTED_BY_CODEX=False`。
+- Runtime candidate：WMS Host `/shipping-orders?outboundStatus=PICKED` 返回仅 2 单：8304812756、8304812755，均 PICKED/READY、2 boxes/70 qty。两单 Preview 都返回 HTTP/API 400 `SAP_POSTING_CHARG_MISSING`；分别首先发现 B-B-2608260840125E2P-01、B-B-2608251758532HCO-01 缺少 SAPBatchNo。因此 WMS_DEV 当前没有可生成 data[] 的合格 PICKED VBELN，不能使用 BatchNo fallback 或伪造 CHARG。`MIXED_CHARG_RUNTIME_CASE=NOT_AVAILABLE`。
+- Read-only evidence：对 8304812756 执行 before → Preview → after。ShippingState、PickingState、Order、两个 picked box 的 HU detail 完全相同；订单保持 PICKED，PostingStatus=READY、RequestId=null；两个 HU 保持 ACTIVE/OUTBOUND-STAGING/SELF；通用 SAP log total 0→0；MoveLog total 114→114。Preview 为 400、Data=null，没有 SAP 调用。终端直连 SQL 被当前身份 SSPI 阻断，所以没有独立读取 Posting/Detail 原始全局计数；选定订单无 durable Posting、无日志、无移动及代码 SELECT-only 路径共同构成只读证据，该限制不隐藏。
+- Runtime result：`PREVIEW_TEST_RESULT=BLOCKED_NO_ELIGIBLE_VBELN`、`PREVIEW_VBELN=8304812756`、`PREVIEW_HTTP_STATUS=400`、`PREVIEW_DATA_COUNT=0`、`PREVIEW_READ_ONLY_VERIFIED=True`、`SAP_CALLED=False`、`DML_EXECUTED=False`、`DDL_EXECUTED=False`。
+- Git：未 commit、未 stage。
+
+## 2026-08-27 SAP Outbound Posting V1 Implementation
+
+- Implemented scope：新增 VBELN 聚合的 S0089 出货过账快照、发送状态、通用 SAP 通信审计、只读 preview/shipping-state、人工 UNKNOWN 恢复、受控 retry、PDA 完成确认、Learun“出货管理”和“SAP接口日志”页面。旧 `/orders/{vbeln}/ship` 保留为 deprecated alias，但已改为调用同一 ConfirmShipmentService，不再直接调用 FormalOutboundService.ShipOrder。
+- Authoritative snapshot：只读取 completed/current Allocation 下的 PICKED Batch/Detail、PickDetailItem、OutboundOrderLine 和 canonical OUTER_BOX HU。`CHARG=WMS_OutboundPickDetailItem.SAPBatchNo`，无 internal BatchNo fallback；`LGORT=OutboundOrderLine.SAPStorageLocation`；`LFIMG` 按 PickDetail+Line+SAPBatchNo 汇总；`LFIMG_BOX` 等于当前 BOXNO+POSNR+CHARG 行的 LFIMG。每个 PickDetail 的全部 Payload 行 LFIMG 合计仍校验等于 PickBatchDetail.EffectiveQty。历史 RETURNED/QUALITY_HOLD detail 不进入 payload。
+- SAP payload：单 VBELN 一个 `{data:[...]}`，包含全部 POSNR/BOX/CHARG；混 CHARG 与跨 POSNR 箱按行输出实际数量，不重复整箱 EffectiveQty。LFIMG、LFIMG_BOX、NTGEW、BRGEW 是 decimal 并由 Json.NET 输出 JSON Number；VRKME/BOXSIZE 为空，NTGEW/BRGEW=0，GEWEI=KG。
+- SAP transport：Core 仅依赖 `ISapOutboundPostingClient`；WMS Host 的 S0089 adapter 使用 UTF-8/application-json，不使用账号密码或 Basic Authorization。必需配置仅 `Sap.S0089.Endpoint`；可选 `Sap.S0089.TimeoutMs` 未配置时为 100000ms。配置在 snapshot/claim/attempt 之前验证；无效时不创建 Posting、Attempt 或 SENDING，也不归类 UNKNOWN。未引用 Learun NetHelper/H5TPM，也不读取或记录 Authorization。
+- State/concurrency：migration 018 定义 READY/SENDING/SUCCESS/FAILED/UNKNOWN、唯一 SAPDeliveryNo、冻结 PayloadJson/Hash/Detail 和通用 `WMS_SapIntegrationLog`。Transaction A 使用 Serializable + UPDLOCK/HOLDLOCK/ROWLOCK claim；SAP 调用在事务外；Transaction B 以 PostingId+RequestId+AttemptNo ownership 完成。S 执行原子 Shipment Finalizer 并标记 SAP_RESPONSE；E 保持 PICKED；可能已到 SAP 但结果不可确认才为 UNKNOWN。无自动 retry/status query。
+- Recovery：UNKNOWN 手工“已过账”不调用 SAP，转 SUCCESS/SHIPPED/MANUAL_CONFIRM；“未过账”转 retry-eligible FAILED 并保留 UNKNOWN 通信证据；retry 使用新 RequestId 和 attempt，原 PayloadJson/Hash/Detail 不变。
+- Receive audit：现有 SAP Delivery Receive 继续保留 `WMS_OutboundOrderReceiveLog`，并在每次完成、重复、拒绝或异常请求后追加通用 `WMS_SapIntegrationLog`。
+- Schema：`docs/database/018_OutboundSapPosting.sql` 验证 post-014 prerequisites 及 BatchNo/SAPBatchNo，创建 `WMS_OutboundSapPosting`、`WMS_OutboundSapPostingDetail`、`WMS_SapIntegrationLog`。2026-08-27 已由 Human 执行成功；Codex 未执行 migration，也未修改 WMS_DEV。
+- Security：`SECURITY_MODEL_PHASE1=LEARUN_UI_AUTHORIZATION_ONLY`；`DIRECT_WMS_IT_RECOVERY_API_SERVER_AUTH=FALSE`。Operator 只是 Learun UI/application convention 填入值，不是密码学或 WMS 服务端认证身份。`ACCEPTED_RESIDUAL_RISK`：能直接访问 WMS Host 的调用者可绕过 Learun 菜单权限并伪造 Operator；部署必须把 WMS Host 限制在可信 Learun/内部网络。
+- Automated verification：implementation 前 baseline 104/104；初版新增 16 tests，Runtime Preview 契约修正再新增 2 tests；当前 `TOTAL_TESTS=122`、`PASSED_TESTS=122`、`FAILED_TESTS=0`。WMS-HU-Model Debug PASS、WMS Debug PASS、test project Debug PASS，均 0 warning/error。Learun Web 在显式 `SolutionDir=D:\com.delton.gz\` 且关闭 restore 后 Debug build PASS；生成目标 DLL，只有两个既有依赖项目 `obj\Debug\*.AssemblyReference.cache` access-denied warning。三个新增页面 JS 的 `node --check` PASS。
+- Runtime boundary：Human 已执行 migration 018；Codex 未执行 migration。Codex 未执行真实 SAP POST 或数据库写入。Runtime Preview GET 已执行，但当前所有 PICKED 候选均因缺少 SAPBatchNo 返回 400/Data=null。`REAL_SAP_POST_EXECUTED=False`、`SAP_STATUS_QUERY_PHASE1=UNAVAILABLE`、`HUMAN_REVIEW_REQUIRED=True`。
+- Recommended Human order：审阅/备份 → 人工执行 018 → 配置 S0089 Endpoint（TimeoutMs 可选）→ 部署 WMS/Learun → GET preview 核对完整 data[] 与 JSON number → GET shipping-state → 经 SAP 方批准后执行单笔 confirm-shipment → 核对 Posting/Detail/IntegrationLog 和 SHIPPED → 再验证 E/UNKNOWN 人工恢复。
+- Git：按要求未 commit、未 stage；保留工作区既有改动。
+
 ## 2026-08-26 MergeBox DIRECT_RECEIVE Runtime Defect Closure
 
 - Implemented scope：修复 MergeBox 创建的合法 OUTER_BOX 在 `POST /api/wms/putaway/box` 被误报“外箱直接位置与有效位置来源不一致”的问题。生产变更仅将 DIRECT_RECEIVE source read 从旧 `IHuLocationRepository.GetLocation` 切换为已注入、Inventory Lookup/HU location 共用的 `IEffectiveLocationResolver.Resolve`；原 `LocationSource == SELF` guard、PALLET_INHERITED 分支和事务内重验均保留。

@@ -63,6 +63,9 @@ namespace WMS_HU_Model.Tests
                 FinishedGoodsInboundRequiresActor();
                 FinishedGoodsInboundHashAndMoveIdsAreStable();
                 MesFinishedGoodsInboundSnapshotBuilderValidatesAndMaps();
+                SapChargResolverMatchesLegacyRule();
+                MesInboundSnapshotsAuthoritativeSapBatchNo();
+                SapBatchPersistenceAndPickSnapshotContractsAlign();
                 MesWeekCodeRuleProviderUsesDistinctValues();
                 MesWeekCodePreviewContinuesAfterErrors();
                 MesFinishedGoodsInboundReceiveRequestPreparerUsesBoxSourceIdentity();
@@ -135,6 +138,24 @@ namespace WMS_HU_Model.Tests
                 MonitoringMesDbFailureIsDegraded();
                 MonitoringActivityFillsMissingDaysAndUsesReceipts();
                 MonitoringContractIsReadOnlyAndSanitized();
+                SapPostingQuanFieldsSerializeAsJsonNumbers();
+                SapPostingCharFieldsRemainStrings();
+                SapPostingLfimgBoxUsesCurrentLineQuantity();
+                SapPostingS0089ConfigurationIsEndpointOnly();
+                SapPostingConfigurationFailurePreventsClaim();
+                SapPostingSendsAllRowsInOneCall();
+                SapPostingRequiresSapBatchWithoutFallback();
+                SapPostingUsesLineStorageLocation();
+                SapPostingV1DefaultsAreStable();
+                SapPostingSuccessShipsWithSapSource();
+                SapPostingExplicitFailureKeepsPicked();
+                SapPostingUnknownRequiresItReview();
+                SapPostingRetryUsesFrozenPayload();
+                SapPostingManualPostedUsesNoSapCall();
+                SapPostingManualNotPostedBecomesRetryable();
+                SapPostingLegacyShipAliasClosesBypass();
+                SapDeliveryReceiveAddsGenericAudit();
+                SapPostingMigrationAndRepositoryContractsAreSafe();
                 Console.WriteLine("Passed " + _passed + " tests.");
                 return 0;
             }
@@ -463,7 +484,8 @@ namespace WMS_HU_Model.Tests
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(nullDateCode) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(nullTextDateCode), "inbound null and NULL text differ");
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(emptyDateCode) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(whitespaceDateCode), "inbound empty and whitespace datecode differ");
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(stringZero) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(numericZero), "inbound string and decimal zero differ");
-            Equal("FGI_V1", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.HashVersion, "inbound hash version");
+            Equal("FGI_V1", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.GetHashVersion(first), "legacy inbound hash version preserved without CHARG facts");
+            Equal("FGI_V2", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.HashVersion, "SAP CHARG inbound hash version");
             Pass();
         }
 
@@ -734,8 +756,64 @@ namespace WMS_HU_Model.Tests
             MesFinishedGoodsInboundSourceGraph multiBox = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
             MesBoxReadModel second = new MesBoxReadModel { PK_Box_Id = "BOX-GUID-B", PK_PlanStock_Id = "730C7071-1EC9-42F2-8464-81EA6EC2D95B", BoxID = "BOXID-B", BoxBarCode = "BOX-B", ProdNo = "MAT-B", ProdRev = "R2", UnitQty = 8m, PlantCode = "1010" };
             multiBox.Boxes.Add(second);
-            multiBox.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-B", BoxID = "BOXID-B", CustPackID = "PACK-B", PCSQty = 8m, DateCode = "3226", Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-B", ProdRev = "R2", PlantCode = "1010" });
+            multiBox.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-B", PackID = "572425", BoxID = "BOXID-B", CustPackID = "PACK-B", PCSQty = 8m, DateCode = "3226", Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-B", ProdRev = "R2", PlantCode = "1010" });
             Equal(true, builder.Build(multiBox).IsSuccess, "MES mixed material pallet valid");
+            Pass();
+        }
+
+        private static void SapChargResolverMatchesLegacyRule()
+        {
+            SapChargResolver resolver = new SapChargResolver();
+            Equal("A000472425", resolver.Resolve("1010", "472425", false), "1010 normal CHARG");
+            Equal("B000472425", resolver.Resolve("1020", "472425", false), "1020 normal CHARG");
+            Equal("AY00472425", resolver.Resolve("1010", "472425", true), "1010 special CHARG");
+            Equal("BY00472425", resolver.Resolve("1020", "472425", true), "1020 special CHARG");
+            Equal("A123456789", resolver.Resolve("1010", "99123456789", false), "normal SQL RIGHT semantics");
+            Equal("AY23456789", resolver.Resolve("1010", "99123456789", true), "special SQL RIGHT semantics");
+            string mesRepository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "MesFinishedGoodsInboundRepository.cs"));
+            Equal(true, mesRepository.Contains("EXISTS") && mesRepository.Contains("PK_PackLot") && mesRepository.Contains("PP_LotCard"), "any source lot special query");
+            foreach (string orderType in new[] { "ZP02", "ZP05", "ZP06", "ZP08" })
+                Equal(true, mesRepository.Contains("'" + orderType + "'"), orderType + " special source classification");
+            Equal(false, mesRepository.Contains("'ZP01'"), "other order type remains normal");
+            Pass();
+        }
+
+        private static void MesInboundSnapshotsAuthoritativeSapBatchNo()
+        {
+            MesFinishedGoodsInboundSourceGraph normalSource = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
+            normalSource.Packs[0].PackID = "472425";
+            FinishedGoodsInboundReceiveRequest normalRequest = new MesFinishedGoodsInboundSnapshotBuilder().Build(normalSource).Data;
+            normalRequest.Snapshot.Boxes[0].InnerPacks[0].SapBatchNo = "CLIENT-FABRICATED";
+            FakeFinishedGoodsInboundRepository normalRepository = new FakeFinishedGoodsInboundRepository();
+            OperationResult<FinishedGoodsInboundResultDto> normal = new FinishedGoodsInboundService(normalRepository, new WeekCodeResolver(new UnavailableWeekCodeRuleProvider())).Receive(normalRequest);
+            Equal(true, normal.IsSuccess, "normal MES CHARG inbound succeeds");
+            FinishedGoodsInboundPackSnapshot normalPack = normalRepository.Command.Snapshot.Boxes[0].InnerPacks[0];
+            Equal("472425", normalPack.PackId, "authoritative PackID snapshot");
+            Equal("A000472425", normalPack.SapBatchNo, "normal SAPBatchNo snapshot");
+            Equal(false, normalPack.SapBatchNo == "CLIENT-FABRICATED", "client SAPBatchNo is not authoritative");
+            Equal("FGI_V2", normalRepository.Command.HashVersion, "CHARG facts use V2 hash");
+
+            MesFinishedGoodsInboundSourceGraph specialSource = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
+            specialSource.Packs[0].PackID = "472425";
+            specialSource.Packs[0].IsSpecialSapCharg = true;
+            FakeFinishedGoodsInboundRepository specialRepository = new FakeFinishedGoodsInboundRepository();
+            new FinishedGoodsInboundService(specialRepository, new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()))
+                .Receive(new MesFinishedGoodsInboundSnapshotBuilder().Build(specialSource).Data);
+            Equal("AY00472425", specialRepository.Command.Snapshot.Boxes[0].InnerPacks[0].SapBatchNo, "special SAPBatchNo snapshot");
+            Pass();
+        }
+
+        private static void SapBatchPersistenceAndPickSnapshotContractsAlign()
+        {
+            string inbound = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "FinishedGoodsInboundRepository.cs"));
+            string pick = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "FormalOutboundRepository.cs"));
+            string posting = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            Equal(true, inbound.Contains("'MES_PACK_ID'") && inbound.Contains("SAPBatchNo") && inbound.Contains("pack.SapBatchNo"), "PackID identifier and HU Item SAPBatchNo persisted");
+            Equal(true, pick.Contains("item.SAPBatchNo") && pick.Contains("allocation.Item.SAPBatchNo"), "formal pick snapshots exact SAPBatchNo");
+            Equal(true, posting.Contains("pdi.SAPBatchNo") && posting.Contains("CHARG = first.SAPBatchNo"), "S0089 uses pick snapshot SAPBatchNo");
+            Equal(false, posting.Contains("pdi.BatchNo,pdi.AllocatedQty"), "no internal BatchNo fallback");
+            Equal(true, posting.Contains("SAP_POSTING_CHARG_MISSING"), "unresolved SAPBatchNo remains blocked");
+            Equal(true, posting.Contains("LFIMG_BOX = lineQuantity"), "LFIMG_BOX remains row batch quantity");
             Pass();
         }
 
@@ -929,7 +1007,7 @@ namespace WMS_HU_Model.Tests
                 Boxes = new List<MesBoxReadModel> { new MesBoxReadModel { PK_Box_Id = "BOX-GUID-A", PK_PlanStock_Id = "730C7071-1EC9-42F2-8464-81EA6EC2D95B", BoxID = "BOXID-A", BoxBarCode = boxCode, CustboxID = customerCode, ProdNo = "MAT-A", ProdRev = "R1", UnitQty = unitQty, PlantCode = "1010" } }
             };
             for (int index = 0; index < quantities.Length; index++)
-                source.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-" + index, BoxID = "BOXID-A", CustPackID = "PACK-" + index, PCSQty = quantities[index], DateCode = dateCode, Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-A", ProdRev = "R1", PlantCode = "1010" });
+                source.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-" + index, PackID = (472425 + index).ToString(), BoxID = "BOXID-A", CustPackID = "PACK-" + index, PCSQty = quantities[index], DateCode = dateCode, Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-A", ProdRev = "R1", PlantCode = "1010" });
             return source;
         }
 
@@ -2751,9 +2829,260 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void SapPostingQuanFieldsSerializeAsJsonNumbers()
+        {
+            SapOutboundPostingPayload payload = PostingPayload();
+            JObject json = JObject.Parse(SapOutboundPayloadSerializer.Serialize(payload));
+            JObject row = (JObject)json["data"][0];
+            Equal(JTokenType.Float, row["LFIMG"].Type, "LFIMG json number");
+            Equal(JTokenType.Float, row["LFIMG_BOX"].Type, "LFIMG_BOX json number");
+            Equal(true, row["NTGEW"].Type == JTokenType.Integer || row["NTGEW"].Type == JTokenType.Float, "NTGEW json number");
+            Equal(true, row["BRGEW"].Type == JTokenType.Integer || row["BRGEW"].Type == JTokenType.Float, "BRGEW json number");
+            Pass();
+        }
+
+        private static void SapPostingCharFieldsRemainStrings()
+        {
+            JObject row = (JObject)JObject.Parse(SapOutboundPayloadSerializer.Serialize(PostingPayload()))["data"][0];
+            Equal(JTokenType.String, row["VBELN"].Type, "VBELN json string");
+            Equal(JTokenType.String, row["POSNR"].Type, "POSNR json string");
+            Equal("000010", row.Value<string>("POSNR"), "POSNR leading zeros");
+            Pass();
+        }
+
+        private static void SapPostingLfimgBoxUsesCurrentLineQuantity()
+        {
+            SapOutboundPostingRow single = new SapOutboundPostingRow { BOXNO="B-SINGLE",POSNR="000010",CHARG="C1",LFIMG=70m,LFIMG_BOX=70m };
+            List<SapOutboundPostingRow> mixed = new List<SapOutboundPostingRow>
+            {
+                new SapOutboundPostingRow { BOXNO="B-MIXED",POSNR="000010",CHARG="A000472425",LFIMG=40m,LFIMG_BOX=40m },
+                new SapOutboundPostingRow { BOXNO="B-MIXED",POSNR="000010",CHARG="A000572425",LFIMG=30m,LFIMG_BOX=30m }
+            };
+            List<SapOutboundPostingRow> crossLine = new List<SapOutboundPostingRow>
+            {
+                new SapOutboundPostingRow { BOXNO="B-CROSS",POSNR="000010",CHARG="C1",LFIMG=20m,LFIMG_BOX=20m },
+                new SapOutboundPostingRow { BOXNO="B-CROSS",POSNR="000020",CHARG="C1",LFIMG=15m,LFIMG_BOX=15m },
+                new SapOutboundPostingRow { BOXNO="B-CROSS",POSNR="000020",CHARG="C2",LFIMG=35m,LFIMG_BOX=35m }
+            };
+            Equal(70m, single.LFIMG_BOX, "single batch LFIMG_BOX");
+            Equal(true, mixed.All(x => x.LFIMG_BOX == x.LFIMG), "mixed CHARG line quantities");
+            Equal(70m, mixed.Sum(x => x.LFIMG), "mixed CHARG box invariant");
+            Equal(false, mixed.All(x => x.LFIMG_BOX == 70m), "whole-box quantity is not repeated");
+            Equal(true, crossLine.All(x => x.LFIMG_BOX == x.LFIMG), "cross POSNR and CHARG line quantities");
+            Equal(70m, crossLine.Sum(x => x.LFIMG), "cross POSNR and CHARG box invariant");
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            Equal(true, repository.Contains("LFIMG = lineQuantity") && repository.Contains("LFIMG_BOX = lineQuantity"), "repository assigns both quantities from current group");
+            Equal(false, repository.Contains("LFIMG_BOX = first.EffectiveQty"), "repository does not repeat whole-box quantity");
+            Pass();
+        }
+
+        private static void SapPostingS0089ConfigurationIsEndpointOnly()
+        {
+            string client = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Infrastructure", "Sap", "S0089SapOutboundPostingClient.cs"));
+            string config = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Web.config"));
+            Equal(true, client.Contains("Sap.S0089.Endpoint") && client.Contains("DefaultTimeoutMs"), "endpoint required and timeout optional default");
+            Equal(false, client.Contains("Username") || client.Contains("Password") || client.Contains("NetworkCredential") || client.Contains("PreAuthenticate") || client.Contains("Authorization"), "client has no authentication convention");
+            Equal(false, config.Contains("Sap.S0089.Username") || config.Contains("Sap.S0089.Password"), "host config has no credential keys");
+            Pass();
+        }
+
+        private static void SapPostingConfigurationFailurePreventsClaim()
+        {
+            FakeSapPostingRepository repository = new FakeSapPostingRepository();
+            FakeSapPostingClient client = new FakeSapPostingClient { ConfigurationValid = false };
+            OperationResult<OutboundShippingStateDto> result = new SapOutboundPostingService(repository, client).ConfirmShipment("8001", Control("REQ-CFG"));
+            Equal(false, result.IsSuccess, "invalid config fails locally");
+            Equal(0, repository.PreviewCalls, "invalid config skips snapshot");
+            Equal(0, repository.ClaimCalls, "invalid config skips claim");
+            Equal(0, client.PostCalls, "invalid config skips invocation");
+            Pass();
+        }
+
+        private static void SapPostingSendsAllRowsInOneCall()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository();
+            repository.Preview.Data.Add(new SapOutboundPostingRow { VBELN="8001",POSNR="000020",LGORT="31C3",BOXNO="B2",MATNR="M2",CHARG="C2",LFIMG=2,LFIMG_BOX=2,GEWEI="KG",VRKME="",BOXSIZE="" });
+            repository.Preview.PayloadJson = SapOutboundPayloadSerializer.Serialize(new SapOutboundPostingPayload { Data = repository.Preview.Data });
+            FakeSapPostingClient client = new FakeSapPostingClient();
+            OperationResult<OutboundShippingStateDto> result = new SapOutboundPostingService(repository, client).ConfirmShipment("8001", Control("REQ-ONE"));
+            Equal(true, result.IsSuccess, "multi row confirm succeeds");
+            Equal(1, client.PostCalls, "one SAP invocation");
+            Equal(2, JObject.Parse(client.LastPayload)["data"].Count(), "all POSNR in one request");
+            Pass();
+        }
+
+        private static void SapPostingRequiresSapBatchWithoutFallback()
+        {
+            string source = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            Equal(true, source.Contains("pdi.SAPBatchNo"), "snapshot reads SAPBatchNo");
+            Equal(true, source.Contains("SAP_POSTING_CHARG_MISSING"), "missing SAPBatchNo blocked");
+            Equal(false, source.Contains("pdi.BatchNo,pdi.AllocatedQty"), "no internal batch fallback projection");
+            Pass();
+        }
+
+        private static void SapPostingUsesLineStorageLocation()
+        {
+            string source = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            Equal(true, source.Contains("l.SAPStorageLocation"), "LGORT comes from order line");
+            Equal(false, source.Contains("LocationCode AS LGORT"), "physical location not LGORT");
+            Pass();
+        }
+
+        private static void SapPostingV1DefaultsAreStable()
+        {
+            SapOutboundPostingRow row = PostingPayload().Data.Single();
+            Equal("", row.BOXSIZE, "BOXSIZE empty"); Equal("", row.VRKME, "VRKME empty");
+            Equal(0m, row.NTGEW, "NTGEW zero"); Equal(0m, row.BRGEW, "BRGEW zero"); Equal("KG", row.GEWEI, "GEWEI KG");
+            Pass();
+        }
+
+        private static void SapPostingSuccessShipsWithSapSource()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository();
+            FakeSapPostingClient client = new FakeSapPostingClient { TransportStatus = "SUCCESS", SapCode = "S" };
+            OutboundShippingStateDto state = new SapOutboundPostingService(repository, client).ConfirmShipment("8001", Control("REQ-S")).Data;
+            Equal("SHIPPED", state.OutboundStatus, "SAP S ships order"); Equal("SUCCESS", state.SapPostingStatus, "SAP S posting status");
+            Equal("SAP_RESPONSE", state.SuccessConfirmSource, "SAP response source");
+            Pass();
+        }
+
+        private static void SapPostingExplicitFailureKeepsPicked()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository();
+            FakeSapPostingClient client = new FakeSapPostingClient { TransportStatus = "FAILED", SapCode = "E" };
+            OutboundShippingStateDto state = new SapOutboundPostingService(repository, client).ConfirmShipment("8001", Control("REQ-E")).Data;
+            Equal("PICKED", state.OutboundStatus, "SAP E keeps picked"); Equal("FAILED", state.SapPostingStatus, "SAP E failed"); Equal(false, state.CanRetry, "explicit E no retry before IT confirmation");
+            Pass();
+        }
+
+        private static void SapPostingUnknownRequiresItReview()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository();
+            FakeSapPostingClient client = new FakeSapPostingClient { TransportStatus = "UNKNOWN" };
+            OutboundShippingStateDto state = new SapOutboundPostingService(repository, client).ConfirmShipment("8001", Control("REQ-U")).Data;
+            Equal("PICKED", state.OutboundStatus, "unknown keeps picked"); Equal(true, state.RequiresITReview, "unknown IT review"); Equal(false, state.CanRetry, "unknown no retry");
+            Pass();
+        }
+
+        private static void SapPostingRetryUsesFrozenPayload()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository();
+            repository.RetryPayload = "{\"data\":[{\"VBELN\":\"8001\"}]}";
+            FakeSapPostingClient client = new FakeSapPostingClient();
+            new SapOutboundPostingService(repository, client).Retry("8001", Control("REQ-R2"));
+            Equal(repository.RetryPayload, client.LastPayload, "retry uses frozen payload"); Equal(0, repository.PreviewCalls, "retry does not rebuild preview");
+            Pass();
+        }
+
+        private static void SapPostingManualPostedUsesNoSapCall()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository(); FakeSapPostingClient client = new FakeSapPostingClient();
+            OutboundShippingStateDto state = new SapOutboundPostingService(repository, client).ManualConfirmPosted("8001", Manual("REQ-MP")).Data;
+            Equal(0, client.PostCalls, "manual posted no SAP call"); Equal("MANUAL_CONFIRM", state.SuccessConfirmSource, "manual source"); Equal("SHIPPED", state.OutboundStatus, "manual posted ships");
+            Pass();
+        }
+
+        private static void SapPostingManualNotPostedBecomesRetryable()
+        {
+            FakeSapPostingRepository repository = ReadyPostingRepository(); FakeSapPostingClient client = new FakeSapPostingClient();
+            OutboundShippingStateDto state = new SapOutboundPostingService(repository, client).ManualConfirmNotPosted("8001", Manual("REQ-MN")).Data;
+            Equal(0, client.PostCalls, "manual not posted no SAP call"); Equal("FAILED", state.SapPostingStatus, "manual not posted failed"); Equal(true, state.CanRetry, "manual not posted retry eligible");
+            Pass();
+        }
+
+        private static void SapPostingLegacyShipAliasClosesBypass()
+        {
+            string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundModule.cs"));
+            int route = module.IndexOf("Post(\"/orders/{vbeln}/ship\"", StringComparison.Ordinal);
+            string block = module.Substring(route, Math.Min(1500, module.Length - route));
+            Equal(true, block.Contains("_sapPostingService.ConfirmShipment"), "legacy ship delegates posting service");
+            Equal(false, block.Contains("_formalService.ShipOrder"), "legacy direct ship removed");
+            Pass();
+        }
+
+        private static void SapDeliveryReceiveAddsGenericAudit()
+        {
+            string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "SapOutboundIntegrationModule.cs"));
+            Equal(true, module.Contains("RecordReceiveCommunication"), "receive generic audit");
+            Equal(true, module.Contains("WMS_OutboundOrderReceive" ) == false, "receive module preserves repository boundary");
+            Pass();
+        }
+
+        private static void SapPostingMigrationAndRepositoryContractsAreSafe()
+        {
+            string migration = File.ReadAllText(Path.Combine(ProjectRoot(), "docs", "database", "018_OutboundSapPosting.sql")).ToUpperInvariant();
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs")).ToUpperInvariant();
+            Equal(true, migration.Contains("SET XACT_ABORT ON") && migration.Contains("UNIQUE INDEX UX_WMS_OUTBOUNDSAPPOSTING_DELIVERY") && migration.Contains("SAPBATCHNO IS MISSING"), "migration gates and uniqueness");
+            Equal(true, repository.Contains("ISOLATIONLEVEL.SERIALIZABLE") && repository.Contains("UPDLOCK,HOLDLOCK,ROWLOCK"), "serializable claim locking");
+            Equal(false, repository.Contains("ADDWITHVALUE") || repository.Contains(" DYNAMIC "), "typed parameters and no dynamic");
+            Pass();
+        }
+
+        private static SapOutboundPostingPayload PostingPayload()
+        {
+            return new SapOutboundPostingPayload { Data = new List<SapOutboundPostingRow> { new SapOutboundPostingRow { VBELN="8001",POSNR="000010",LGORT="31C3",BOXNO="B1",MATNR="M1",CHARG="C1",LFIMG=28.000000m,LFIMG_BOX=28.000000m,NTGEW=0m,BRGEW=0m,GEWEI="KG",VRKME="",BOXSIZE="" } } };
+        }
+
+        private static FakeSapPostingRepository ReadyPostingRepository()
+        {
+            FakeSapPostingRepository repository = new FakeSapPostingRepository();
+            repository.Preview = new SapOutboundPostingPreviewDto { SAPDeliveryNo="8001",Data=PostingPayload().Data };
+            repository.Preview.PayloadJson = SapOutboundPayloadSerializer.Serialize(new SapOutboundPostingPayload { Data=repository.Preview.Data });
+            repository.Preview.PayloadHash = SapOutboundPayloadSerializer.ComputeHash(repository.Preview.PayloadJson);
+            return repository;
+        }
+
+        private static SapOutboundPostingControlRequest Control(string id) { return new SapOutboundPostingControlRequest { RequestId=id,Operator="tester",Remark="test" }; }
+        private static SapOutboundManualConfirmRequest Manual(string id) { return new SapOutboundManualConfirmRequest { RequestId=id,Operator="it",Remark="checked in SAP" }; }
+        private static string ProjectRoot() { return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..")); }
+
         private static UpdateLocationRequest LocationUpdate(string operatorName)
         {
             return new UpdateLocationRequest { ZoneCode = "STORAGE", LocationTypeCode = "DOUBLE_RACK", ManageMode = "CAPACITY_LOCATION", CapacityMode = "STACK_POSITION", PlantPolicy = "SAME_PLANT", LocationLevel = "BASE", MasterStatus = "ACTIVE", Operator = operatorName };
+        }
+
+        private class FakeSapPostingClient : ISapOutboundPostingClient
+        {
+            public bool ConfigurationValid = true;
+            public int PostCalls;
+            public string LastPayload;
+            public string TransportStatus = "SUCCESS";
+            public string SapCode = "S";
+            public SapOutboundTransportConfigurationResult ValidateConfiguration()
+            {
+                return ConfigurationValid
+                    ? new SapOutboundTransportConfigurationResult { IsValid=true,Configuration=new SapOutboundTransportConfiguration { Endpoint="http://example.invalid",TimeoutMs=1000 } }
+                    : new SapOutboundTransportConfigurationResult { IsValid=false,Message="missing" };
+            }
+            public SapOutboundTransportResult Post(string payloadJson, SapOutboundTransportConfiguration configuration)
+            {
+                PostCalls++; LastPayload=payloadJson;
+                return new SapOutboundTransportResult { InvocationStarted=true,ResultStatus=TransportStatus,SapCode=SapCode,SapMessage=TransportStatus,ResponseJson="{}",RequestTime=DateTime.Now,ResponseTime=DateTime.Now };
+            }
+        }
+
+        private class FakeSapPostingRepository : ISapOutboundPostingRepository
+        {
+            public int PreviewCalls;
+            public int ClaimCalls;
+            public SapOutboundPostingPreviewDto Preview = new SapOutboundPostingPreviewDto();
+            public string RetryPayload = "{\"data\":[]}";
+            public SapPostingSnapshotBuildResult BuildPreview(string sapDeliveryNo) { PreviewCalls++; return new SapPostingSnapshotBuildResult { IsSuccess=true,Preview=Preview }; }
+            public SapPostingClaimResult ClaimInitial(string sapDeliveryNo,SapOutboundPostingControlRequest request,SapOutboundPostingPreviewDto preview) { ClaimCalls++; return new SapPostingClaimResult { IsSuccess=true,ShouldInvokeSap=true,PostingId=1,AttemptNo=1,PayloadJson=preview.PayloadJson,PayloadHash=preview.PayloadHash }; }
+            public SapPostingClaimResult ClaimRetry(string sapDeliveryNo,SapOutboundPostingControlRequest request) { ClaimCalls++; return new SapPostingClaimResult { IsSuccess=true,ShouldInvokeSap=true,PostingId=1,AttemptNo=2,PayloadJson=RetryPayload,PayloadHash="HASH" }; }
+            public OutboundShippingStateDto FinalizeAttempt(long postingId,int attemptNo,string requestId,SapOutboundTransportResult transport,string operatorValue,string remark)
+            {
+                if (transport.ResultStatus=="SUCCESS") return new OutboundShippingStateDto { SAPDeliveryNo="8001",OutboundStatus="SHIPPED",SapPostingStatus="SUCCESS",SuccessConfirmSource="SAP_RESPONSE" };
+                if (transport.ResultStatus=="FAILED") return new OutboundShippingStateDto { SAPDeliveryNo="8001",OutboundStatus="PICKED",SapPostingStatus="FAILED",CanRetry=false };
+                return new OutboundShippingStateDto { SAPDeliveryNo="8001",OutboundStatus="PICKED",SapPostingStatus="UNKNOWN",RequiresITReview=true };
+            }
+            public OutboundShippingStateDto GetShippingState(string sapDeliveryNo) { return new OutboundShippingStateDto { SAPDeliveryNo=sapDeliveryNo,OutboundStatus="PICKED",SapPostingStatus="READY",CanConfirmShipment=true }; }
+            public OutboundShippingStateDto ManualConfirmPosted(string sapDeliveryNo,SapOutboundManualConfirmRequest request) { return new OutboundShippingStateDto { SAPDeliveryNo=sapDeliveryNo,OutboundStatus="SHIPPED",SapPostingStatus="SUCCESS",SuccessConfirmSource="MANUAL_CONFIRM" }; }
+            public OutboundShippingStateDto ManualConfirmNotPosted(string sapDeliveryNo,SapOutboundManualConfirmRequest request) { return new OutboundShippingStateDto { SAPDeliveryNo=sapDeliveryNo,OutboundStatus="PICKED",SapPostingStatus="FAILED",CanRetry=true }; }
+            public PagedResult<OutboundShippingStateDto> QueryShippingOrders(string sapDeliveryNo,string outboundStatus,string postingStatus,int page,int pageSize) { return new PagedResult<OutboundShippingStateDto>(); }
+            public PagedResult<SapIntegrationLogDto> QueryLogs(SapIntegrationLogQuery query) { return new PagedResult<SapIntegrationLogDto>(); }
+            public SapIntegrationLogDto GetLog(long id) { return null; }
+            public void RecordReceiveCommunication(string businessKey,string requestJson,string resultStatus,string externalMessage,string payloadHash) { }
         }
 
         private class FakeMasterDataMaintenanceRepository : IMasterDataMaintenanceRepository

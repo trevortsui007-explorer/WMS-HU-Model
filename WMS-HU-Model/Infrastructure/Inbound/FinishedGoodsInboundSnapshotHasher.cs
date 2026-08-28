@@ -9,7 +9,13 @@ namespace WMS_HU_Model.Infrastructure.Inbound
 {
     public static class FinishedGoodsInboundSnapshotHasher
     {
-        public const string HashVersion = "FGI_V1";
+        public const string HashVersion = "FGI_V2";
+        public const string LegacyHashVersion = "FGI_V1";
+
+        public static string GetHashVersion(FinishedGoodsInboundSnapshot snapshot)
+        {
+            return UsesSapChargFacts(snapshot) ? HashVersion : LegacyHashVersion;
+        }
 
         public static string CreateHash(FinishedGoodsInboundSnapshot snapshot)
         {
@@ -26,13 +32,24 @@ namespace WMS_HU_Model.Infrastructure.Inbound
                 Begin(text, "INNER_COLLECTION", packs.Length);
                 foreach (FinishedGoodsInboundPackSnapshot pack in packs)
                 {
-                    Begin(text, "INNER", 5);
-                    AddString(text, pack.SourceEntityId); AddString(text, pack.PackCode); AddDecimal(text, pack.Qty); AddRawString(text, pack.DateCode); AddDateTime(text, pack.PackCreatedTime);
+                    bool chargFacts = !string.IsNullOrWhiteSpace(pack.PackId) || !string.IsNullOrWhiteSpace(pack.SapBatchNo) || pack.IsSpecialSapCharg;
+                    Begin(text, "INNER", chargFacts ? 8 : 5);
+                    AddString(text, pack.SourceEntityId);
+                    if (chargFacts) { AddString(text, pack.PackId); AddString(text, pack.SapBatchNo); AddBool(text, pack.IsSpecialSapCharg); }
+                    AddString(text, pack.PackCode); AddDecimal(text, pack.Qty); AddRawString(text, pack.DateCode); AddDateTime(text, pack.PackCreatedTime);
                     Begin(text, "ITEM_COLLECTION", 1);
                     Begin(text, "ITEM", 0);
                 }
             }
             using (SHA256 sha256 = SHA256.Create()) return BitConverter.ToString(sha256.ComputeHash(Encoding.UTF8.GetBytes(text.ToString()))).Replace("-", string.Empty);
+        }
+
+        private static bool UsesSapChargFacts(FinishedGoodsInboundSnapshot snapshot)
+        {
+            return snapshot != null && snapshot.Boxes != null
+                && snapshot.Boxes.Where(x => x != null && x.InnerPacks != null)
+                    .SelectMany(x => x.InnerPacks)
+                    .Any(x => x != null && (!string.IsNullOrWhiteSpace(x.PackId) || !string.IsNullOrWhiteSpace(x.SapBatchNo) || x.IsSpecialSapCharg));
         }
 
         public static string CreateMoveRequestId(FinishedGoodsInboundSnapshot snapshot, string rootHuType, string rootSourceEntityId)
@@ -88,6 +105,11 @@ namespace WMS_HU_Model.Infrastructure.Inbound
         {
             string normalized = value.ToString("0.#############################", CultureInfo.InvariantCulture);
             text.Append("D:").Append(normalized.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(normalized).Append(';');
+        }
+
+        private static void AddBool(StringBuilder text, bool value)
+        {
+            text.Append(value ? "B:1;" : "B:0;");
         }
 
         private static void AddDateTime(StringBuilder text, DateTime? value)

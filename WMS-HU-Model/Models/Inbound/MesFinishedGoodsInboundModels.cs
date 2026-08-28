@@ -29,6 +29,7 @@ namespace WMS_HU_Model.Models.Inbound
     public class MesPackmasterReadModel
     {
         public string PK_Packmaster_Id { get; set; }
+        public string PackID { get; set; }
         public string BoxID { get; set; }
         public string CustPackID { get; set; }
         public decimal PCSQty { get; set; }
@@ -37,6 +38,7 @@ namespace WMS_HU_Model.Models.Inbound
         public string ProdNo { get; set; }
         public string ProdRev { get; set; }
         public string PlantCode { get; set; }
+        public bool IsSpecialSapCharg { get; set; }
     }
 
     public class MesFinishedGoodsInboundSourceGraph

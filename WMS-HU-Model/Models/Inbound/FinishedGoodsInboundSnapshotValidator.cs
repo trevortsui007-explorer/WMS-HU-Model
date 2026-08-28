@@ -50,6 +50,9 @@ namespace WMS_HU_Model.Models.Inbound
                 {
                     if (pack == null) return "InnerPacks不能包含空对象。";
                     if (!Required(pack.SourceEntityId, 100, "InnerPack.SourceEntityId", out error) || !packIds.Add(pack.SourceEntityId.Trim())) return error ?? "InnerPack.SourceEntityId重复。";
+                    if (!Optional(pack.PackId, 50, "InnerPack.PackId", out error)) return error;
+                    if (!string.IsNullOrWhiteSpace(pack.PackId) && !string.Equals(snapshot.SourceSystem, "MES", StringComparison.OrdinalIgnoreCase)) return "InnerPack.PackId只允许MES来源。";
+                    if (pack.IsSpecialSapCharg && string.IsNullOrWhiteSpace(pack.PackId)) return "InnerPack.IsSpecialSapCharg需要PackId。";
                     if (!Required(pack.PackCode, 100, "InnerPack.PackCode", out error) || !packCodes.Add(pack.PackCode.Trim())) return error ?? "InnerPack.PackCode重复。";
                     if (!scannableCodes.Add(pack.PackCode.Trim())) return "Snapshot内扫码码冲突。";
                     if (!Optional(pack.DateCode, 50, "InnerPack.DateCode", out error)) return error;
@@ -115,6 +118,7 @@ namespace WMS_HU_Model.Models.Inbound
                 {
                     if (pack == null) continue;
                     pack.SourceEntityId = Trim(pack.SourceEntityId);
+                    pack.PackId = Trim(pack.PackId);
                     pack.PackCode = Trim(pack.PackCode);
                     // DateCode is a source fact. Preserve null, empty, and whitespace for canonical hashing and audit.
                 }

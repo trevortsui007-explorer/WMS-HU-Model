@@ -37,7 +37,10 @@ namespace WMS_HU_Model.Models.Inbound
     public class FinishedGoodsInboundPackSnapshot
     {
         public string SourceEntityId { get; set; }
+        public string PackId { get; set; }
         public string PackCode { get; set; }
+        public bool IsSpecialSapCharg { get; set; }
+        public string SapBatchNo { get; set; }
         public decimal Qty { get; set; }
         public string DateCode { get; set; }
         public DateTime? PackCreatedTime { get; set; }

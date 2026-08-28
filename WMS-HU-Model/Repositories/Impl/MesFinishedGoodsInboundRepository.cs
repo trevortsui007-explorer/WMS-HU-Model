@@ -22,7 +22,21 @@ namespace WMS_HU_Model.Repositories
                 MesFinishedGoodsInboundSourceGraph graph = new MesFinishedGoodsInboundSourceGraph { PlanStock = plan };
                 if (plan == null) return graph;
                 graph.Boxes = conn.Query<MesBoxReadModel>(@"SELECT PK_Box_Id, PK_PlanStock_Id, boxID AS BoxID, boxBarCode AS BoxBarCode, CustboxID, prodno AS ProdNo, prodrev AS ProdRev, UnitQty, plantCode AS PlantCode FROM dbo.PK_Box WITH (NOLOCK) WHERE PK_PlanStock_Id=@PlanStockId;", new { PlanStockId = planStockSourceId.Trim() }).AsList();
-                graph.Packs = conn.Query<MesPackmasterReadModel>(@"SELECT PK_Packmaster_Id, boxID AS BoxID, CustPackID, PCSQty, datecode AS DateCode, createdt AS Createdt, prodno AS ProdNo, prodrev AS ProdRev, plantCode AS PlantCode FROM dbo.PK_Packmaster WITH (NOLOCK) WHERE boxID IN (SELECT boxID FROM dbo.PK_Box WITH (NOLOCK) WHERE PK_PlanStock_Id=@PlanStockId);", new { PlanStockId = planStockSourceId.Trim() }).AsList();
+                graph.Packs = conn.Query<MesPackmasterReadModel>(@"
+SELECT pm.PK_Packmaster_Id,CAST(pm.PackID AS VARCHAR(50)) AS PackID,pm.boxID AS BoxID,pm.CustPackID,
+       pm.PCSQty,pm.datecode AS DateCode,pm.createdt AS Createdt,pm.prodno AS ProdNo,pm.prodrev AS ProdRev,
+       pm.plantCode AS PlantCode,
+       CAST(CASE WHEN EXISTS
+       (
+           SELECT 1
+           FROM dbo.PK_PackLot packLot WITH (NOLOCK)
+           INNER JOIN dbo.PP_LotCard lotCard WITH (NOLOCK) ON lotCard.LotNo=packLot.LotNo
+           WHERE packLot.PK_Packmaster_Id=pm.PK_Packmaster_Id
+             AND LTRIM(RTRIM(lotCard.OrderType)) IN ('ZP02','ZP05','ZP06','ZP08')
+       ) THEN 1 ELSE 0 END AS BIT) AS IsSpecialSapCharg
+FROM dbo.PK_Packmaster pm WITH (NOLOCK)
+WHERE pm.boxID IN (SELECT boxID FROM dbo.PK_Box WITH (NOLOCK) WHERE PK_PlanStock_Id=@PlanStockId);",
+                    new { PlanStockId = planStockSourceId.Trim() }).AsList();
                 return graph;
             }
         }

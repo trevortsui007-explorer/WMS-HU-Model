@@ -44,7 +44,16 @@ namespace WMS_HU_Model.Services
                     InnerPacks = new List<FinishedGoodsInboundPackSnapshot>()
                 };
                 foreach (MesPackmasterReadModel pack in source.Packs.Where(x => Same(x.BoxID, box.BoxID)).OrderBy(x => x.PK_Packmaster_Id.Trim(), StringComparer.Ordinal))
-                    target.InnerPacks.Add(new FinishedGoodsInboundPackSnapshot { SourceEntityId = pack.PK_Packmaster_Id.Trim(), PackCode = pack.CustPackID.Trim(), Qty = pack.PCSQty, DateCode = pack.DateCode, PackCreatedTime = pack.Createdt });
+                    target.InnerPacks.Add(new FinishedGoodsInboundPackSnapshot
+                    {
+                        SourceEntityId = pack.PK_Packmaster_Id.Trim(),
+                        PackId = pack.PackID.Trim(),
+                        PackCode = pack.CustPackID.Trim(),
+                        IsSpecialSapCharg = pack.IsSpecialSapCharg,
+                        Qty = pack.PCSQty,
+                        DateCode = pack.DateCode,
+                        PackCreatedTime = pack.Createdt
+                    });
                 request.Snapshot.Boxes.Add(target);
             }
             return OperationResult<FinishedGoodsInboundReceiveRequest>.Success(request);
@@ -76,7 +85,7 @@ namespace WMS_HU_Model.Services
                 decimal qty = 0m;
                 foreach (MesPackmasterReadModel pack in packs)
                 {
-                    if (Empty(pack.PK_Packmaster_Id) || Empty(pack.CustPackID) || pack.PCSQty <= 0) return "MES Box[" + box.BoxBarCode + "]存在无效InnerPack。";
+                    if (Empty(pack.PK_Packmaster_Id) || Empty(pack.PackID) || Empty(pack.CustPackID) || pack.PCSQty <= 0) return "MES Box[" + box.BoxBarCode + "]存在无效InnerPack。";
                     if (!Same(pack.PlantCode, plan.PlantCode)) return "MES Pack[" + pack.CustPackID + "]与PlanStock厂别不一致。";
                     if (!Same(pack.ProdNo, box.ProdNo) || !Same(pack.ProdRev, box.ProdRev)) return "MES Box[" + box.BoxBarCode + "]与Pack[" + pack.CustPackID + "]料号版本不一致。";
                     qty += pack.PCSQty;

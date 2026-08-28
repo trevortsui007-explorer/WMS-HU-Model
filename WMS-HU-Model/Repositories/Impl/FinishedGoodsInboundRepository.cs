@@ -113,6 +113,8 @@ VALUES
                             foreach (FinishedGoodsInboundPackSnapshot pack in box.InnerPacks)
                             {
                                 long packId = InsertHu(conn, tran, pack.PackCode.Trim(), "INNER_PACK", command.Snapshot.PlantCode, command.Snapshot.SourceSystem, pack.SourceEntityId, businessNo, command);
+                                if (!string.IsNullOrWhiteSpace(pack.PackId))
+                                    InsertPackIdIdentifier(conn, tran, packId, pack, command);
                                 InsertRelation(conn, tran, boxId, packId, operationNo, command.Operator);
                                 InsertItem(conn, tran, packId, box, pack, command);
                                 InsertOperation(conn, tran, operationNo, "CREATE_HU", packId, boxId, businessNo, command, "Finished goods inbound inner pack created and attached.");
@@ -167,6 +169,23 @@ VALUES (@HuId, @Type, @Value, 0, 1, @ReceiveTime, @Operator, @ReceiveTime);",
                 new { HuId = huId, Type = type, Value = value, command.Operator, command.ReceiveTime }, tran);
         }
 
+        private static void InsertPackIdIdentifier(SqlConnection conn, SqlTransaction tran, long huId, FinishedGoodsInboundPackSnapshot pack, FinishedGoodsInboundCommand command)
+        {
+            conn.Execute(@"
+INSERT INTO dbo.WMS_HU_Identifier
+(HUId, IdentifierType, IdentifierValue, IsPrimary, IsActive, EffectiveFrom, SourceSystem, SourceEntityId, CreateUser, CreateTime)
+VALUES (@HuId, 'MES_PACK_ID', @PackId, 0, 1, @ReceiveTime, @SourceSystem, @SourceEntityId, @Operator, @ReceiveTime);",
+                new
+                {
+                    HuId = huId,
+                    PackId = pack.PackId.Trim(),
+                    SourceSystem = command.Snapshot.SourceSystem,
+                    SourceEntityId = pack.SourceEntityId,
+                    command.Operator,
+                    command.ReceiveTime
+                }, tran);
+        }
+
         private static void InsertRelation(SqlConnection conn, SqlTransaction tran, long parentId, long childId, string operationNo, string operatorCode)
         {
             conn.Execute(@"
@@ -181,13 +200,13 @@ VALUES (@ParentId, @ChildId, 'CONTAIN', SYSDATETIME(), 1, @OperationNo, @Operato
             conn.Execute(@"
 INSERT INTO dbo.WMS_HU_Item
 (
-    HUId, MaterialCode, MaterialRevision, DateCode, Qty, Uom, StockStatus, IsActive,
+    HUId, MaterialCode, MaterialRevision, DateCode, SAPBatchNo, Qty, Uom, StockStatus, IsActive,
     WeekFormatCode, WeekYear, WeekNo, WeekSortKey, WeekRuleSource, WeekRuleValue, WeekResolvedTime,
     CreateUser, CreateTime
 )
 VALUES
 (
-    @HuId, @MaterialCode, @MaterialRevision, @DateCode, @Qty, @Uom, 'AVAILABLE', 1,
+    @HuId, @MaterialCode, @MaterialRevision, @DateCode, @SAPBatchNo, @Qty, @Uom, 'AVAILABLE', 1,
     @WeekFormatCode, @WeekYear, @WeekNo, @WeekSortKey, @WeekRuleSource, @WeekRuleValue, @WeekResolvedTime,
     @Operator, @ReceiveTime
 );", new
@@ -196,6 +215,7 @@ VALUES
                 MaterialCode = box.MaterialCode.Trim(),
                 MaterialRevision = string.IsNullOrWhiteSpace(box.MaterialRevision) ? null : box.MaterialRevision.Trim(),
                 DateCode = pack.DateCode,
+                SAPBatchNo = pack.SapBatchNo,
                 pack.Qty,
                 Uom = box.Uom.Trim(),
                 WeekFormatCode = pack.WeekCode == null ? null : pack.WeekCode.WeekFormatCode,

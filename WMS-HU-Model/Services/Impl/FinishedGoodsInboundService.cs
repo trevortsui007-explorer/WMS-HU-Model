@@ -11,11 +11,18 @@ namespace WMS_HU_Model.Services
     {
         private readonly IFinishedGoodsInboundRepository _repository;
         private readonly IWeekCodeResolver _weekCodeResolver;
+        private readonly ISapChargResolver _sapChargResolver;
 
         public FinishedGoodsInboundService(IFinishedGoodsInboundRepository repository, IWeekCodeResolver weekCodeResolver)
+            : this(repository, weekCodeResolver, new SapChargResolver())
+        {
+        }
+
+        public FinishedGoodsInboundService(IFinishedGoodsInboundRepository repository, IWeekCodeResolver weekCodeResolver, ISapChargResolver sapChargResolver)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
             _weekCodeResolver = weekCodeResolver ?? throw new ArgumentNullException(nameof(weekCodeResolver));
+            _sapChargResolver = sapChargResolver ?? throw new ArgumentNullException(nameof(sapChargResolver));
         }
 
         public OperationResult<FinishedGoodsInboundResultDto> Receive(FinishedGoodsInboundReceiveRequest request)
@@ -27,11 +34,13 @@ namespace WMS_HU_Model.Services
                 return OperationResult<FinishedGoodsInboundResultDto>.Fail(requestError);
             string error = FinishedGoodsInboundSnapshotValidator.ValidateStructural(request.Snapshot);
             if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);
+            error = ResolveSapBatchNumbers(request.Snapshot);
+            if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);
             FinishedGoodsInboundCommand command = new FinishedGoodsInboundCommand
             {
                 Snapshot = request.Snapshot,
                 SnapshotHash = FinishedGoodsInboundSnapshotHasher.CreateHash(request.Snapshot),
-                HashVersion = FinishedGoodsInboundSnapshotHasher.HashVersion,
+                HashVersion = FinishedGoodsInboundSnapshotHasher.GetHashVersion(request.Snapshot),
                 RequestId = request.RequestId,
                 Operator = request.Operator.Trim(),
                 Remark = request.Remark,
@@ -67,6 +76,25 @@ namespace WMS_HU_Model.Services
             return persistence.IsConflict
                 ? OperationResult<FinishedGoodsInboundResultDto>.Fail(persistence.Message)
                 : OperationResult<FinishedGoodsInboundResultDto>.Success(persistence.Data, persistence.Message);
+        }
+
+        private string ResolveSapBatchNumbers(FinishedGoodsInboundSnapshot snapshot)
+        {
+            foreach (FinishedGoodsInboundBoxSnapshot box in snapshot.Boxes)
+            foreach (FinishedGoodsInboundPackSnapshot pack in box.InnerPacks)
+            {
+                pack.SapBatchNo = null;
+                if (string.IsNullOrWhiteSpace(pack.PackId)) continue;
+                try
+                {
+                    pack.SapBatchNo = _sapChargResolver.Resolve(snapshot.PlantCode, pack.PackId, pack.IsSpecialSapCharg);
+                }
+                catch (ArgumentException ex)
+                {
+                    return "SAP_CHARG_INVALID: InnerPack[" + pack.PackCode + "]" + ex.Message;
+                }
+            }
+            return null;
         }
 
         private static bool ValidateOptional(string value, int maxLength, string fieldName, out string error)

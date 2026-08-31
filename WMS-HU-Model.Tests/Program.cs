@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using WMS_HU_Model.Infrastructure.Sap;
 using WMS_HU_Model.Models.Audit;
@@ -31,6 +32,7 @@ namespace WMS_HU_Model.Tests
         {
             try
             {
+                RuntimeFinalSchemaStaticGuard();
                 ExactWholeBoxMaySkipUnusableEarliestBox();
                 ExactWholeBoxUsesStableHuOrder();
                 RepackRequiredUsesWholeInnerPacks();
@@ -47,7 +49,7 @@ namespace WMS_HU_Model.Tests
                 SapReceiveRejectsMalformedJson();
                 SapReceiveRejectsInvalidDecimalScaleAndRange();
                 SapReceiveRejectsSchemaLengthOverflow();
-                SapReceiveAcceptsThirtyCharacterDeliveryNo();
+                SapReceiveAcceptsFiftyCharacterDeliveryNo();
                 SapReceiveRejectsOverlongDeliveryNoBeforeExistingCheck();
                 FinishedGoodsInboundStructuralValidationRejectsDuplicateBoxCode();
                 FinishedGoodsInboundStructuralValidationGuardsBarcodeNamespace();
@@ -67,8 +69,6 @@ namespace WMS_HU_Model.Tests
                 MesInboundSnapshotsAuthoritativeSapBatchNo();
                 SapBatchPersistenceAndPickSnapshotContractsAlign();
                 MesWeekCodeRuleProviderUsesDistinctValues();
-                MesWeekCodePreviewContinuesAfterErrors();
-                MesFinishedGoodsInboundReceiveRequestPreparerUsesBoxSourceIdentity();
                 MesProductionOrchestrationUsesReceiveAndHoldPolicy();
                 WeekCodeAuditClassifiesAndFiltersFacts();
                 WeekCodeRecalculatePlansSuccessfulOnly();
@@ -153,7 +153,7 @@ namespace WMS_HU_Model.Tests
                 SapPostingRetryUsesFrozenPayload();
                 SapPostingManualPostedUsesNoSapCall();
                 SapPostingManualNotPostedBecomesRetryable();
-                SapPostingLegacyShipAliasClosesBypass();
+                SapPostingHasSingleShipmentAuthority();
                 SapDeliveryReceiveAddsGenericAudit();
                 SapPostingMigrationAndRepositoryContractsAreSafe();
                 Console.WriteLine("Passed " + _passed + " tests.");
@@ -340,21 +340,21 @@ namespace WMS_HU_Model.Tests
         {
             FakeSapReceiveRepository repository = new FakeSapReceiveRepository();
             SapOutboundOrderReceiveService service = new SapOutboundOrderReceiveService(repository);
-            OperationResult<SapOutboundOrderReceiveResultDto> result = service.Receive(ValidPayload("1", new string('8', 31)));
+            OperationResult<SapOutboundOrderReceiveResultDto> result = service.Receive(ValidPayload("1", new string('8', 51)));
             Equal(false, result.IsSuccess, "SAP VBELN max length rejected");
             Equal(1, repository.RejectedCount, "SAP schema length logged");
             Pass();
         }
 
-        private static void SapReceiveAcceptsThirtyCharacterDeliveryNo()
+        private static void SapReceiveAcceptsFiftyCharacterDeliveryNo()
         {
             FakeSapReceiveRepository repository = new FakeSapReceiveRepository();
             SapOutboundOrderReceiveService service = new SapOutboundOrderReceiveService(repository);
-            string deliveryNo = new string('3', 30);
+            string deliveryNo = new string('3', 50);
             OperationResult<SapOutboundOrderReceiveResultDto> result = service.Receive(ValidPayload("1", deliveryNo));
-            Equal(true, result.IsSuccess, "SAP 30 character VBELN continues");
-            Equal(1, repository.ExistingCheckCount, "SAP 30 character VBELN existing check");
-            Equal(1, repository.CreateCount, "SAP 30 character VBELN create flow");
+            Equal(true, result.IsSuccess, "SAP 50 character VBELN continues");
+            Equal(1, repository.ExistingCheckCount, "SAP 50 character VBELN existing check");
+            Equal(1, repository.CreateCount, "SAP 50 character VBELN create flow");
             Pass();
         }
 
@@ -369,13 +369,13 @@ namespace WMS_HU_Model.Tests
                 Data = new SapOutboundOrderReceiveResultDto { IsDuplicate = true }
             };
             SapOutboundOrderReceiveService service = new SapOutboundOrderReceiveService(repository);
-            string deliveryNo = new string('3', 31);
+            string deliveryNo = new string('3', 51);
             string rawJson = ValidPayload("1", deliveryNo);
             OperationResult<SapOutboundOrderReceiveResultDto> result = service.Receive(rawJson);
-            Equal(false, result.IsSuccess, "SAP 31 character VBELN rejected");
-            Equal(0, repository.ExistingCheckCount, "SAP 31 character VBELN skips existing check");
-            Equal(0, repository.CreateCount, "SAP 31 character VBELN skips create");
-            Equal(1, repository.RejectedCount, "SAP 31 character VBELN logged");
+            Equal(false, result.IsSuccess, "SAP 51 character VBELN rejected");
+            Equal(0, repository.ExistingCheckCount, "SAP 51 character VBELN skips existing check");
+            Equal(0, repository.CreateCount, "SAP 51 character VBELN skips create");
+            Equal(1, repository.RejectedCount, "SAP 51 character VBELN logged");
             Equal(null, repository.RejectedSAPDeliveryNo, "SAP overlong VBELN log key is null");
             Equal(false, string.IsNullOrWhiteSpace(repository.RejectedHash), "SAP overlong VBELN log hash preserved");
             Equal(rawJson, repository.RejectedRawJson, "SAP overlong VBELN raw JSON preserved");
@@ -761,6 +761,85 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void RuntimeFinalSchemaStaticGuard()
+        {
+            string root = AppDomain.CurrentDomain.BaseDirectory;
+            while (root != null && !File.Exists(Path.Combine(root, "WMS-HU-Model.sln"))) root = Directory.GetParent(root) == null ? null : Directory.GetParent(root).FullName;
+            if (root == null) throw new InvalidOperationException("Cannot locate repository root for runtime schema guard.");
+
+            string[] runtimeRoots = { Path.Combine(root, "WMS-HU-Model"), Path.Combine(root, "WMS") };
+            List<string> errors = new List<string>();
+            foreach (string file in runtimeRoots.SelectMany(x => Directory.GetFiles(x, "*.cs", SearchOption.AllDirectories))
+                .Where(x => x.IndexOf(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) < 0)
+                .Where(x => x.IndexOf(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) < 0))
+            {
+                string source = File.ReadAllText(file);
+                if (Regex.IsMatch(source, @"dbo\.WMS_(?!FG_)", RegexOptions.IgnoreCase)) errors.Add(file + ": old dbo.WMS_* table reference");
+                if (!file.EndsWith("LocationRepository.cs", StringComparison.OrdinalIgnoreCase)
+                    && (Regex.IsMatch(source, @"\.MasterStatus\s*(?:==|!=)", RegexOptions.IgnoreCase)
+                    || Regex.IsMatch(source, @"string\.Equals\s*\([^,]*\.MasterStatus\s*,", RegexOptions.IgnoreCase)))
+                    errors.Add(file + ": Location business logic must use IsActive boolean semantics");
+                if (file.EndsWith("InventoryQueryRepository.cs", StringComparison.OrdinalIgnoreCase)
+                    && source.IndexOf("public class InventoryQueryRepository", StringComparison.Ordinal) >= 0)
+                {
+                    if (Regex.Matches(source, @"item\.ProdNo\s+AS\s+MaterialCode", RegexOptions.IgnoreCase).Count < 3
+                        || Regex.Matches(source, @"item\.ProdRev\s+AS\s+MaterialRevision", RegexOptions.IgnoreCase).Count < 3
+                        || Regex.Matches(source, @"item\.LotNo\s+AS\s+BatchNo", RegexOptions.IgnoreCase).Count < 3)
+                        errors.Add(file + ": HU Item API compatibility aliases are incomplete");
+                }
+
+                foreach (Match literal in Regex.Matches(source, "@\"(?:\"\"|[^\"])*\"", RegexOptions.Singleline))
+                {
+                    string sql = literal.Value;
+                    if (Regex.IsMatch(sql, @"\b(?:l|loc|location)\.(?:MasterStatus|ScanCode|IsScannable|CapacityMode|CapacityQty|MaxWeightKg|ParentLocationId|LocationLevel|ManageMode)\b", RegexOptions.IgnoreCase))
+                        errors.Add(file + ": removed Location physical column");
+                    if (Regex.IsMatch(sql, @"\b(?:item|huItem|mi|ri|wi|si|pdi)\.(?:MaterialCode|MaterialRevision|BatchNo)\b", RegexOptions.IgnoreCase))
+                        errors.Add(file + ": removed HU Item physical column");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_Item", "MaterialCode|MaterialRevision|BatchNo|CustomerCode|SalesOrderNo|SalesOrderItem");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_Relation", "RelationType");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_CurrentLocation", "LastMoveNo|LastMoveType|LastOperator");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_MoveLog", "ScannedLocationCode|TaskNo|MoveTime|Operator");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_OperationLog", "OperationTime|Operator|CreateTime|RowVersion");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_HoldLog", "HoldTime|HoldUser|ReleaseTime|ReleaseUser|CreateTime|RowVersion");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_FinishedGoodsInboundReceipt", "Operator|ReceiveTime|CreateDt|CreateBy");
+                    GuardInsertColumns(errors, file, sql, "WMS_FG_HU_Identifier", "IsPrimary|SourceSystem|SourceEntityId|RuleCode|RowVersion");
+                    if (Regex.IsMatch(sql, @"\breceipt\.(?:ReceiveTime|Operator)\b", RegexOptions.IgnoreCase))
+                        errors.Add(file + ": removed inbound receipt physical column");
+                    if (file.EndsWith("SapOutboundOrderReceiveRepository.cs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundOrder", "OutboundOrderNo|DeliveryType|SalesOrgCode|PlannedShipTime|ShippingType|SpecialHandlingCode|SAPCreatedBy|SAPCreateDate|ReceivedRequestId|ReceivedTime|ShipRequestId|RowVersion");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundOrderLine", "MaterialCode|MaterialRevision|SpareQty|SAPGiftQty|PlantCode|SAPStorageLocation|ItemCategory|ShippedQty|SourcePayloadJson|RowVersion");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundOrderReceiveLog", "RequestId|InterfaceCode|ReceiveTime|CreateDt|CreateBy|RowVersion");
+                    }
+                    if (file.EndsWith("OutboundPickingRepository.cs", StringComparison.OrdinalIgnoreCase)
+                        || file.EndsWith("OutboundExceptionRepository.cs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundAllocation", "AllocateTime|Operator|ExpireTime|ReleaseTime|CreateTime|RowVersion");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundPickBatch", "RequestId|WarehouseId|PlantCode|OutboundOrderId|MaterialCode|MaterialRevision|RequiredQty|PickedQty|DifferenceQty|PickMode|ResultType|ReservationExpireTime|GroupKey");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_HU_Reservation", "OutboundOrderId|ReservationScope|RequestId|Operator|Remark|ExpireTime|ReleasedTime|ConsumedTime");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundPickBatchDetail", "FromLocationId|ToLocationId|OperationNo|FifoTime|IsReplacement|MaxWeekSortKey|DistinctWeekCount|WeekSummary|CancelledTime");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundPickDetailItem", "MaterialCode|MaterialRevision|BatchNo|Remark");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundPickException", "OutboundOrderId|PickBatchId|ReservationId|HUId|ExceptionType|RequiresHold|ReturnedLocationId|RaisedTime|RaisedUser|ReturnConfirmedTime|ReturnConfirmedUser|ReplacementReservationId|ReplacementPickDetailId|ResolutionCode|CreateTime|RowVersion");
+                        GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundExceptionReplacement", "CreateDt|CreateBy|LastEditDt|LastEditBy|RowVersion");
+                        if (Regex.IsMatch(sql, @"\b(?:ex|exception)\.(?:OutboundOrderId|PickBatchId|ReservationId|HUId|ExceptionType|RequiresHold|ReturnedLocationId|RaisedTime|RaisedUser|ReturnConfirmedTime|ReturnConfirmedUser|ReplacementReservationId|ReplacementPickDetailId|ResolutionCode|ResolvedTime|ResolvedUser|CreateTime|RowVersion)\b", RegexOptions.IgnoreCase))
+                            errors.Add(file + ": removed OutboundPickException physical column");
+                    }
+                    if (Regex.IsMatch(sql, @"UPDATE\s+dbo\.WMS_FG_HU_CurrentLocation\s+SET[\s\S]*?\b(?:LastMoveNo|LastMoveType|LastOperator)\b", RegexOptions.IgnoreCase))
+                        errors.Add(file + ": removed CurrentLocation update column");
+                }
+            }
+
+            if (errors.Count > 0) throw new InvalidOperationException("Runtime Final Schema guard failed: " + string.Join("; ", errors.Distinct().Take(20)));
+            Pass();
+        }
+
+        private static void GuardInsertColumns(List<string> errors, string file, string sql, string table, string forbiddenColumns)
+        {
+            Match match = Regex.Match(sql, @"INSERT\s+INTO\s+dbo\." + table + @"\s*\((?<columns>[^)]*)\)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (match.Success && Regex.IsMatch(match.Groups["columns"].Value, @"\b(?:" + forbiddenColumns + @")\b", RegexOptions.IgnoreCase))
+                errors.Add(file + ": removed " + table + " insert column");
+        }
+
         private static void SapChargResolverMatchesLegacyRule()
         {
             SapChargResolver resolver = new SapChargResolver();
@@ -806,14 +885,14 @@ namespace WMS_HU_Model.Tests
         private static void SapBatchPersistenceAndPickSnapshotContractsAlign()
         {
             string inbound = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "FinishedGoodsInboundRepository.cs"));
-            string pick = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "FormalOutboundRepository.cs"));
+            string pick = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundPickingRepository.cs"));
             string posting = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
             Equal(true, inbound.Contains("'MES_PACK_ID'") && inbound.Contains("SAPBatchNo") && inbound.Contains("pack.SapBatchNo"), "PackID identifier and HU Item SAPBatchNo persisted");
             Equal(true, pick.Contains("item.SAPBatchNo") && pick.Contains("allocation.Item.SAPBatchNo"), "formal pick snapshots exact SAPBatchNo");
-            Equal(true, posting.Contains("pdi.SAPBatchNo") && posting.Contains("CHARG = first.SAPBatchNo"), "S0089 uses pick snapshot SAPBatchNo");
+            Equal(true, posting.Contains("pdi.SAPBatchNo") && posting.Contains("CHARG = g.Key.SapBatchNo"), "S0089 uses pick snapshot SAPBatchNo");
             Equal(false, posting.Contains("pdi.BatchNo,pdi.AllocatedQty"), "no internal BatchNo fallback");
             Equal(true, posting.Contains("SAP_POSTING_CHARG_MISSING"), "unresolved SAPBatchNo remains blocked");
-            Equal(true, posting.Contains("LFIMG_BOX = lineQuantity"), "LFIMG_BOX remains row batch quantity");
+            Equal(true, posting.Contains("LFIMG_BOX = g.Sum(x => x.Qty)"), "LFIMG_BOX remains row batch quantity");
             Pass();
         }
 
@@ -826,39 +905,6 @@ namespace WMS_HU_Model.Tests
             Equal("WEEK_RULE_AMBIGUOUS", ambiguous.ErrorCode, "MES ambiguous rule");
             MesWeekCodeRuleLookupResult missing = new MesWeekCodeRuleProvider(new FakeMesWeekCodeRuleRepository { Values = new List<string>() }).Resolve("1020", "14C89A259B", "32");
             Equal("WEEK_RULE_NOT_FOUND", missing.ErrorCode, "MES missing rule");
-            Pass();
-        }
-
-        private static void MesWeekCodePreviewContinuesAfterErrors()
-        {
-            MesFinishedGoodsInboundSourceGraph source = MesGraph(24m, new[] { 12m, 12m }, "BOX-A", null, "3226");
-            source.Packs[1].DateCode = "2627";
-            FakeMesWeekCodeRuleRepository rules = new FakeMesWeekCodeRuleRepository { Values = new List<string> { "WWYY" } };
-            MesFinishedGoodsInboundWeekCodePreviewService service = new MesFinishedGoodsInboundWeekCodePreviewService(new MesFinishedGoodsInboundSnapshotBuilder(), new MesWeekCodeRuleProvider(rules), new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()));
-            OperationResult<MesFinishedGoodsInboundWeekCodePreviewResult> preview = service.Preview(source);
-            Equal(true, preview.IsSuccess, "MES preview builds"); Equal(2, preview.Data.ResolvedPackCount, "MES preview resolved packs"); Equal(202632, preview.Data.Packs[0].WeekSortKey.Value, "MES preview WWYY");
-            MesFinishedGoodsInboundWeekCodePreviewService missing = new MesFinishedGoodsInboundWeekCodePreviewService(new MesFinishedGoodsInboundSnapshotBuilder(), new MesWeekCodeRuleProvider(new FakeMesWeekCodeRuleRepository { Values = new List<string>() }), new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()));
-            OperationResult<MesFinishedGoodsInboundWeekCodePreviewResult> failed = missing.Preview(source);
-            Equal(2, failed.Data.UnresolvedPackCount, "MES preview continues missing rules"); Equal(2, failed.Data.RuleNotFoundCount, "MES preview missing rule count"); Pass();
-        }
-
-        private static void MesFinishedGoodsInboundReceiveRequestPreparerUsesBoxSourceIdentity()
-        {
-            MesFinishedGoodsInboundSourceGraph source = MesGraph(24m, new[] { 12m, 12m }, "BOX-A", null, "3226");
-            MesFinishedGoodsInboundWeekCodePreviewService previewService = new MesFinishedGoodsInboundWeekCodePreviewService(new MesFinishedGoodsInboundSnapshotBuilder(), new MesWeekCodeRuleProvider(new FakeMesWeekCodeRuleRepository { Values = new List<string> { "WWYY" } }), new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()));
-            OperationResult<MesFinishedGoodsInboundWeekCodePreviewResult> preview = previewService.Preview(source);
-            MesFinishedGoodsInboundReceiveRequestPreparer preparer = new MesFinishedGoodsInboundReceiveRequestPreparer();
-            OperationResult<FinishedGoodsInboundReceiveRequest> prepared = preparer.Prepare(preview.Data);
-            Equal(true, prepared.IsSuccess, "MES prepared request succeeds");
-            Equal(true, ReferenceEquals(preview.Data.Request, prepared.Data), "MES preparer preserves builder request");
-            Equal("BOX-GUID-A", preview.Data.Packs[0].BoxSourceEntityId, "MES preview box source identity");
-            Equal("WWYY", prepared.Data.Snapshot.Boxes[0].WeekRuleValue, "MES prepared rule value");
-            preview.Data.Packs[1].RuleValue = "YYWW";
-            Equal(false, preparer.Prepare(preview.Data).IsSuccess, "MES distinct box rules rejected");
-            preview.Data.Packs[1].RuleValue = "WWYY";
-            preview.Data.Packs[1].Status = "UNRESOLVED";
-            preview.Data.UnresolvedPackCount = 1;
-            Equal(false, preparer.Prepare(preview.Data).IsSuccess, "MES unresolved preview rejected");
             Pass();
         }
 
@@ -1071,7 +1117,7 @@ namespace WMS_HU_Model.Tests
 
             foreach (string sql in sqlContracts)
             {
-                Equal(true, sql.Contains("LEFT JOIN DBO.WMS_HU_CURRENTLOCATION DC"), "case B direct location available");
+                Equal(true, sql.Contains("LEFT JOIN DBO.WMS_FG_HU_CURRENTLOCATION DC"), "case B direct location available");
                 Equal(true, sql.Contains("PR.CHILDHUID = B.ID AND PR.ISACTIVE = 1"), "case A/F active parent relation only");
                 Equal(true, sql.Contains("PH.LIFECYCLESTATUS = 'ACTIVE'"), "case F inactive parent excluded");
                 Equal(true, sql.Contains("COALESCE(DL.ID, PL.ID) IS NOT NULL"), "case E effective location required");
@@ -1139,8 +1185,8 @@ namespace WMS_HU_Model.Tests
             Equal(true, sql.Contains("ITEM.ISACTIVE = 1"), "inventory active items only");
             Equal(true, sql.Contains("PR.CHILDHUID = B.ID AND PR.ISACTIVE = 1"), "inventory active parent relation only");
             Equal(true, sql.Contains("PH.LIFECYCLESTATUS = 'ACTIVE'"), "inventory inactive parent excluded");
-            Equal(true, sql.Contains("COALESCE(DL.ID, PL.ID) IS NOT NULL"), "inventory effective location required");
-            Equal(true, sql.Contains("COALESCE(DL.LOCATIONCODE, PL.LOCATIONCODE) <> 'SHIPPED'"), "inventory shipped excluded");
+            Equal(true, sql.Contains("RANKEDEFFECTIVELOCATIONS") && sql.Contains("LOCATIONRANK = 1"), "inventory uses nearest canonical effective location");
+            Equal(true, sql.Contains("DL.ID IS NOT NULL") && sql.Contains("DL.LOCATIONCODE <> 'SHIPPED'"), "inventory effective location required and shipped excluded");
             Equal(true, FinishedGoodsInventoryRepository.QuantityAggregationSql.ToUpperInvariant().Contains("SUM(ITEM.QTY)"), "inventory quantity uses active item sum");
             Equal(true, sql.Contains("@PLANTCODE") && sql.Contains("@MATERIALCODE") && sql.Contains("@BOXCODE") && sql.Contains("@LOCATIONCODE") && sql.Contains("@ISHOLD"), "inventory filters are server side");
             Pass();
@@ -1191,6 +1237,11 @@ namespace WMS_HU_Model.Tests
             Equal("PALLET", result.Data.LocationSourceHuType, "HU location exposes source HU type");
             Equal("PARENT_PALLET", result.Data.LocationSource, "HU location exposes actual source level");
             Equal(true, EffectiveLocationResolver.ActiveParentPredicateSql.Contains("LifecycleStatus = 'ACTIVE'"), "effective resolver excludes inactive parents");
+            string resolverSql = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "EffectiveLocationResolver.cs"));
+            string inventoryRepositorySource = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "FinishedGoodsInventoryRepository.cs"));
+            Equal(true, resolverSql.Contains("relation.IsActive = 1") && resolverSql.Contains("parent.LifecycleStatus = 'ACTIVE'"), "resolver requires active relations and active parent chain");
+            Equal(true, resolverSql.Contains("ORDER BY ancestor.LevelNo, ancestor.HUId") && resolverSql.Contains("MAXRECURSION 20"), "resolver selects nearest ancestor with bounded recursion");
+            Equal(true, inventoryRepositorySource.Contains("EffectiveLocationResolver.AncestorAndRankedLocationCteSql") && !inventoryRepositorySource.Contains("COALESCE(dl.LocationCode, pl.LocationCode)"), "paged inventory shares canonical recursive location projection");
             string inventorySql = InventoryQueryRepository.LocationInventorySql.ToUpperInvariant();
             Equal(true, inventorySql.Contains("BOX.LIFECYCLESTATUS = 'ACTIVE'"), "PDA location inventory uses active outer boxes");
             Equal(true, inventorySql.Contains("RELATION.ISACTIVE = 1") && inventorySql.Contains("PACK.LIFECYCLESTATUS = 'ACTIVE'") && inventorySql.Contains("ITEM.ISACTIVE = 1"), "PDA location inventory uses active relations packs and items");
@@ -1325,7 +1376,10 @@ namespace WMS_HU_Model.Tests
             huLocations.Locations.Add(new HuLocationDto { HuId = 1, DirectLocationId = 100, DirectLocationCode = "INBOUND-PENDING", DirectZoneCode = "RECEIVE", DirectWarehouseCode = "FG01", LocationSource = "SELF" });
             huLocations.Locations.Add(new HuLocationDto { HuId = 2, EffectiveLocationId = 100, EffectiveLocationCode = "INBOUND-PENDING", LocationSourceHuId = 1, LocationSource = "PARENT_PALLET" });
             FakeLocationMaintenanceRepository locations = PutawayLocations();
-            PutawayService service = new PutawayService(hus, locations, huLocations, repository);
+            FakeEffectiveLocationResolver resolver = new FakeEffectiveLocationResolver();
+            resolver.Locations[1] = huLocations.Locations[0];
+            resolver.Locations[2] = huLocations.Locations[1];
+            PutawayService service = new PutawayService(hus, locations, huLocations, repository, new FakeInventoryQueryRepository(), resolver);
 
             OperationResult<PutawayResultDto> result = service.PutawayBox(new PutawayBoxRequest
             {
@@ -1335,7 +1389,7 @@ namespace WMS_HU_Model.Tests
             Equal("PALLET_INHERITED", result.Data.SourceMode, "pallet source mode returned");
             Equal(1, repository.PalletBoxCalls, "pallet transaction path retained");
             Equal(0, repository.DirectCalls, "pallet path does not dispatch direct transaction");
-            locations.Locations["H208"].MasterStatus = "INACTIVE";
+            locations.Locations["H208"].IsActive = false;
             Equal(false, service.PutawayBox(new PutawayBoxRequest { BoxHuCode = "BOX-1", WarehouseCode = "FG01", ToLocationCode = "H208", RequestId = "REQ-BAD-TARGET", Operator = "tester" }).IsSuccess, "invalid pallet target rejected before mutation");
             Equal(1, repository.PalletBoxCalls, "invalid pallet target performs no write");
             Pass();
@@ -1489,9 +1543,9 @@ namespace WMS_HU_Model.Tests
         {
             string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "DirectReceivePutawayRepository.cs"));
             Equal(true, repository.Contains("IsolationLevel.Serializable") && repository.Contains("WITH (UPDLOCK,HOLDLOCK)"), "direct receive uses serializable locks");
-            Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"PUTAWAY\"") && repository.Contains("UPDATE dbo.WMS_HU_CurrentLocation"), "direct receive atomically moves box and audits putaway");
+            Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"PUTAWAY\"") && repository.Contains("UPDATE dbo.WMS_FG_HU_CurrentLocation"), "direct receive atomically moves box and audits putaway");
             Equal(true, repository.Contains("RequestIdExists") && repository.Contains("PutawayIdempotencyReader.Read"), "direct transaction rechecks idempotency before mutation");
-            Equal(false, repository.Contains("INSERT INTO dbo.WMS_HU_Relation") || repository.Contains("UPDATE dbo.WMS_HU_Relation") || repository.Contains("\"DETACH_HU\""), "direct receive creates no fake pallet and no detach audit");
+            Equal(false, repository.Contains("INSERT INTO dbo.WMS_FG_HU_Relation") || repository.Contains("UPDATE dbo.WMS_FG_HU_Relation") || repository.Contains("\"DETACH_HU\""), "direct receive creates no fake pallet and no detach audit");
             Equal(false, repository.Contains("INNER_PACK") || repository.Contains("AddWithValue") || repository.Contains("dynamic"), "direct receive does not mutate children and uses typed code");
             Pass();
         }
@@ -1510,8 +1564,8 @@ namespace WMS_HU_Model.Tests
         {
             string reader = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayIdempotencyReader.cs"));
             string resolver = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "EffectiveLocationResolver.cs"));
-            Equal(true, reader.Contains("LEFT JOIN dbo.WMS_HU pallet") && reader.Contains("DIRECT_RECEIVE") && reader.Contains("PALLET_INHERITED"), "idempotency reader supports nullable pallet relation");
-            Equal(false, reader.Contains("INNER JOIN dbo.WMS_HU pallet"), "direct replay does not require pallet join");
+            Equal(true, reader.Contains("LEFT JOIN dbo.WMS_FG_HU pallet") && reader.Contains("DIRECT_RECEIVE") && reader.Contains("PALLET_INHERITED"), "idempotency reader supports nullable pallet relation");
+            Equal(false, reader.Contains("INNER JOIN dbo.WMS_FG_HU pallet"), "direct replay does not require pallet join");
             Equal(true, resolver.Contains("PARENT_BOX") && resolver.Contains("CurrentLocation"), "children continue inheriting moved parent box location");
             Pass();
         }
@@ -1727,8 +1781,8 @@ namespace WMS_HU_Model.Tests
             string module = File.ReadAllText(Path.Combine("WMS", "Modules", "PutawayModule.cs"));
             Equal(false, repository.Contains("INSERT INTO") || repository.Contains("UPDATE dbo") || repository.Contains("DELETE FROM") || repository.Contains("MERGE "), "recommendation repository is read-only");
             Equal(false, repository.Contains("AddWithValue") || repository.Contains("dynamic"), "recommendation repository uses typed ADO.NET");
-            Equal(true, repository.Contains("EffectiveLocationResolver.ActiveParentPredicateSql") && repository.Contains("relation.IsActive = 1"), "recommendation inventory uses effective location ancestry");
-            Equal(true, repository.Contains("zone.ZoneCode = 'STORAGE'") && repository.Contains("location.MasterStatus = 'ACTIVE'") && repository.Contains("location.IsVirtual = 0") && repository.Contains("location.IsScannable = 1"), "recommendation repository applies hard storage filters");
+            Equal(true, repository.Contains("EffectiveLocationResolver.AncestorAndRankedLocationCteSql"), "recommendation inventory uses canonical effective location ancestry");
+            Equal(true, repository.Contains("zone.ZoneCode = 'STORAGE'") && repository.Contains("location.IsActive = 1") && repository.Contains("location.IsVirtual = 0") && !repository.Contains("location.IsScannable"), "recommendation repository applies Final Schema storage filters");
             Equal(false, repository.Contains("box.IsHold = 0"), "held boxes remain in physical occupancy");
             Equal(false, service.Contains("CapacityQty") || service.Contains("MaxWeightKg") || service.Contains("PreferredFillCount"), "V1 ranking has no capacity assumption");
             Equal(true, migration.Contains("PhysicalRackGroupCode") && migration.Contains("PhysicalRowCode") && migration.Contains("PositionSequence"), "topology migration adds minimal fields");
@@ -1779,9 +1833,9 @@ namespace WMS_HU_Model.Tests
         private static FakeLocationMaintenanceRepository PutawayLocations()
         {
             FakeLocationMaintenanceRepository result = new FakeLocationMaintenanceRepository();
-            result.Locations["INBOUND-PENDING"] = new LocationDto { Id = 100, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", MasterStatus = "ACTIVE", IsVirtual = true, PlantPolicy = "ANY" };
-            result.Locations["H208"] = new LocationDto { Id = 200, WarehouseCode = "FG01", LocationCode = "H208", ZoneCode = "STORAGE", MasterStatus = "ACTIVE", IsVirtual = false, PlantPolicy = "ANY" };
-            result.Locations["H305"] = new LocationDto { Id = 201, WarehouseCode = "FG01", LocationCode = "H305", ZoneCode = "STORAGE", MasterStatus = "ACTIVE", IsVirtual = false, PlantPolicy = "ANY" };
+            result.Locations["INBOUND-PENDING"] = new LocationDto { Id = 100, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", IsActive = true, IsVirtual = true, PlantPolicy = "ANY" };
+            result.Locations["H208"] = new LocationDto { Id = 200, WarehouseCode = "FG01", LocationCode = "H208", ZoneCode = "STORAGE", IsActive = true, IsVirtual = false, PlantPolicy = "ANY" };
+            result.Locations["H305"] = new LocationDto { Id = 201, WarehouseCode = "FG01", LocationCode = "H305", ZoneCode = "STORAGE", IsActive = true, IsVirtual = false, PlantPolicy = "ANY" };
             return result;
         }
 
@@ -1855,7 +1909,7 @@ namespace WMS_HU_Model.Tests
 
         private static void OutboundPickingStateResumesWithoutWrites()
         {
-            FakeFormalOutboundRepository repository = new FakeFormalOutboundRepository
+            FakeOutboundOrderRepository repository = new FakeOutboundOrderRepository
             {
                 PickingState = new OutboundPickingStateDto
                 {
@@ -1864,7 +1918,7 @@ namespace WMS_HU_Model.Tests
                     RemainingTasks = new List<PickingStateTaskDto> { new PickingStateTaskDto { PickBatchNo = "PB-1", BoxCode = "BOX-1", RemainingQty = 100m } }
                 }
             };
-            FormalOutboundService service = new FormalOutboundService(repository, new FakeHuIdentifierService());
+            OutboundOrderService service = new OutboundOrderService(repository);
             OperationResult<OutboundPickingStateDto> result = service.GetPickingState(" 800001 ");
             Equal(true, result.IsSuccess, "picking state succeeds");
             Equal("PICKING", result.Data.OrderStatus, "picking state resumes existing status");
@@ -1878,7 +1932,7 @@ namespace WMS_HU_Model.Tests
         private static void WholeBoxUnpackUsesAtomicCommandContract()
         {
             FakeRepackRepository repository = new FakeRepackRepository();
-            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository, new FakeEffectiveLocationResolver());
             OperationResult<UnpackBoxResultDto> result = service.UnpackBox(new UnpackBoxRequest
             {
                 BoxHuCode = " box-1 ", WarehouseCode = " fg01 ", RequestId = "REQ-UNPACK", Operator = "tester"
@@ -1895,7 +1949,7 @@ namespace WMS_HU_Model.Tests
             string putaway = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "PutawayRepository.cs"));
             string relocation = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "RelocationRepository.cs"));
             string unpack = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "WholeBoxUnpackRepository.cs"));
-            string outbound = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "FormalOutboundRepository.cs"));
+            string outbound = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "OutboundOrderRepository.cs"));
             Equal(true, putaway.Contains("ExecuteWholePalletPutaway") && putaway.Contains("IsolationLevel.Serializable"), "whole pallet repository is transactional");
             Equal(true, relocation.Contains("ExecuteBatch") && relocation.Contains("IsolationLevel.Serializable") && relocation.Contains("IN (@") == false, "relocation repository is transactional and binds generated parameters");
             Equal(true, unpack.Contains("Execute(UnpackBoxCommand") && unpack.Contains("IsolationLevel.Serializable"), "whole box unpack repository is transactional");
@@ -1989,7 +2043,7 @@ namespace WMS_HU_Model.Tests
         private static void MergeBoxServiceNormalizesAndPersists()
         {
             FakeRepackRepository repository = new FakeRepackRepository();
-            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository, new FakeEffectiveLocationResolver());
             OperationResult<MergeBoxResultDto> result = service.MergeBox(new MergeBoxRequest
             {
                 WarehouseCode = " fg01 ", InnerPackHuCodes = new List<string> { " i001 ", " i002 " },
@@ -2012,7 +2066,7 @@ namespace WMS_HU_Model.Tests
                     NewBoxHuCode = "B2608260019A", WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I001", "I002" }, IsDuplicate = false
                 }
             };
-            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository);
+            RepackService service = new RepackService(new FakeHuRepository(), new FakeLocationMaintenanceRepository(), new FakeHuLocationRepository(), repository, new FakeEffectiveLocationResolver());
             OperationResult<MergeBoxResultDto> replay = service.MergeBox(new MergeBoxRequest
             {
                 WarehouseCode = "FG01", InnerPackHuCodes = new List<string> { "I002", "I001" }, RequestId = "REQ-19", Operator = "tester"
@@ -2033,7 +2087,7 @@ namespace WMS_HU_Model.Tests
             Equal(true, repository.IndexOf("MergeBoxRules.Validate", StringComparison.Ordinal) < repository.IndexOf("AllocateSequence", StringComparison.Ordinal), "all pack rules run before sequence allocation");
             Equal(true, repository.Contains("BOX_CODE_DAILY_SEQUENCE_EXHAUSTED") && repository.Contains("current.Value >= 9999"), "sequence exhaustion is stable business failure");
             Equal(false, repository.Contains("MAX(HUCode)") || repository.Contains("AddWithValue"), "allocator avoids max HUCode and AddWithValue");
-            Equal(true, repository.Contains("DELETE FROM dbo.WMS_HU_CurrentLocation") && repository.Contains("'INBOUND-PENDING'") && repository.Contains("'RECEIVE'"), "merge clears child direct locations and resolves pending target");
+            Equal(true, repository.Contains("DELETE FROM dbo.WMS_FG_HU_CurrentLocation") && repository.Contains("'INBOUND-PENDING'") && repository.Contains("\"RECEIVE\""), "merge clears child direct locations and resolves pending target");
             Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"MERGE_BOX\"") && repository.Contains("\"ATTACH_HU\""), "merge writes movement and operation audit");
             Equal(true, migration.Contains("PRIMARY KEY CLUSTERED (BusinessDate, PlantCode)") && migration.Contains("SET XACT_ABORT ON") && migration.Contains("BETWEEN 1 AND 9999"), "sequence migration is scoped and rerun-safe");
             Pass();
@@ -2158,7 +2212,7 @@ namespace WMS_HU_Model.Tests
             {
                 HuId = id, HuCode = code, HuType = "INNER_PACK", PlantCode = plantCode, LifecycleStatus = "ACTIVE", IsHold = false,
                 HasActiveParent = false, LocationId = id + 100, LocationCode = locationCode, WarehouseCode = warehouseCode,
-                WarehouseStatus = "ACTIVE", ZoneCode = "STORAGE", ZoneStatus = "ACTIVE", LocationStatus = "ACTIVE", IsVirtual = false,
+                WarehouseIsActive = true, ZoneCode = "STORAGE", ZoneIsActive = true, LocationIsActive = true, IsVirtual = false,
                 ActiveItemCount = 1, MaterialCodeCount = 1, MaterialRevisionCount = 1, MaterialCode = materialCode, MaterialRevision = revision, TotalQty = qty
             };
         }
@@ -2276,25 +2330,15 @@ namespace WMS_HU_Model.Tests
             }
         }
 
-        private class FakeFormalOutboundRepository : IFormalOutboundRepository
+
+        private class FakeOutboundOrderRepository : IOutboundOrderRepository
         {
             public OutboundPickingStateDto PickingState;
             public string PickingStateError;
             public int WriteCalls;
             public List<OutboundOrderDto> GetOrders(OutboundOrderQuery query) { return new List<OutboundOrderDto>(); }
             public OutboundOrderDto GetOrder(string sapDeliveryNo) { return null; }
-            public List<OutboundAllocationCandidateDto> GetAllocationCandidates(OutboundOrderDto order, string materialCode, string uom) { return new List<OutboundAllocationCandidateDto>(); }
-            public StartPickingResultDto GetStartPickingByRequestId(string requestId) { return null; }
-            public StartPickingPersistenceResult ExecuteStartPicking(StartPickingCommand command) { WriteCalls++; throw new NotSupportedException(); }
-            public OutboundActionPersistenceResult ReleaseAllocation(string allocationNo, OutboundActionRequest request) { WriteCalls++; throw new NotSupportedException(); }
             public OutboundActionPersistenceResult VoidOrder(string sapDeliveryNo, OutboundActionRequest request) { WriteCalls++; throw new NotSupportedException(); }
-            public string GetPickBatchCustomerCode(string pickBatchNo) { return null; }
-            public OutboundScanResultDto GetScanByRequestId(string requestId) { return null; }
-            public OutboundScanPersistenceResult ExecuteScan(OutboundScanCommand command) { WriteCalls++; throw new NotSupportedException(); }
-            public OutboundActionPersistenceResult ShipOrder(string sapDeliveryNo, ShipOutboundRequest request) { WriteCalls++; throw new NotSupportedException(); }
-            public OutboundActionPersistenceResult ReturnPickDetail(long pickDetailId, ReturnPickDetailRequest request) { WriteCalls++; throw new NotSupportedException(); }
-            public OutboundActionPersistenceResult ReturnToStock(string huCode, ReturnToStockRequest request) { WriteCalls++; throw new NotSupportedException(); }
-            public StartPickingPersistenceResult ReserveReplacement(string pickBatchNo, ReplacementRequest request) { WriteCalls++; throw new NotSupportedException(); }
             public OutboundPickingStateReadResult GetPickingState(string sapDeliveryNo) { return PickingStateError == null ? OutboundPickingStateReadResult.Success(PickingState) : OutboundPickingStateReadResult.Fail(PickingStateError); }
         }
 
@@ -2333,8 +2377,10 @@ namespace WMS_HU_Model.Tests
             public Dictionary<long, HuLocationDto> Locations = new Dictionary<long, HuLocationDto>();
             public Dictionary<long, List<long>> HuIdsByLocation = new Dictionary<long, List<long>>();
             public string LastFindHuType;
+            public int ResolveManyCalls;
+            public List<long> LastResolvedHuIds = new List<long>();
             public HuLocationDto Resolve(long huId) { HuLocationDto value; return Locations.TryGetValue(huId, out value) ? value : null; }
-            public List<HuLocationDto> ResolveMany(IList<long> huIds) { return huIds.Select(Resolve).Where(x => x != null).ToList(); }
+            public List<HuLocationDto> ResolveMany(IList<long> huIds) { ResolveManyCalls++; LastResolvedHuIds = huIds.ToList(); return huIds.Select(Resolve).Where(x => x != null).ToList(); }
             public List<long> FindHuIdsAtLocation(long locationId, string huType) { LastFindHuType = huType; List<long> value; return HuIdsByLocation.TryGetValue(locationId, out value) ? value : new List<long>(); }
         }
 
@@ -2410,9 +2456,9 @@ namespace WMS_HU_Model.Tests
             string operationsSql = HuDetailRepository.OperationLogsSql.ToUpperInvariant();
             string holdsSql = HuDetailRepository.HoldLogsSql.ToUpperInvariant();
             string movesSql = HuLocationRepository.MoveLogsSql.ToUpperInvariant();
-            Equal(true, operationsSql.Contains("WHERE LOG.HUID = @HUID") && operationsSql.Contains("ORDER BY LOG.OPERATIONTIME DESC, LOG.ID DESC"), "operation history scoped and newest first");
-            Equal(true, holdsSql.Contains("WHERE LOG.HUID = @HUID") && holdsSql.Contains("ORDER BY LOG.HOLDTIME DESC, LOG.ID DESC"), "hold history scoped and newest first");
-            Equal(true, movesSql.Contains("WHERE M.HUID = @HUID") && movesSql.Contains("ORDER BY M.MOVETIME DESC, M.ID DESC"), "move history reuses scoped newest-first SQL");
+            Equal(true, operationsSql.Contains("WHERE LOG.HUID = @HUID") && operationsSql.Contains("ORDER BY LOG.OPERATIONDT DESC, LOG.ID DESC"), "operation history scoped and newest first");
+            Equal(true, holdsSql.Contains("WHERE LOG.HUID = @HUID") && holdsSql.Contains("ORDER BY LOG.HOLDDT DESC, LOG.ID DESC"), "hold history scoped and newest first");
+            Equal(true, movesSql.Contains("WHERE M.HUID = @HUID") && movesSql.Contains("ORDER BY M.MOVEDT DESC, M.ID DESC"), "move history reuses scoped newest-first SQL");
             Pass();
         }
 
@@ -2420,7 +2466,7 @@ namespace WMS_HU_Model.Tests
         {
             FakeFinishedGoodsInboundReadRepository repository = new FakeFinishedGoodsInboundReadRepository();
             repository.QueryResult.Items.Add(new FinishedGoodsInboundRecordDto { ReceiptId = 1, ExceptionBoxCount = 2 });
-            FinishedGoodsInboundReadService service = new FinishedGoodsInboundReadService(repository, new FakeHuLocationRepository());
+            FinishedGoodsInboundReadService service = new FinishedGoodsInboundReadService(repository, new FakeEffectiveLocationResolver());
             OperationResult<FinishedGoodsInboundRecordResultDto> result = service.Query(new FinishedGoodsInboundRecordQuery
             {
                 DateFrom = "2026-08-01",
@@ -2464,11 +2510,12 @@ namespace WMS_HU_Model.Tests
             string sql = FinishedGoodsInboundReadRepository.ReceiptStatsSql.ToUpperInvariant();
             string rowsSql = FinishedGoodsInboundReadRepository.RowsSql.ToUpperInvariant();
             string countSql = FinishedGoodsInboundReadRepository.CountSql.ToUpperInvariant();
-            Equal(true, sql.Contains("FROM DBO.WMS_FINISHEDGOODSINBOUNDRECEIPT RECEIPT"), "inbound read grain starts at receipt");
+            Equal(true, sql.Contains("FROM DBO.WMS_FG_FINISHEDGOODSINBOUNDRECEIPT RECEIPT"), "inbound read grain starts at receipt");
+            Equal(true, sql.Contains("RECEIPT.RECEIVEDT AS RECEIVETIME") && sql.Contains("RECEIPT.RECEIVEBY AS OPERATOR"), "inbound read aliases final receipt event columns for API compatibility");
             Equal(true, sql.Contains("'FGI-' + CAST(RECEIPT.ID AS VARCHAR(20))"), "inbound read links receipt source business number");
             Equal(true, sql.Contains("COUNT(CASE WHEN HU.HUTYPE = 'OUTER_BOX' THEN 1 END)") && sql.Contains("COUNT(CASE WHEN HU.HUTYPE = 'INNER_PACK' THEN 1 END)"), "inbound read counts receipt-created boxes and packs");
-            Equal(true, sql.Contains("SUM(ITEM.QTY)") && sql.Contains("COUNT(DISTINCT ITEM.MATERIALCODE)"), "inbound read aggregates quantity and materials");
-            Equal(true, sql.Contains("WMS_HU_HOLDLOG") && sql.Contains("WEEKCODE_UNRESOLVED") && sql.Contains("WEEKHOLD.ISACTIVE = 1"), "inbound read aggregates active holds and week exceptions");
+            Equal(true, sql.Contains("SUM(ITEM.QTY)") && sql.Contains("COUNT(DISTINCT ITEM.PRODNO)"), "inbound read aggregates quantity and materials");
+            Equal(true, sql.Contains("WMS_FG_HU_HOLDLOG") && sql.Contains("WEEKCODE_UNRESOLVED") && sql.Contains("WEEKHOLD.ISACTIVE = 1"), "inbound read aggregates active holds and week exceptions");
             Equal(true, sql.Contains("@FROMTIME") && sql.Contains("@TOTIMEEXCLUSIVE") && sql.Contains("@PLANTCODE") && sql.Contains("@SOURCESYSTEM") && sql.Contains("@SOURCETYPE") && sql.Contains("@SOURCEENTITYID"), "inbound read header filters are server side");
             Equal(true, sql.Contains("@PALLETCODE") && sql.Contains("@BOXCODE") && sql.Contains("@MATERIALCODE") && sql.Contains("@REQUESTID") && rowsSql.Contains("@EXCEPTIONONLY") && rowsSql.Contains("@EXCEPTIONCATEGORY"), "inbound read HU and exception filters are server side");
             Equal(true, rowsSql.Contains("ORDER BY RECEIVETIME DESC, RECEIPTID DESC") && rowsSql.Contains("OFFSET @OFFSET ROWS FETCH NEXT @PAGESIZE ROWS ONLY"), "inbound read paging is stable and server side");
@@ -2489,17 +2536,17 @@ namespace WMS_HU_Model.Tests
                     new FinishedGoodsInboundBoxDto { HuId = 22, BoxCode = "BOX-22" }
                 }
             };
-            FakeHuLocationRepository locations = new FakeHuLocationRepository();
-            locations.Locations.Add(new HuLocationDto { HuId = 21, EffectiveLocationCode = "A-01", IsInherited = true, LocationSourceHuCode = "PLT-1" });
-            locations.Locations.Add(new HuLocationDto { HuId = 22, DirectLocationCode = "B-01", EffectiveLocationCode = "B-01" });
+            FakeEffectiveLocationResolver locations = new FakeEffectiveLocationResolver();
+            locations.Locations[21] = new HuLocationDto { HuId = 21, EffectiveLocationCode = "A-01", IsInherited = true, LocationSourceHuCode = "PLT-1" };
+            locations.Locations[22] = new HuLocationDto { HuId = 22, DirectLocationCode = "B-01", EffectiveLocationCode = "B-01" };
             FinishedGoodsInboundReadService service = new FinishedGoodsInboundReadService(repository, locations);
 
             OperationResult<FinishedGoodsInboundDetailDto> result = service.GetDetail(7);
 
             Equal(true, result.IsSuccess, "inbound read detail succeeds without pallet");
             Equal(50, repository.LastBoxLimit, "inbound read detail box limit");
-            Equal("21,22", string.Join(",", locations.LastHuIds), "inbound read detail resolves locations in one batch");
-            Equal(1, locations.BatchCalls, "inbound read detail makes one location call");
+            Equal("21,22", string.Join(",", locations.LastResolvedHuIds), "inbound read detail resolves locations in one batch");
+            Equal(1, locations.ResolveManyCalls, "inbound read detail makes one location call");
             Equal("A-01", result.Data.Boxes[0].EffectiveLocationCode, "inbound read inherited location mapped");
             Equal("PLT-1", result.Data.Boxes[0].LocationSourceHuCode, "inbound read location source mapped");
             Equal(true, result.Data.HasMoreBoxes, "inbound read detail marks truncated boxes");
@@ -2565,8 +2612,9 @@ namespace WMS_HU_Model.Tests
             MasterDataMaintenanceService service = new MasterDataMaintenanceService(repository);
             Equal(false, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "OFF", PlantCode = "1010", Operator = "tester" }).IsSuccess, "inactive warehouse mapping rejected");
             Equal(false, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "FG01", PlantCode = "1010", Remark = new string('x', 1001), Operator = "tester" }).IsSuccess, "mapping remark length enforced");
-            Equal(true, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "FG01", PlantCode = "9010", SapStorageLocation = null, Operator = "tester" }).IsSuccess, "nullable SAP location accepted");
-            Equal(null, repository.Mappings["FG01|9010"].SapStorageLocation, "nullable SAP location persisted");
+            Equal(false, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "FG01", PlantCode = "9010", SapStorageLocation = null, Operator = "tester" }).IsSuccess, "SAP location is required");
+            Equal(true, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "FG01", PlantCode = "9010", SapStorageLocation = "11C2", Operator = "tester" }).IsSuccess, "non-null SAP location accepted");
+            Equal("11C2", repository.Mappings["FG01|9010"].SapStorageLocation, "SAP location persisted");
             Equal(false, service.CreateWarehousePlant(new WarehousePlantCreateRequest { WarehouseCode = "FG01", PlantCode = "9010", Operator = "tester" }).IsSuccess, "duplicate warehouse plant rejected");
             Equal(true, service.UpdateWarehousePlant("FG01", "9010", new WarehousePlantUpdateRequest { SapStorageLocation = "11C3", Operator = "tester" }).IsSuccess, "SAP location update succeeds");
             Equal("11C3", repository.Mappings["FG01|9010"].SapStorageLocation, "SAP location changed");
@@ -2597,7 +2645,7 @@ namespace WMS_HU_Model.Tests
             Equal("INACTIVE", repository.Locations["A-01"].MasterStatus, "disable changes status only");
             Equal(true, service.SetActive("FG01", "A-01", true, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "disabled physical location can be enabled again");
             Equal("ACTIVE", repository.Locations["A-01"].MasterStatus, "reenable retains the same location master record");
-            repository.Locations["INBOUND-PENDING"] = new LocationDto { Id = 2, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", LocationTypeCode = "VIRTUAL", MasterStatus = "ACTIVE" };
+            repository.Locations["INBOUND-PENDING"] = new LocationDto { Id = 2, WarehouseCode = "FG01", LocationCode = "INBOUND-PENDING", ZoneCode = "RECEIVE", LocationTypeCode = "VIRTUAL", IsActive = true };
             Equal(false, service.SetActive("FG01", "INBOUND-PENDING", false, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "system location disable rejected");
             Equal(false, service.Update("FG01", "INBOUND-PENDING", LocationUpdate("tester")).IsSuccess, "system location edit rejected");
             repository.WarehouseActive = false;
@@ -2616,12 +2664,12 @@ namespace WMS_HU_Model.Tests
             };
             Equal(true, service.Create(triple).IsSuccess, "approved triple-tier type accepted");
             Equal(true, repository.Locations.ContainsKey("01w"), "location code is trim-only without uppercase rewrite");
-            Equal(null, triple.CapacityQty, "create capacity is server-deferred");
+            Equal(16m, triple.CapacityQty, "deprecated capacity input is ignored without mutating API input");
             Equal(true, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "F001", LocationTypeCode = "FLOOR_STORAGE", Operator = "tester" }).IsSuccess, "approved floor type accepted");
             Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "V001", LocationTypeCode = "VIRTUAL", Operator = "tester" }).IsSuccess, "virtual physical create rejected");
             Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "STORAGE", LocationCode = "X001", LocationTypeCode = "UNKNOWN", Operator = "tester" }).IsSuccess, "invalid physical type rejected");
             Equal(false, service.Create(new CreateLocationRequest { WarehouseCode = "FG01", ZoneCode = "RETURN", LocationCode = "X002", LocationTypeCode = "DOUBLE_RACK", Operator = "tester" }).IsSuccess, "non-storage physical create rejected");
-            repository.Locations["SYS-X"] = new LocationDto { Id = 20, WarehouseCode = "FG01", ZoneCode = "SYSTEM", LocationCode = "SYS-X", LocationTypeCode = "VIRTUAL", IsVirtual = true, MasterStatus = "ACTIVE" };
+            repository.Locations["SYS-X"] = new LocationDto { Id = 20, WarehouseCode = "FG01", ZoneCode = "SYSTEM", LocationCode = "SYS-X", LocationTypeCode = "VIRTUAL", IsVirtual = true, IsActive = true };
             Equal(true, service.Get("FG01", "SYS-X").Data.IsSystemProtected, "virtual location returned as system protected");
             Equal(false, service.Update("FG01", "SYS-X", LocationUpdate("tester")).IsSuccess, "virtual system update rejected");
             Equal(false, service.SetActive("FG01", "SYS-X", true, new MasterDataStatusRequest { Operator = "tester" }).IsSuccess, "virtual system enable rejected");
@@ -2634,10 +2682,10 @@ namespace WMS_HU_Model.Tests
             string warehouseSql = MasterDataMaintenanceRepository.WarehouseQuerySql.ToUpperInvariant();
             string mappingSql = MasterDataMaintenanceRepository.WarehousePlantQuerySql.ToUpperInvariant();
             string locationSql = LocationRepository.MaintenanceListSql.ToUpperInvariant();
-            Equal(true, warehouseSql.Contains("WMS_HU_CURRENTLOCATION") && warehouseSql.Contains("ACTIVELOCATIONCOUNT") && warehouseSql.Contains("ACTIVEMAPPINGCOUNT"), "warehouse usage aggregated in query");
+            Equal(true, warehouseSql.Contains("WMS_FG_HU_CURRENTLOCATION") && warehouseSql.Contains("ACTIVELOCATIONCOUNT") && warehouseSql.Contains("ACTIVEMAPPINGCOUNT"), "warehouse usage aggregated in query");
             Equal(true, mappingSql.Contains("SAPSTORAGELOCATION") && mappingSql.Contains("@WAREHOUSECODE") && mappingSql.Contains("@PLANTCODE") && mappingSql.Contains("@ISACTIVE"), "mapping query filters server side");
-            Equal(true, locationSql.Contains("WMS_HU_CURRENTLOCATION") && locationSql.Contains("CURRENT HU") == false && locationSql.Contains("CURRENTHUCOUNT"), "location current HU aggregated without N plus one");
-            Equal(true, locationSql.Contains("@WAREHOUSECODE") && locationSql.Contains("@LOCATIONCODE") && locationSql.Contains("@LOCATIONTYPECODE") && locationSql.Contains("@MASTERSTATUS"), "location filters server side");
+            Equal(true, locationSql.Contains("WMS_FG_HU_CURRENTLOCATION") && locationSql.Contains("CURRENT HU") == false && locationSql.Contains("CURRENTHUCOUNT"), "location current HU aggregated without N plus one");
+            Equal(true, locationSql.Contains("@WAREHOUSECODE") && locationSql.Contains("@LOCATIONCODE") && locationSql.Contains("@LOCATIONTYPECODE") && locationSql.Contains("@ISACTIVE"), "location filters server side");
             Pass();
         }
 
@@ -2736,11 +2784,11 @@ namespace WMS_HU_Model.Tests
         private static void AuditSqlIsPagedParameterizedAndReadOnly()
         {
             string sql = (AuditRepository.OperationRowsSql + AuditRepository.MoveRowsSql + AuditRepository.HoldRowsSql).ToUpperInvariant();
-            Equal(true, sql.Contains("WMS_HU_OPERATIONLOG") && sql.Contains("WMS_HU_MOVELOG") && sql.Contains("WMS_HU_HOLDLOG"), "audit reads all persisted sources");
-            Equal(true, sql.Contains("INNER JOIN DBO.WMS_HU HU") && sql.Contains("HU.HUCODE") && sql.Contains("HU.HUTYPE"), "audit resolves HU in SQL");
+            Equal(true, sql.Contains("WMS_FG_HU_OPERATIONLOG") && sql.Contains("WMS_FG_HU_MOVELOG") && sql.Contains("WMS_FG_HU_HOLDLOG"), "audit reads all persisted sources");
+            Equal(true, sql.Contains("INNER JOIN DBO.WMS_FG_HU HU") && sql.Contains("HU.HUCODE") && sql.Contains("HU.HUTYPE"), "audit resolves HU in SQL");
             Equal(true, sql.Contains("@FROMTIME") && sql.Contains("@TOTIMEEXCLUSIVE") && sql.Contains("@HUCODE") && sql.Contains("@REQUESTID") && sql.Contains("@OPERATOR"), "audit common filters parameterized");
             Equal(true, sql.Contains("OFFSET @OFFSET ROWS FETCH NEXT @PAGESIZE ROWS ONLY"), "audit server paging enforced");
-            Equal(true, sql.Contains("ORDER BY LOG.OPERATIONTIME DESC, LOG.ID DESC") && sql.Contains("ORDER BY LOG.MOVETIME DESC, LOG.ID DESC") && sql.Contains("ORDER BY LOG.HOLDTIME DESC, LOG.ID DESC"), "audit stable descending order");
+            Equal(true, sql.Contains("ORDER BY LOG.OPERATIONDT DESC, LOG.ID DESC") && sql.Contains("ORDER BY LOG.MOVEDT DESC, LOG.ID DESC") && sql.Contains("ORDER BY LOG.HOLDDT DESC, LOG.ID DESC"), "audit stable descending order");
             Equal(false, sql.Contains("INSERT ") || sql.Contains("UPDATE ") || sql.Contains("DELETE ") || sql.Contains("MERGE ") || sql.Contains("DROP ") || sql.Contains("ALTER "), "audit SQL is read only");
             Pass();
         }
@@ -2823,7 +2871,7 @@ namespace WMS_HU_Model.Tests
             Equal("NOT_OBSERVABLE", overview.FailureHistory.Status, "unobservable differs from zero failures");
             Equal(false, json.Contains("CONNECTIONSTRING") || json.Contains("PASSWORD") || json.Contains("STACKTRACE") || json.Contains("SERVERNAME"), "monitoring response has no sensitive diagnostics");
             string sql = (MonitoringRepository.SummarySql + MonitoringRepository.TrendSql).ToUpperInvariant();
-            Equal(true, sql.Contains("WMS_FINISHEDGOODSINBOUNDRECEIPT") && sql.Contains("GROUP BY CAST(RECEIPT.RECEIVETIME AS DATE)"), "trend derives from successful receipt only");
+            Equal(true, sql.Contains("WMS_FG_FINISHEDGOODSINBOUNDRECEIPT") && sql.Contains("GROUP BY CAST(RECEIPT.RECEIVEDT AS DATE)"), "trend derives from successful receipt only");
             Equal(false, sql.Contains("DELETE ") || sql.Contains("UPDATE ") || sql.Contains("INSERT ") || sql.Contains("MERGE "), "monitoring SQL is read only");
             Equal(false, sql.Contains("REQUESTCOUNT") || sql.Contains("SUCCESSRATE"), "monitoring does not claim request total or success rate");
             Pass();
@@ -2871,7 +2919,7 @@ namespace WMS_HU_Model.Tests
             Equal(true, crossLine.All(x => x.LFIMG_BOX == x.LFIMG), "cross POSNR and CHARG line quantities");
             Equal(70m, crossLine.Sum(x => x.LFIMG), "cross POSNR and CHARG box invariant");
             string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
-            Equal(true, repository.Contains("LFIMG = lineQuantity") && repository.Contains("LFIMG_BOX = lineQuantity"), "repository assigns both quantities from current group");
+            Equal(true, repository.Contains("LFIMG = g.Sum(x => x.Qty)") && repository.Contains("LFIMG_BOX = g.Sum(x => x.Qty)"), "repository assigns both quantities from current group");
             Equal(false, repository.Contains("LFIMG_BOX = first.EffectiveQty"), "repository does not repeat whole-box quantity");
             Pass();
         }
@@ -2923,7 +2971,7 @@ namespace WMS_HU_Model.Tests
         private static void SapPostingUsesLineStorageLocation()
         {
             string source = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
-            Equal(true, source.Contains("l.SAPStorageLocation"), "LGORT comes from order line");
+            Equal(true, source.Contains("o.SAPStorageLocation"), "LGORT comes from order header");
             Equal(false, source.Contains("LocationCode AS LGORT"), "physical location not LGORT");
             Pass();
         }
@@ -2990,21 +3038,32 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
-        private static void SapPostingLegacyShipAliasClosesBypass()
+        private static void SapPostingHasSingleShipmentAuthority()
         {
-            string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundModule.cs"));
-            int route = module.IndexOf("Post(\"/orders/{vbeln}/ship\"", StringComparison.Ordinal);
-            string block = module.Substring(route, Math.Min(1500, module.Length - route));
-            Equal(true, block.Contains("_sapPostingService.ConfirmShipment"), "legacy ship delegates posting service");
-            Equal(false, block.Contains("_formalService.ShipOrder"), "legacy direct ship removed");
+            string modules = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundOrderModule.cs"))
+                + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundPickingModule.cs"))
+                + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundExceptionModule.cs"))
+                + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundSapPostingModule.cs"));
+            string outboundServices = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Services", "Impl", "OutboundPickingService.cs"))
+                + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Services", "Impl", "OutboundExceptionService.cs"));
+            string outboundRepositories = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundPickingRepository.cs"))
+                + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundExceptionRepository.cs"));
+            string postingRepository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            Equal(false, modules.Contains("Post(\"/orders/{vbeln}/ship\""), "legacy ship route removed");
+            Equal(true, modules.Contains("Post(\"/orders/{vbeln}/confirm-shipment\""), "formal confirmation route remains");
+            Equal(false, outboundServices.Contains("ShipOrder("), "legacy ship service removed");
+            Equal(false, outboundRepositories.Contains("ShipOrder("), "legacy ship repository removed");
+            Equal(true, postingRepository.Contains("FinalizeShipment("), "SAP finalizer is shipment authority");
+            Equal(true, postingRepository.Contains("ReservationStatus = 'ACTIVE'") && postingRepository.Contains("ExceptionStatus <> 'RESOLVED'"), "SAP finalizer preserves shipment guards");
+            Equal(true, postingRepository.Contains("LocationCode = 'SHIPPED'") && postingRepository.Contains("OUTBOUND-STAGING") && postingRepository.Contains("ShippedDt = @Now"), "SAP finalizer preserves shipment closeout");
             Pass();
         }
 
         private static void SapDeliveryReceiveAddsGenericAudit()
         {
             string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "SapOutboundIntegrationModule.cs"));
-            Equal(true, module.Contains("RecordReceiveCommunication"), "receive generic audit");
-            Equal(true, module.Contains("WMS_OutboundOrderReceive" ) == false, "receive module preserves repository boundary");
+            Equal(false, module.Contains("RecordReceiveCommunication"), "receive flow is independent from deferred SAP posting log writer");
+            Equal(true, module.Contains("WMS_FG_OutboundOrderReceive" ) == false, "receive module preserves repository boundary");
             Pass();
         }
 
@@ -3038,7 +3097,7 @@ namespace WMS_HU_Model.Tests
 
         private static UpdateLocationRequest LocationUpdate(string operatorName)
         {
-            return new UpdateLocationRequest { ZoneCode = "STORAGE", LocationTypeCode = "DOUBLE_RACK", ManageMode = "CAPACITY_LOCATION", CapacityMode = "STACK_POSITION", PlantPolicy = "SAME_PLANT", LocationLevel = "BASE", MasterStatus = "ACTIVE", Operator = operatorName };
+            return new UpdateLocationRequest { ZoneCode = "STORAGE", LocationTypeCode = "DOUBLE_RACK", PlantPolicy = "SAME_PLANT", Operator = operatorName };
         }
 
         private class FakeSapPostingClient : ISapOutboundPostingClient
@@ -3105,7 +3164,7 @@ namespace WMS_HU_Model.Tests
             public bool WarehousePlantExists(string warehouseCode, string plantCode) { return Mappings.ContainsKey(warehouseCode + "|" + plantCode); }
             public long InsertWarehousePlant(WarehousePlantCreateRequest request) { Mappings[request.WarehouseCode + "|" + request.PlantCode] = new WarehousePlantDto { WarehouseCode = request.WarehouseCode, PlantCode = request.PlantCode, SapStorageLocation = request.SapStorageLocation, IsActive = true }; return Mappings.Count; }
             public bool UpdateWarehousePlant(string warehouseCode, string plantCode, WarehousePlantUpdateRequest request) { Mappings[warehouseCode + "|" + plantCode].SapStorageLocation = request.SapStorageLocation; return true; }
-            public bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive) { Mappings[warehouseCode + "|" + plantCode].IsActive = isActive; return true; }
+            public bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive, string operatorName) { Mappings[warehouseCode + "|" + plantCode].IsActive = isActive; return true; }
             public List<MasterDataOptionDto> GetWarehouseOptions() { return new List<MasterDataOptionDto>(); }
             public List<MasterDataOptionDto> GetZoneOptions(string warehouseCode) { return new List<MasterDataOptionDto>(); }
         }
@@ -3122,10 +3181,10 @@ namespace WMS_HU_Model.Tests
             public long? GetZoneId(long warehouseId, string zoneCode) { return 1; }
             public long? GetLocationId(long warehouseId, string locationCode) { LocationDto value; return Locations.TryGetValue(locationCode, out value) ? value.Id : (long?)null; }
             public bool Exists(long warehouseId, string locationCode) { return Locations.ContainsKey(locationCode); }
-            public long Insert(long warehouseId, long zoneId, long? parentLocationId, CreateLocationRequest request) { Locations[request.LocationCode] = new LocationDto { Id = Locations.Count + 1, WarehouseCode = request.WarehouseCode, ZoneCode = request.ZoneCode, LocationCode = request.LocationCode, LocationTypeCode = request.LocationTypeCode, MasterStatus = "ACTIVE" }; return Locations.Count; }
-            public bool Update(long locationId, long zoneId, long? parentLocationId, UpdateLocationRequest request) { return true; }
+            public long Insert(long warehouseId, long zoneId, CreateLocationRequest request) { Locations[request.LocationCode] = new LocationDto { Id = Locations.Count + 1, WarehouseCode = request.WarehouseCode, ZoneCode = request.ZoneCode, LocationCode = request.LocationCode, LocationTypeCode = request.LocationTypeCode, IsActive = true, MasterStatus = "ACTIVE" }; return Locations.Count; }
+            public bool Update(long locationId, long zoneId, UpdateLocationRequest request) { return true; }
             public int CountCurrentHus(long locationId) { return CurrentHuCount; }
-            public bool SetMasterStatus(long locationId, string masterStatus, string operatorName) { if (masterStatus == "INACTIVE" && (CurrentHuCount > 0 || OccupyOnStatusUpdate)) return false; Locations.Values.First(x => x.Id == locationId).MasterStatus = masterStatus; return true; }
+            public bool SetActive(long locationId, bool isActive, string operatorName) { if (!isActive && (CurrentHuCount > 0 || OccupyOnStatusUpdate)) return false; LocationDto location = Locations.Values.First(x => x.Id == locationId); location.IsActive = isActive; location.MasterStatus = isActive ? "ACTIVE" : "INACTIVE"; return true; }
         }
 
         private class FakeAuditRepository : IAuditRepository

@@ -50,16 +50,9 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string SAPDeliveryNo { get; set; }
         public string PayloadHash { get; set; }
         public string RawJson { get; set; }
-        public string DeliveryType { get; set; }
         public string CustomerCode { get; set; }
         public string SoldToCode { get; set; }
-        public string SalesOrgCode { get; set; }
         public DateTime? PlannedShipDate { get; set; }
-        public TimeSpan? PlannedShipTime { get; set; }
-        public string ShippingType { get; set; }
-        public string SpecialHandlingCode { get; set; }
-        public string SAPCreatedBy { get; set; }
-        public DateTime? SAPCreateDate { get; set; }
         public string PlantCode { get; set; }
         public List<SapOutboundOrderReceiveLineCommand> Lines { get; set; }
     }
@@ -67,10 +60,9 @@ namespace WMS_HU_Model.Models.Outbound.Integration
     public class SapOutboundOrderReceiveLineCommand
     {
         public string SAPItemNo { get; set; }
-        public string MaterialCode { get; set; }
+        public string ProdNo { get; set; }
         public decimal RequiredQty { get; set; }
         public string Uom { get; set; }
-        public string ItemCategory { get; set; }
         public string SourceOrderNo { get; set; }
         public string SourceOrderItem { get; set; }
         public string CustomerPO { get; set; }

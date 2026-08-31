@@ -6,8 +6,6 @@ using WMS_HU_Model.Repositories;
 using WMS_HU_Model.Services;
 using WMS.Infrastructure.Sap;
 using System;
-using Newtonsoft.Json.Linq;
-using WMS_HU_Model.Infrastructure.Sap;
 
 namespace WMS.Modules
 {
@@ -29,23 +27,7 @@ namespace WMS.Modules
                 string rawJson;
                 using (StreamReader reader = new StreamReader(Request.Body))
                     rawJson = reader.ReadToEnd();
-                OperationResult<SapOutboundOrderReceiveResultDto> result;
-                try
-                {
-                    result = _service.Receive(rawJson);
-                    string businessKey = result.Data == null ? ExtractDeliveryNo(rawJson) : result.Data.SAPDeliveryNo;
-                    _postingRepository.RecordReceiveCommunication(
-                        businessKey,
-                        rawJson,
-                        result.IsSuccess ? (result.Data != null && result.Data.IsDuplicate ? "DUPLICATE" : "SUCCESS") : "REJECTED",
-                        result.Message,
-                        ExtractPayloadHash(rawJson));
-                }
-                catch (Exception ex)
-                {
-                    _postingRepository.RecordReceiveCommunication(ExtractDeliveryNo(rawJson), rawJson, "REJECTED", ex.Message, ExtractPayloadHash(rawJson));
-                    throw;
-                }
+                OperationResult<SapOutboundOrderReceiveResultDto> result = _service.Receive(rawJson);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
@@ -88,25 +70,5 @@ namespace WMS.Modules
             });
         }
 
-        private static string ExtractDeliveryNo(string rawJson)
-        {
-            try
-            {
-                JObject payload = JObject.Parse(rawJson ?? string.Empty);
-                return SapPayloadCanonicalizer.ExtractDeliveryNo(payload);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string ExtractPayloadHash(string rawJson)
-        {
-            JObject payload;
-            string hash;
-            string error;
-            return SapPayloadCanonicalizer.TryCreate(rawJson, out payload, out hash, out error) ? hash : null;
-        }
     }
 }

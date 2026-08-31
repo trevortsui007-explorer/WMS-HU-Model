@@ -38,9 +38,9 @@ namespace WMS_HU_Model.Services
                 _repository.RecordRejected(null, hash, rawJson, missingDeliveryNo);
                 return OperationResult<SapOutboundOrderReceiveResultDto>.Fail(missingDeliveryNo);
             }
-            if (deliveryNo.Length > 30)
+            if (deliveryNo.Length > 50)
             {
-                const string invalidDeliveryNoLength = "VBELN长度不能超过30。";
+                const string invalidDeliveryNoLength = "VBELN长度不能超过50。";
                 _repository.RecordRejected(null, hash, rawJson, invalidDeliveryNoLength);
                 return OperationResult<SapOutboundOrderReceiveResultDto>.Fail(invalidDeliveryNoLength);
             }
@@ -98,26 +98,15 @@ namespace WMS_HU_Model.Services
             if (request == null || request.T_ITEM == null || request.T_ITEM.Count == 0)
                 return "T_ITEM不能为空。";
 
-            string headerLengthError = ValidateLength(deliveryNo, 30, "VBELN")
-                ?? ValidateLength(NormalizeOptional(request.LFART), 10, "LFART")
+            string headerLengthError = ValidateLength(deliveryNo, 50, "VBELN")
                 ?? ValidateLength(NormalizeOptional(request.KUNNR), 50, "KUNNR")
-                ?? ValidateLength(NormalizeOptional(request.KUNAG), 50, "KUNAG")
-                ?? ValidateLength(NormalizeOptional(request.VKORG), 20, "VKORG")
-                ?? ValidateLength(NormalizeOptional(request.VSART), 20, "VSART")
-                ?? ValidateLength(NormalizeOptional(request.SDABW), 20, "SDABW")
-                ?? ValidateLength(NormalizeOptional(request.ERNAM), 50, "ERNAM");
+                ?? ValidateLength(NormalizeOptional(request.KUNAG), 50, "KUNAG");
             if (headerLengthError != null)
                 return headerLengthError;
 
             DateTime? plannedShipDate;
-            DateTime? sapCreateDate;
-            TimeSpan? plannedShipTime;
             if (!TryParseOptionalDate(request.WADAT, out plannedShipDate))
                 return "WADAT日期格式必须为yyyy-MM-dd。";
-            if (!TryParseOptionalDate(request.ERDAT, out sapCreateDate))
-                return "ERDAT日期格式必须为yyyy-MM-dd。";
-            if (!TryParseOptionalTime(request.WAUHR, out plannedShipTime))
-                return "WAUHR时间格式必须为HHmmss。";
 
             List<SapOutboundOrderReceiveLineCommand> lines = new List<SapOutboundOrderReceiveLineCommand>();
             HashSet<string> itemNos = new HashSet<string>(StringComparer.Ordinal);
@@ -147,7 +136,7 @@ namespace WMS_HU_Model.Services
                     ?? ValidateLength(uom, 20, "MEINS")
                     ?? ValidateLength(itemPlant, 20, "WERKS")
                     ?? ValidateLength(NormalizeOptional(item.PSTYV), 20, "PSTYV")
-                    ?? ValidateLength(NormalizeOptional(item.VGBEL), 30, "VGBEL")
+                    ?? ValidateLength(NormalizeOptional(item.VGBEL), 50, "VGBEL")
                     ?? ValidateLength(NormalizeOptional(item.VGPOS), 20, "VGPOS")
                     ?? ValidateLength(NormalizeOptional(item.BSTKD), 100, "BSTKD");
                 if (lineLengthError != null)
@@ -155,10 +144,9 @@ namespace WMS_HU_Model.Services
                 lines.Add(new SapOutboundOrderReceiveLineCommand
                 {
                     SAPItemNo = itemNo,
-                    MaterialCode = materialCode,
+                    ProdNo = materialCode,
                     RequiredQty = item.LFIMG,
                     Uom = uom,
-                    ItemCategory = NormalizeOptional(item.PSTYV),
                     SourceOrderNo = NormalizeOptional(item.VGBEL),
                     SourceOrderItem = NormalizeOptional(item.VGPOS),
                     CustomerPO = NormalizeOptional(item.BSTKD)
@@ -170,16 +158,9 @@ namespace WMS_HU_Model.Services
                 SAPDeliveryNo = deliveryNo,
                 PayloadHash = hash,
                 RawJson = rawJson,
-                DeliveryType = NormalizeOptional(request.LFART),
                 CustomerCode = NormalizeOptional(request.KUNNR),
                 SoldToCode = NormalizeOptional(request.KUNAG),
-                SalesOrgCode = NormalizeOptional(request.VKORG),
                 PlannedShipDate = plannedShipDate,
-                PlannedShipTime = plannedShipTime,
-                ShippingType = NormalizeOptional(request.VSART),
-                SpecialHandlingCode = NormalizeOptional(request.SDABW),
-                SAPCreatedBy = NormalizeOptional(request.ERNAM),
-                SAPCreateDate = sapCreateDate,
                 PlantCode = plantCode,
                 Lines = lines
             };
@@ -195,18 +176,6 @@ namespace WMS_HU_Model.Services
             if (!DateTime.TryParseExact(value.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
                 return false;
             date = parsed.Date;
-            return true;
-        }
-
-        private static bool TryParseOptionalTime(string value, out TimeSpan? time)
-        {
-            time = null;
-            if (string.IsNullOrWhiteSpace(value))
-                return true;
-            DateTime parsed;
-            if (!DateTime.TryParseExact(value.Trim(), "HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
-                return false;
-            time = parsed.TimeOfDay;
             return true;
         }
 

@@ -83,14 +83,12 @@ namespace WMS_HU_Model.Repositories
 
                     List<WarehouseMappingRow> mappings = conn.Query<WarehouseMappingRow>(@"
 SELECT wp.WarehouseId, w.WarehouseCode, wp.SAPStorageLocation
-FROM dbo.WMS_WarehousePlant wp WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse w WITH (UPDLOCK, HOLDLOCK) ON w.Id = wp.WarehouseId
+FROM dbo.WMS_FG_WarehousePlant wp WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse w WITH (UPDLOCK, HOLDLOCK) ON w.Id = wp.WarehouseId
 WHERE wp.PlantCode = @PlantCode
   AND wp.IsActive = 1
   AND w.IsActive = 1
-  AND w.WarehouseType = 'FINISHED_GOODS'
-  AND wp.SAPStorageLocation IS NOT NULL
-  AND LTRIM(RTRIM(wp.SAPStorageLocation)) <> '';",
+  AND w.WarehouseType = 'FINISHED_GOODS';",
                         new { command.PlantCode }, tran).AsList();
                     if (mappings.Count != 1)
                     {
@@ -103,39 +101,29 @@ WHERE wp.PlantCode = @PlantCode
                     WarehouseMappingRow mapping = mappings.Single();
                     DateTime now = DateTime.Now;
                     long orderId = conn.ExecuteScalar<long>(@"
-INSERT INTO dbo.WMS_OutboundOrder
+INSERT INTO dbo.WMS_FG_OutboundOrder
 (
-    OutboundOrderNo, SAPDeliveryNo, WarehouseId, PlantCode, SAPStorageLocation,
-    DeliveryType, CustomerCode, SoldToCode, SalesOrgCode, PlannedShipDate,
-    PlannedShipTime, ShippingType, SpecialHandlingCode, SAPCreatedBy, SAPCreateDate,
-    OrderStatus, SourceSystem, ReceivedRequestId, SourcePayloadHash, SourcePayloadJson,
-    ReceivedTime, CreateTime
+    SAPDeliveryNo, WarehouseId, PlantCode, SAPStorageLocation,
+    CustomerCode, SoldToCode, PlannedShipDate,
+    OrderStatus, SourceSystem, SourcePayloadHash, SourcePayloadJson,
+    CreateDt
 )
 OUTPUT INSERTED.Id
 VALUES
 (
-    @OutboundOrderNo, @SAPDeliveryNo, @WarehouseId, @PlantCode, @SAPStorageLocation,
-    @DeliveryType, @CustomerCode, @SoldToCode, @SalesOrgCode, @PlannedShipDate,
-    @PlannedShipTime, @ShippingType, @SpecialHandlingCode, @SAPCreatedBy, @SAPCreateDate,
-    'WAIT_PICK', 'SAP', NULL, @PayloadHash, @RawJson, @Now, @Now
+    @SAPDeliveryNo, @WarehouseId, @PlantCode, @SAPStorageLocation,
+    @CustomerCode, @SoldToCode, @PlannedShipDate,
+    'WAIT_PICK', 'SAP', @PayloadHash, @RawJson, @Now
 );",
                         new
                         {
-                            OutboundOrderNo = command.SAPDeliveryNo,
                             command.SAPDeliveryNo,
                             mapping.WarehouseId,
                             command.PlantCode,
                             mapping.SAPStorageLocation,
-                            command.DeliveryType,
                             command.CustomerCode,
                             command.SoldToCode,
-                            command.SalesOrgCode,
                             command.PlannedShipDate,
-                            command.PlannedShipTime,
-                            command.ShippingType,
-                            command.SpecialHandlingCode,
-                            command.SAPCreatedBy,
-                            command.SAPCreateDate,
                             command.PayloadHash,
                             command.RawJson,
                             Now = now
@@ -143,30 +131,25 @@ VALUES
                     foreach (SapOutboundOrderReceiveLineCommand line in command.Lines)
                     {
                         conn.Execute(@"
-INSERT INTO dbo.WMS_OutboundOrderLine
+INSERT INTO dbo.WMS_FG_OutboundOrderLine
 (
-    OutboundOrderId, SAPItemNo, MaterialCode, MaterialRevision, RequiredQty, SpareQty,
-    SAPGiftQty, GiftQty, EffectiveRequiredQty, Uom, PlantCode, SAPStorageLocation,
-    ItemCategory, SourceOrderNo, SourceOrderItem, CustomerPO, AllocatedQty,
-    EffectivePickedQty, ShippedQty, LineStatus, CreateTime
+    OutboundOrderId, SAPItemNo, ProdNo, RequiredQty, GiftQty, EffectiveRequiredQty,
+    Uom, SourceOrderNo, SourceOrderItem, CustomerPO, AllocatedQty,
+    EffectivePickedQty, LineStatus, CreateDt
 )
 VALUES
 (
-    @OutboundOrderId, @SAPItemNo, @MaterialCode, NULL, @RequiredQty, 0,
-    0, 0, @RequiredQty, @Uom, @PlantCode, @SAPStorageLocation,
-    @ItemCategory, @SourceOrderNo, @SourceOrderItem, @CustomerPO, 0,
-    0, 0, 'WAIT_PICK', @Now
+    @OutboundOrderId, @SAPItemNo, @ProdNo, @RequiredQty, 0, @RequiredQty,
+    @Uom, @SourceOrderNo, @SourceOrderItem, @CustomerPO, 0,
+    0, 'WAIT_PICK', @Now
 );",
                             new
                             {
                                 OutboundOrderId = orderId,
                                 line.SAPItemNo,
-                                line.MaterialCode,
+                                line.ProdNo,
                                 line.RequiredQty,
                                 line.Uom,
-                                command.PlantCode,
-                                mapping.SAPStorageLocation,
-                                line.ItemCategory,
                                 line.SourceOrderNo,
                                 line.SourceOrderItem,
                                 line.CustomerPO,
@@ -197,11 +180,11 @@ VALUES
         private static ExistingOrderRow ReadExisting(SqlConnection conn, SqlTransaction tran, string sapDeliveryNo)
         {
             return conn.QueryFirstOrDefault<ExistingOrderRow>(@"
-SELECT TOP 1 o.Id, o.SAPDeliveryNo, o.OutboundOrderNo, o.OrderStatus, w.WarehouseCode,
+SELECT TOP 1 o.Id, o.SAPDeliveryNo, o.OrderStatus, w.WarehouseCode,
     o.PlantCode, o.SAPStorageLocation, o.SourcePayloadHash,
-    (SELECT COUNT(1) FROM dbo.WMS_OutboundOrderLine l WHERE l.OutboundOrderId = o.Id) AS LineCount
-FROM dbo.WMS_OutboundOrder o WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse w ON w.Id = o.WarehouseId
+    (SELECT COUNT(1) FROM dbo.WMS_FG_OutboundOrderLine l WHERE l.OutboundOrderId = o.Id) AS LineCount
+FROM dbo.WMS_FG_OutboundOrder o WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id = o.WarehouseId
 WHERE o.SAPDeliveryNo = @SAPDeliveryNo;", new { SAPDeliveryNo = sapDeliveryNo }, tran);
         }
 
@@ -212,7 +195,7 @@ WHERE o.SAPDeliveryNo = @SAPDeliveryNo;", new { SAPDeliveryNo = sapDeliveryNo },
             return new SapOutboundOrderReceiveResultDto
             {
                 SAPDeliveryNo = row.SAPDeliveryNo,
-                OutboundOrderNo = row.OutboundOrderNo,
+                OutboundOrderNo = row.SAPDeliveryNo,
                 OrderStatus = row.OrderStatus,
                 WarehouseCode = row.WarehouseCode,
                 PlantCode = row.PlantCode,
@@ -225,15 +208,15 @@ WHERE o.SAPDeliveryNo = @SAPDeliveryNo;", new { SAPDeliveryNo = sapDeliveryNo },
         private static void InsertLog(SqlConnection conn, SqlTransaction tran, string deliveryNo, long? orderId, string hash, string rawJson, string status, string resultCode, string message)
         {
             conn.Execute(@"
-INSERT INTO dbo.WMS_OutboundOrderReceiveLog
+INSERT INTO dbo.WMS_FG_OutboundOrderReceiveLog
 (
-    RequestId, InterfaceCode, SourceSystem, SAPDeliveryNo, OutboundOrderId,
-    RequestHash, RequestJson, ReceiveTime, ProcessStatus, ResultCode, ResultMessage, CreateTime
+    SourceSystem, SAPDeliveryNo, OutboundOrderId,
+    RequestHash, RequestJson, ProcessStatus, ResultCode, ResultMessage, ReceiveDt
 )
 VALUES
 (
-    NULL, 'SAP_OUTBOUND_ORDER', 'SAP', @SAPDeliveryNo, @OutboundOrderId,
-    @RequestHash, @RequestJson, @Now, @ProcessStatus, @ResultCode, @ResultMessage, @Now
+    'SAP', @SAPDeliveryNo, @OutboundOrderId,
+    @RequestHash, @RequestJson, @ProcessStatus, @ResultCode, @ResultMessage, @Now
 );",
                 new
                 {
@@ -252,7 +235,6 @@ VALUES
         {
             public long Id { get; set; }
             public string SAPDeliveryNo { get; set; }
-            public string OutboundOrderNo { get; set; }
             public string OrderStatus { get; set; }
             public string WarehouseCode { get; set; }
             public string PlantCode { get; set; }

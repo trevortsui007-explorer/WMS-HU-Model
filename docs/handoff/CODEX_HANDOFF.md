@@ -1,5 +1,118 @@
 ﻿# WMS 成品仓正式出库后端交接
 
+## 2026-08-30 WMS Target Environment Acceptance
+
+- Result: `WMS_TARGET_ENVIRONMENT_ACCEPTANCE_COMPLETE=FALSE`. `BaseDb` remains configured for `.\\SQLEXPRESS/adms705`, but two read-only integrated-authentication probes failed before SQL execution with the local ODBC SSL/SSPI credential error (`no credentials are available in the security package`). No target table query, fixture discovery/creation, DML, DDL, migration, seed, SAP HTTP call, or source fix ran.
+- Local reconfirmation: WMS-HU-Model, WMS-HU-Model.Tests, and WMS host Debug builds PASS; regression executable PASS (`124/124`).
+- Source-only posting review confirms the HTTP call happens after claim transaction A commits and before finalization transaction B begins; finalizer guards and `SUCCESS -> SHIPPED` transaction remain unmodified. This is not DB-backed acceptance evidence.
+- Unexpected source observation for Human Review: manual UNKNOWN-confirmation routes remain registered, but their repository methods currently throw that manual confirmation is deprecated. This conflicts with the target-acceptance task's required temporary-recovery capability and was not changed while TA-0 is blocked.
+- Report: `WMS_TARGET_ENVIRONMENT_ACCEPTANCE_REPORT.md`. Next: restore an approved BaseDb TLS/integrated credential path, repeat TA-0/table/permission checks, then obtain an isolated fixture and controlled SAP/stub endpoint. `NEXT_RECOMMENDED_ACTION=HUMAN_REVIEW_TARGET_ACCEPTANCE_BLOCKER`.
+
+## 2026-08-31 WMS Acceptance Reclassification — Manual DB Mode
+
+- Human Review reclassified Codex-local SQL connectivity as an environment gap, not a WMS Runtime, Final Schema, or architecture blocker. `CODEX_DB_CONNECTION_REQUIRED=False`; do not retry or alter BaseDb authentication/TLS/certificates/permissions/configuration from Codex.
+- Database verification is now `MANUAL_SQL_EXECUTION`: Human executes approved SQL in SSMS and returns results for analysis. The default read-only pack is `docs/acceptance/WMS_MANUAL_DB_ACCEPTANCE.sql`; it covers final-schema metadata, critical/legacy fields, indexes, single-delivery inspection, SHIPPED integrity, attempt/snapshot anomalies, and post-concurrency inspection.
+- Source acceptance review is complete: claim transaction commits before SAP HTTP; PostingDetail is created/frozen; retry is FAILED-only and PayloadHash guarded; UNKNOWN is distinct and blocked from blind retry; SUCCESS finalization is one serializable local transaction and the sole SHIPPED authority. Remote-success/local-finalization-failure remains source-partial and needs manual DB evidence.
+- Manual confirmation routes currently return the existing deprecated result; this is recorded as current policy rather than a newly classified source bug. No source/host/database change was made.
+- Status: `WMS_TARGET_ENVIRONMENT_ACCEPTANCE_COMPLETE=DEFERRED_MANUAL`; `WMS_SOURCE_ACCEPTANCE_COMPLETE=True`; `WMS_MANUAL_DB_ACCEPTANCE_COMPLETE=False`; `WMS_FUNCTIONAL_ARCHITECTURE_CLEANUP_COMPLETE=True`. Manual DB validation is mandatory before production go-live but does not block planning. Next: `WMS_LEARUN_HOST_INTEGRATION_PLANNING`; do not start it automatically.
+
+## 2026-08-30 Functional Cleanup Phase 3 Loop
+
+- Split formal outbound ownership into focused Order, Picking, and Exception services/repositories; `OutboundModule` remains one module and route contracts are unchanged.
+- Deleted the FormalOutbound service/repository/interfaces without a compatibility facade. StartPicking, release, normal/replacement scan, return, return-to-stock, and replacement reservation retain their existing atomic repository transactions, locks, RequestId behavior, and rollback paths.
+- Model and host builds PASS; test build PASS with six pre-existing obsolete-model warnings; regression executable PASS (`124/124`). No database, SAP, migration, DDL, DML, or seed ran.
+- Next: `WMS_FUNCTIONAL_CLEANUP_PHASE_4_OUTBOUND_MODULE_SPLIT`; do not start it in this task.
+
+## 2026-08-30 Functional Cleanup Phase 4 Outbound Module Split
+
+- Replaced `OutboundModule` with `OutboundOrderModule`, `OutboundPickingModule`, `OutboundExceptionModule`, and `OutboundSapPostingModule`. All 18 formal outbound method/path pairs, request binding, response envelopes, and service calls are unchanged; SAP posting recovery routes remain available.
+- Moved the posting-only `PostingFailure` helper intact. Deleted the old module and updated the WMS explicit Compile entries plus one stale structural test.
+- Verification: Core/Test/Host builds PASS; regression harness `124/124` PASS. Route audit: 18 routes, 0 duplicate registrations, 0 collisions. No Core business code, repository/SQL/transaction logic, schema, database data, migration, SAP request, or HTTP contract changed.
+- Report: `WMS_FUNCTIONAL_CLEANUP_PHASE_4_REPORT.md`. Next recommended action is `WMS_SECONDARY_OCCAM_AUDIT`; it was not started.
+
+## 2026-08-30 Secondary Occam Audit
+
+- Audit-only review of the current post-Phase-4 source tree; no Runtime, schema, migration, configuration, project, or test change was made.
+- Found a small evidence-backed future cleanup: declaration-only scan/private row helpers and three unused allocation-write helpers remain in `OutboundExceptionRepository`; `SapOutboundIntegrationModule.ExtractDeliveryNo` is also unused. The report recommends a narrow, review-gated Phase 5 deletion scope only.
+- Focused outbound boundaries, Effective Location, planner, SAP SHIPPED finalizer, Putaway/recommendation split, Repack transaction repositories, WeekCode roles, inventory API separation, target-acceptance support, and Nancy host residue are deliberate KEEP/defer decisions. Do not introduce generic abstractions.
+- Report: `WMS_SECONDARY_OCCAM_AUDIT_REPORT.md`. Recommended next action: `WMS_FUNCTIONAL_CLEANUP_PHASE_5`; it was not started.
+
+## 2026-08-30 Functional Cleanup Phase 5
+
+- Removed only verified dead private Phase 3 residue: the scan-only helper/row cluster and three declaration-only allocation write helpers from `OutboundExceptionRepository`. `ScanLocationRow` remains because active ReturnPickDetail uses it.
+- Removed unused `SapOutboundIntegrationModule.ExtractDeliveryNo`, its unused imports, and the exact redundant catch/rethrow around SAP order receive. No HTTP behavior, service/repository boundary, public interface, transaction, SQL used by live operations, route, DTO, schema, or migration changed.
+- Verification: Core/Test/Host builds PASS; test build retains six pre-existing obsolete compatibility warnings; regression executable PASS (`124/124`). No database, SAP, DDL/DML, migration, seed, or target-environment validation ran.
+- Report: `WMS_FUNCTIONAL_CLEANUP_PHASE_5_REPORT.md`. Functional source architecture cleanup is complete; remaining shared Picking/Exception transaction-helper observation is explicitly `DEFERRED_NO_ACTION`. Next recommended action: `WMS_TARGET_ENVIRONMENT_ACCEPTANCE`; do not begin it automatically.
+
+## 2026-08-30 WMS_FG Phase 7 SAP Posting Runtime Regression Status
+
+- Rewrote `SapOutboundPostingRepository` to frozen Posting / PostingDetail / IntegrationLog contracts. IntegrationLog query DTO mappings are explicit compatibility aliases; retry validates current payload hash before inserting another attempt; UNKNOWN retry and manual UNKNOWN confirmation are disabled.
+- Verification: Model build PASS (0 warnings/errors); Test build PASS (6 existing obsolete compatibility warnings); regression executable PASS (`126/126`).
+- `DATABASE_CONNECTION=BaseDb`: `DbConnectionFactory`, MES source repositories, and WeekCode source repositories already use the single `BaseDb` key. There is no Runtime `ConfigurationManager.ConnectionStrings["WmsDb"]` or `["MesDb"]` access. Database runtime regression is blocked before SQL because BaseDb (`.\SQLEXPRESS/adms705`) reports ODBC SSL/integrated credential failure (`no credentials are available in the security package`). No WMS_FG SQL, DDL, DML, fixture, SAP call, or migration ran.
+- Report: `WMS_FG_PHASE_7_SAP_POSTING_ALIGNMENT_REPORT.md`. Result: `PHASE_7_COMPLETE=FALSE`, pending a working approved adms705 test connection for PostingDetail/Attempt/FAILED/UNKNOWN/SUCCESS/atomicity/concurrency runtime verification.
+
+## 2026-08-30 WMS_FG Phase 6 Exception / Replacement Completion
+
+- Implemented only Final Schema alignment for exception return, ReturnToStock resolution, replacement reservation, replacement scan completion, and shipment open-exception verification in the shared `FormalOutboundRepository`.
+- Exception persistence now uses only `PickDetailId`, `ReturnMoveLogId`, final reason/request/event fields and permitted statuses. Order/batch/HU ownership is derived through PickDetail relationships; removed exception links, type/state fields, timestamps, and replacement IDs are neither read nor written.
+- Returned detail history uses `ReturnDt` and `MoveLogId`; replacement relation uses final `OutboundExceptionReplacement(ExceptionId, SequenceNo, ReservationId, PickDetailId)` and exception completion uses `ResolvedDt/ResolvedBy`.
+- `ExceptionType` remains an API compatibility request field only and is deliberately not persisted because Final Schema has no such column. Static guard now rejects removed exception physical columns and replacement audit fields. Model/Test Debug builds PASS (0 warnings/errors); generated regression EXE reports `126/126` PASS. No database operation ran.
+- SAP Posting and the final `SUCCESS -> SHIPPED` closure remain Phase 7. Report: `WMS_FG_PHASE_6_ALIGNMENT_REPORT.md`. Git remains uncommitted/unstaged and existing dirty work remains preserved.
+- Result: `PHASE_6_COMPLETE=TRUE`; `NEXT_PHASE=SAP_POSTING_SUCCESS_SHIPPED`.
+
+## 2026-08-30 WMS_FG Phase 5 Allocation / Reservation / Picking Completion
+
+- Implemented only the core Phase 5 physical-schema alignment in `FormalOutboundRepository`: StartPicking, allocation release, scan-picking writes, and picking-state reads now use the frozen `WMS_FG` Allocation / Reservation / PickBatch / PickBatchDetail / PickDetailItem contracts.
+- `OutboundAllocation.RequestId` is the exclusive StartPicking idempotency key. PickBatch no longer persists GroupKey or RequestId; its physical aggregation is `AllocationId + ProdNo + Uom`. GroupKey is read-only derived compatibility data.
+- Reservation now writes stage-specific `ReserveDt/ReserveBy`, `ConsumeDt/ConsumeBy`, and `ReleaseDt/ReleaseBy`. PickBatchDetail writes required `ReservationId`; current/historical movement locations are read through `MoveLogId`, not deleted detail location fields. PickDetailItem writes `ProdNo/ProdRev/LotNo/SAPBatchNo`.
+- Static guard rejects old INSERT columns for Phase 5 tables in `FormalOutboundRepository`; Model and Test Debug builds PASS (0 warning/error), and the .NET Framework test executable reports `126/126`. A current `dotnet` WMS host retry is blocked by missing `Microsoft.WebApplication.targets` in the installed SDK (`MSB4019`); earlier continuation evidence recorded a WMS Host Debug PASS. No database operation ran; the prior read-only BaseDb probe remains blocked locally before SQL by integrated-authentication SSPI/TLS credentials.
+- Exception/replacement flows in the shared repository are intentionally deferred to Phase 6; SAP Posting and `SUCCESS -> SHIPPED` finalization remain Phase 7. Report: `WMS_FG_PHASE_5_ALIGNMENT_REPORT.md`. Git remains uncommitted/unstaged and pre-existing dirty changes remain preserved.
+- Result: `PHASE_5_COMPLETE=TRUE`; `NEXT_PHASE=EXCEPTION_REPLACEMENT`.
+
+## 2026-08-30 WMS_FG Phase 4 Outbound Order Receive Completion
+
+- Implemented only SAP Outbound Order Receive Final Schema alignment. `WMS_FG_OutboundOrder` now persists SAPDeliveryNo as the business identifier and stores only final Header fields; API response `OutboundOrderNo` is explicitly derived from SAPDeliveryNo for compatibility.
+- `WMS_FG_OutboundOrderLine` now persists `ProdNo`, required/effective quantity, source-order facts, counters, and status. Removed MaterialRevision, line Plant/SAPStorageLocation, item-category, shipped, and payload physical fields are not written. Header remains the source of PlantCode/SAPStorageLocation.
+- `WMS_FG_OutboundOrderReceiveLog` now uses its final physical contract, including `ReceiveDt`, without RequestId/InterfaceCode/CreateDt legacy columns. Idempotency remains `SAPDeliveryNo + SourcePayloadHash`: same payload returns duplicate, changed payload rejects.
+- Incoming legacy SAP header fields absent from Final Schema remain in the canonical request JSON snapshots only; they are not recreated as database columns. VBELN max validation now matches the final 50-character physical column.
+- The SAP receive module no longer writes through the deferred SAP Posting integration-log writer. It relies on the dedicated order receive log; SAP Posting/IntegrationLog final implementation remains Phase 7.
+- Static guard now rejects removed Order, OrderLine, and ReceiveLog insert columns in `SapOutboundOrderReceiveRepository`. Verification: Test Debug build PASS with 6 existing obsolete compatibility warnings; console regression `Passed 126 tests`; WMS Debug build PASS, 0 warning/error. No database SQL/DDL/DML/migration/seed/fixture executed.
+- Report: `WMS_FG_PHASE_4_ALIGNMENT_REPORT.md`. Git remains uncommitted/unstaged and prior dirty changes remain preserved.
+- Result: `PHASE_4_COMPLETE=TRUE`; `NEXT_PHASE=ALLOCATION_RESERVATION_PICKING`.
+
+## 2026-08-30 WMS_FG Phase 3 Finished Goods Inbound Completion
+
+- Implemented only Finished Goods Inbound Final Schema runtime alignment. Receipt persistence now uses `ReceiveDt/ReceiveBy`; Final Schema receipt read/monitoring SQL uses `ReceiveDt`; API/read DTOs retain `ReceiveTime/Operator` through explicit aliases.
+- Removed inbound writes to deleted `WMS_FG_HU_Identifier` columns `IsPrimary`, `SourceSystem`, and `SourceEntityId`. HU item persistence writes physical `ProdNo/ProdRev`; `SAPBatchNo` remains separate, and nullable `LotNo` is not fabricated where the ingress snapshot has no source lot fact.
+- Corrected a Final Schema runtime failure risk: each inbound OperationLog entry now gets a deterministic unique `FGI-OP-{receiptId}-{sequence}` number, rather than reusing one receipt-level number against the unique `OperationNo` constraint.
+- Tightened ingress validation to frozen limits: SourceType 50, alternate identifier 100, ProdRev 20, WeekRuleSource 100, WeekRuleValue 500, and receipt Remark 500.
+- Static guard now rejects removed inbound receipt physical columns and deleted HU Identifier insert columns. It continues to enforce `PROJECT_OWNED_RUNTIME_OLD_WMS_TABLE_REFERENCE=0`.
+- Verification: Test project Debug build PASS (6 pre-existing obsolete compatibility warnings); console regression `Passed 126 tests`; WMS Debug build PASS (0 warning/error). A direct solution build returned non-zero after building Model while reporting 0 compiler warning/error, so individual Model/Test/WMS builds are the recorded evidence.
+- Read-only `BaseDb -> adms705` probe failed before SQL with local integrated-authentication `Failed to generate SSPI context`; no database statement, DDL/DML, migration, seed, or fixture ran. No Final Schema blocker identified.
+- Report: `WMS_FG_PHASE_3_ALIGNMENT_REPORT.md`. Git remains uncommitted/unstaged and pre-existing dirty changes remain preserved.
+- Result: `PHASE_3_COMPLETE=TRUE`; `NEXT_PHASE=OUTBOUND_ORDER_RECEIVE`.
+
+## 2026-08-29 WMS_FG Phase 1 + Phase 2 Completion Review
+
+- Continuation audit closed two runtime-only gaps left after the first pass: missing `InventoryQueryRepository` result aliases for `ProdNo/ProdRev/LotNo`, and obsolete Location hierarchy/scan/capacity state still flowing through `LocationService`/`ILocationRepository` despite no longer being SQL columns.
+- Location foundation now exposes and consumes `bool IsActive`; shared putaway, movement, relocation, repack, merge/unpack, and minimal outbound location checks no longer compare `MasterStatus` strings. `MasterStatus` remains only as an explicit Location API filter/response compatibility alias.
+- Final physical contract tightening: IdentifierValue length 100; HU Item `ProdRev` 20, `StockStatus` 30, `WeekRuleSource` 100, `WeekRuleValue` NVARCHAR(500); shared MoveLog/OperationLog identifiers/types aligned; Warehouse/WarehousePlant/Location validation limits aligned to final schema.
+- Static guard now also rejects old HU Item qualified columns, legacy OperationLog/HoldLog insert columns, incomplete HU Item result aliases, and regression to string Location status business comparisons.
+- Verification: full Visual Studio solution build PASS; static guard PASS; console regression `126/126` PASS; project-owned Runtime old `dbo.WMS_*` references remain 0. Compatibility tests intentionally emit obsolete-member warnings.
+- Read-only DB retry again failed before SQL execution, this time during local TLS/integrated credential setup (`SSL provider: no credentials are available in the security package`). No DDL/DML/migration/seed/fixture was executed.
+- Result remains `PHASE_1_2_COMPLETE=TRUE`; `NEXT_PHASE=FINISHED_GOODS_INBOUND`. No `FINAL_SCHEMA_BLOCKER` identified.
+
+## 2026-08-29 WMS_FG Final Schema Phase 1 + Phase 2 Alignment
+
+- Implemented scope：开发 Host 统一使用 `BaseDb → adms705`；Runtime 29 张项目自有表按精确映射切换为 `dbo.WMS_FG_*`。没有机械替换历史 migration/docs，也没有修改数据库、FinalSchema、框架或正式宿主配置。
+- Foundation：完成 Warehouse/WarehousePlant/Zone/PackageSpec/Location 与 HU/HU Item/Relation/Identifier/CurrentLocation/MoveLog/OperationLog/HoldLog 的物理字段适配。Location 使用 `IsActive` 与 `LocationCode` 扫码；HU Item 使用 `ProdNo/ProdRev/LotNo` 且保留独立 `SAPBatchNo`；HoldReason 只从 active HoldLog 读取；CurrentLocation 的最后移动信息由 `LastMoveLogId` 联查。
+- Compatibility：API 的 `MasterStatus/ScanCode/MaterialCode/MaterialRevision/BatchNo` 和历史事件时间/人员名称通过显式 alias 保留；已删除的销售属性与 Location 旧输入字段标记 obsolete，禁止持久化。
+- Deferred：FinishedGoodsInbound 仅做 namespace/shared foundation 最小适配并标记 `TODO PHASE_3`；Formal Outbound 标记 `TODO PHASE_5`；SAP Posting 标记 `TODO PHASE_7`。未提前改变这些流程的业务语义。
+- Static guard：测试入口扫描 `WMS-HU-Model/` 与 `WMS/` Runtime C#（排除 bin/obj），拒绝旧 `dbo.WMS_*` 表名及基础表已删除物理列。`PROJECT_OWNED_RUNTIME_OLD_WMS_TABLE_REFERENCE=0`。
+- Verification：Visual Studio .NET Framework MSBuild 完整 solution build PASS；console regression `126/126` PASS。只读 `BaseDb → adms705` probe 在连接前被本机 `Failed to generate SSPI context` 阻断，未执行任何 SQL；无 DDL/DML/migration/seed。
+- Files/report：详见根目录 `WMS_FG_PHASE_1_2_ALIGNMENT_REPORT.md`。既有 dirty `WMS-HU-Model.csproj`/`WMS.csproj` 与其他用户文件均保留，未 stage/commit。
+- Result：`PHASE_1_2_COMPLETE=TRUE`；`NEXT_PHASE=FINISHED_GOODS_INBOUND`。Phase 3 前先恢复 SQL Windows authentication 并重跑只读 probe。
+
 ## 2026-08-27 SAP CHARG Legacy Rule Alignment
 
 - Rule：`SAP_CHARG_RULE_SOURCE=Legacy PK_BoxTOSAP_API semantics`。新增纯 `ISapChargResolver/SapChargResolver`，输入 PlantCode+PackID+IsSpecialOrderType，严格复刻 SQL RIGHT：1010 普通 A、其他厂 B；特殊 AY/BY；示例 472425→A000472425/B000472425/AY00472425/BY00472425。`SPECIAL_ORDER_TYPES=ZP02,ZP05,ZP06,ZP08`，ZP01 等走普通规则。
@@ -695,6 +808,16 @@
 - 已执行验证：静态扫描 Module 路由、读取关键 DTO/Service/Repository，并检查文档生成成功；未宣称 Runtime 验证通过。
 - 偏差/风险：旧 Module 的多数失败路径只携带 `ApiResult.Code=400` 而不显式设置 HTTP 400；文档明确标注此客户端兼容性风险。当前工作区原有未提交代码变更未被修改。
 - 推荐 Postman 顺序：health → MES inbound（人工授权的非生产测试数据）→ weekcode audit → weekcode recalculate；本次未执行其中任何写请求。
+- Git commits：本次未创建提交。
+
+## WMS Runtime Functional Module Inventory 文档交接
+
+- 已实现范围：新增 `docs/WMS_RUNTIME_FUNCTIONAL_MODULE_INVENTORY.md`，以当前 `WMS/Modules/*.cs` 为准完成运行时功能盘点。
+- 已确认：23 个 Nancy Module、85 条具体 Route；正式出库分为 `OutboundOrderModule`、`OutboundPickingModule`、`OutboundExceptionModule`、`OutboundSapPostingModule`。
+- 报告包含：每个 Module 的 HTTP/Service/Repository/规则/事务/状态/结果说明；完整路由矩阵、Module-Service-Repository 矩阵、业务操作/事务/状态机/守卫/表使用/业务事实归属矩阵和 Mermaid 端到端流程。
+- 验证：只执行源码静态扫描。Module 数、Route 数、文档中所有 Module 名、核心章节和 Mermaid 块均已交叉检查；`git diff --check` 对新增报告通过。
+- 未执行：数据库连接、SQL、Migration、HTTP 写请求、构建或 Runtime 测试；未修改 Runtime、测试、项目文件、配置或数据库。
+- 风险：报表描述的是当前源代码可见行为，未声称人工 SQL 或 Runtime 验证已经完成。
 - Git commits：本次未创建提交。
 
 ## WMS Pager Integration Coverage Audit

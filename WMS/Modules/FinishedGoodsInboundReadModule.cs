@@ -12,7 +12,7 @@ namespace WMS.Modules
         private readonly IFinishedGoodsInboundReadService _service;
 
         public FinishedGoodsInboundReadModule()
-            : this(new FinishedGoodsInboundReadService(new FinishedGoodsInboundReadRepository(), new HuLocationRepository()))
+            : this(new FinishedGoodsInboundReadService(new FinishedGoodsInboundReadRepository(), new EffectiveLocationResolver()))
         {
         }
 

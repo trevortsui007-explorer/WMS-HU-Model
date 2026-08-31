@@ -13,8 +13,8 @@ namespace WMS_HU_Model.Repositories
         public MesFinishedGoodsInboundSourceGraph GetPlanStock(string planStockSourceId)
         {
             if (string.IsNullOrWhiteSpace(planStockSourceId)) throw new ArgumentException("MES PlanStock source identity不能为空。", nameof(planStockSourceId));
-            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["MesDb"];
-            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("MES连接配置MesDb未找到。");
+            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["BaseDb"];
+            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("连接配置BaseDb未找到。");
             using (SqlConnection conn = new SqlConnection(settings.ConnectionString))
             {
                 conn.Open();
@@ -47,8 +47,8 @@ WHERE pm.boxID IN (SELECT boxID FROM dbo.PK_Box WITH (NOLOCK) WHERE PK_PlanStock
             if (packSourceEntityIds == null) return result;
             List<string> ids = packSourceEntityIds.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (ids.Count == 0) return result;
-            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["MesDb"];
-            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("MES连接配置MesDb未找到。");
+            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["BaseDb"];
+            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("连接配置BaseDb未找到。");
             using (SqlConnection conn = new SqlConnection(settings.ConnectionString))
             {
                 conn.Open();

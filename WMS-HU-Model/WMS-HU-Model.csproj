@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -81,7 +81,6 @@
     <Compile Include="Models\Inventory\FinishedGoodsInventoryModels.cs" />
     <Compile Include="Models\Inventory\InventoryLookupModels.cs" />
     <Compile Include="Models\Inbound\MesFinishedGoodsInboundModels.cs" />
-    <Compile Include="Models\Inbound\MesFinishedGoodsInboundWeekCodePreviewModels.cs" />
     <Compile Include="Models\Inbound\MesFinishedGoodsInboundTriggerModels.cs" />
     <Compile Include="Models\Inbound\FinishedGoodsInboundSnapshotValidator.cs" />
     <Compile Include="Models\HU\AddHuItemRequest.cs" />
@@ -235,9 +234,7 @@
     <Compile Include="Services\Impl\FinishedGoodsInboundService.cs" />
     <Compile Include="Services\FinishedGoodsInboundReadService.cs" />
     <Compile Include="Services\MesFinishedGoodsInboundSnapshotBuilder.cs" />
-    <Compile Include="Services\MesFinishedGoodsInboundReceiveRequestPreparer.cs" />
     <Compile Include="Services\MesFinishedGoodsInboundOrchestrationService.cs" />
-    <Compile Include="Services\MesFinishedGoodsInboundWeekCodePreviewService.cs" />
     <Compile Include="Services\MesWeekCodeRuleProvider.cs" />
     <Compile Include="Services\Impl\HuService.cs" />
     <Compile Include="Services\HuDetailService.cs" />

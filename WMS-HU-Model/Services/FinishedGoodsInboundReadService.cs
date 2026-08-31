@@ -15,12 +15,12 @@ namespace WMS_HU_Model.Services
         private const int MaxPageSize = 200;
         private const int DetailBoxLimit = 50;
         private readonly IFinishedGoodsInboundReadRepository _repository;
-        private readonly IHuLocationRepository _locationRepository;
+        private readonly IEffectiveLocationResolver _effectiveLocationResolver;
 
-        public FinishedGoodsInboundReadService(IFinishedGoodsInboundReadRepository repository, IHuLocationRepository locationRepository)
+        public FinishedGoodsInboundReadService(IFinishedGoodsInboundReadRepository repository, IEffectiveLocationResolver effectiveLocationResolver)
         {
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-            _locationRepository = locationRepository ?? throw new ArgumentNullException(nameof(locationRepository));
+            _effectiveLocationResolver = effectiveLocationResolver ?? throw new ArgumentNullException(nameof(effectiveLocationResolver));
         }
 
         public OperationResult<FinishedGoodsInboundRecordResultDto> Query(FinishedGoodsInboundRecordQuery query)
@@ -47,7 +47,7 @@ namespace WMS_HU_Model.Services
             if (detail == null || detail.Record == null) return OperationResult<FinishedGoodsInboundDetailDto>.Fail("入库记录不存在。");
             detail.Record.DisplayStatus = detail.Record.ExceptionBoxCount > 0 ? "WITH_EXCEPTION" : "RECEIVED";
             List<long> huIds = detail.Pallets.Select(x => x.HuId).Concat(detail.Boxes.Select(x => x.HuId)).Distinct().ToList();
-            Dictionary<long, HuLocationDto> locations = _locationRepository.GetLocations(huIds).ToDictionary(x => x.HuId);
+            Dictionary<long, HuLocationDto> locations = _effectiveLocationResolver.ResolveMany(huIds).ToDictionary(x => x.HuId);
             foreach (FinishedGoodsInboundPalletDto pallet in detail.Pallets) ApplyLocation(pallet, locations);
             foreach (FinishedGoodsInboundBoxDto box in detail.Boxes) ApplyLocation(box, locations);
             detail.HasMoreBoxes = detail.Record.BoxCount > detail.Boxes.Count;

@@ -30,7 +30,7 @@ namespace WMS_HU_Model.Services
             if (request == null) return OperationResult<FinishedGoodsInboundResultDto>.Fail("请求不能为空。");
             if (!ValidateOptional(request.RequestId, 100, "RequestId", out string requestError)
                 || !ValidateRequired(request.Operator, 50, "Operator", out requestError)
-                || !ValidateOptional(request.Remark, 1000, "Remark", out requestError))
+                || !ValidateOptional(request.Remark, 500, "Remark", out requestError))
                 return OperationResult<FinishedGoodsInboundResultDto>.Fail(requestError);
             string error = FinishedGoodsInboundSnapshotValidator.ValidateStructural(request.Snapshot);
             if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);

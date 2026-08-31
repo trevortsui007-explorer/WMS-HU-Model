@@ -10,8 +10,8 @@ namespace WMS_HU_Model.Repositories
     {
         public MesWeekCodeRuleReadResult Read(string plantCode, string prodNo, string prodRev)
         {
-            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["MesDb"];
-            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("MES连接配置MesDb未找到。");
+            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["BaseDb"];
+            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("连接配置BaseDb未找到。");
             const string sql = @"SELECT LTRIM(RTRIM(v.attvalue))
 FROM dbo.MD_Flow f WITH (NOLOCK)
 JOIN dbo.MD_FlowStation fs WITH (NOLOCK) ON fs.flowid=f.md_flow_id

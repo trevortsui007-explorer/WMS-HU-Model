@@ -13,12 +13,12 @@ namespace WMS_HU_Model.Repositories
 (
     SELECT
         receipt.Id AS ReceiptId,
-        receipt.ReceiveTime,
+        receipt.ReceiveDt AS ReceiveTime,
         receipt.SourceSystem,
         receipt.SourceType,
         receipt.SourceEntityId,
         receipt.RequestId,
-        receipt.Operator,
+        receipt.ReceiveBy AS Operator,
         receipt.Remark,
         huStats.PlantCode,
         huStats.PalletSummary,
@@ -31,7 +31,7 @@ namespace WMS_HU_Model.Repositories
         boxStats.HoldBoxCount,
         boxStats.WeekCodeExceptionBoxCount,
         boxStats.ExceptionBoxCount
-    FROM dbo.WMS_FinishedGoodsInboundReceipt receipt
+    FROM dbo.WMS_FG_FinishedGoodsInboundReceipt receipt
     CROSS APPLY
     (
         SELECT
@@ -40,7 +40,7 @@ namespace WMS_HU_Model.Repositories
             COUNT(CASE WHEN hu.HUType = 'PALLET' THEN 1 END) AS PalletCount,
             COUNT(CASE WHEN hu.HUType = 'OUTER_BOX' THEN 1 END) AS BoxCount,
             COUNT(CASE WHEN hu.HUType = 'INNER_PACK' THEN 1 END) AS InnerPackCount
-        FROM dbo.WMS_HU hu
+        FROM dbo.WMS_FG_HU hu
         WHERE hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20))
     ) huStats
     CROSS APPLY
@@ -53,8 +53,8 @@ namespace WMS_HU_Model.Repositories
         (
             SELECT box.IsHold,
                 CASE WHEN EXISTS
-                    (SELECT 1 FROM dbo.WMS_HU_HoldLog weekHold WHERE weekHold.HUId = box.Id AND weekHold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND weekHold.IsActive = 1) THEN 1 ELSE 0 END AS HasWeekCodeException
-            FROM dbo.WMS_HU box
+                    (SELECT 1 FROM dbo.WMS_FG_HU_HoldLog weekHold WHERE weekHold.HUId = box.Id AND weekHold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND weekHold.IsActive = 1) THEN 1 ELSE 0 END AS HasWeekCodeException
+            FROM dbo.WMS_FG_HU box
             WHERE box.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND box.HUType = 'OUTER_BOX'
         ) boxFact
     ) boxStats
@@ -62,36 +62,36 @@ namespace WMS_HU_Model.Repositories
     (
         SELECT
             SUM(item.Qty) AS TotalQty,
-            COUNT(DISTINCT item.MaterialCode) AS MaterialCount,
+            COUNT(DISTINCT item.ProdNo) AS MaterialCount,
             STUFF((
-                SELECT DISTINCT ', ' + materialItem.MaterialCode
-                FROM dbo.WMS_HU materialPack
-                INNER JOIN dbo.WMS_HU_Item materialItem ON materialItem.HUId = materialPack.Id
+                SELECT DISTINCT ', ' + materialItem.ProdNo
+                FROM dbo.WMS_FG_HU materialPack
+                INNER JOIN dbo.WMS_FG_HU_Item materialItem ON materialItem.HUId = materialPack.Id
                 WHERE materialPack.HUType = 'INNER_PACK'
                   AND materialPack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20))
                 FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS MaterialSummary
-        FROM dbo.WMS_HU pack
-        INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id
+        FROM dbo.WMS_FG_HU pack
+        INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id
         WHERE pack.HUType = 'INNER_PACK'
           AND pack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20))
     ) itemStats
     WHERE (@ReceiptId IS NULL OR receipt.Id = @ReceiptId)
-      AND (@FromTime IS NULL OR receipt.ReceiveTime >= @FromTime)
-      AND (@ToTimeExclusive IS NULL OR receipt.ReceiveTime < @ToTimeExclusive)
+      AND (@FromTime IS NULL OR receipt.ReceiveDt >= @FromTime)
+      AND (@ToTimeExclusive IS NULL OR receipt.ReceiveDt < @ToTimeExclusive)
       AND (@SourceSystem IS NULL OR receipt.SourceSystem = @SourceSystem)
       AND (@SourceType IS NULL OR receipt.SourceType = @SourceType)
       AND (@SourceEntityId IS NULL OR receipt.SourceEntityId LIKE '%' + @SourceEntityId + '%')
       AND (@RequestId IS NULL OR receipt.RequestId LIKE '%' + @RequestId + '%')
       AND (@PlantCode IS NULL OR EXISTS
-          (SELECT 1 FROM dbo.WMS_HU plantHu WHERE plantHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND plantHu.PlantCode = @PlantCode))
+          (SELECT 1 FROM dbo.WMS_FG_HU plantHu WHERE plantHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND plantHu.PlantCode = @PlantCode))
       AND (@PalletCode IS NULL OR EXISTS
-          (SELECT 1 FROM dbo.WMS_HU palletHu WHERE palletHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND palletHu.HUType = 'PALLET' AND palletHu.HUCode LIKE '%' + @PalletCode + '%'))
+          (SELECT 1 FROM dbo.WMS_FG_HU palletHu WHERE palletHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND palletHu.HUType = 'PALLET' AND palletHu.HUCode LIKE '%' + @PalletCode + '%'))
       AND (@BoxCode IS NULL OR EXISTS
-          (SELECT 1 FROM dbo.WMS_HU boxHu WHERE boxHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND boxHu.HUType = 'OUTER_BOX' AND boxHu.HUCode LIKE '%' + @BoxCode + '%'))
+          (SELECT 1 FROM dbo.WMS_FG_HU boxHu WHERE boxHu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND boxHu.HUType = 'OUTER_BOX' AND boxHu.HUCode LIKE '%' + @BoxCode + '%'))
       AND (@MaterialCode IS NULL OR EXISTS
-          (SELECT 1 FROM dbo.WMS_HU materialPack
-           INNER JOIN dbo.WMS_HU_Item materialItem ON materialItem.HUId = materialPack.Id
-           WHERE materialPack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND materialPack.HUType = 'INNER_PACK' AND materialItem.MaterialCode = @MaterialCode))
+          (SELECT 1 FROM dbo.WMS_FG_HU materialPack
+           INNER JOIN dbo.WMS_FG_HU_Item materialItem ON materialItem.HUId = materialPack.Id
+           WHERE materialPack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND materialPack.HUType = 'INNER_PACK' AND materialItem.ProdNo = @MaterialCode))
 )
 ";
 
@@ -117,7 +117,7 @@ WHERE (@ExceptionOnly = 0 OR ExceptionBoxCount > 0)
 
         private const string PalletsSql = @"
 SELECT hu.Id AS HuId, hu.HUCode AS PalletCode, hu.LifecycleStatus
-FROM dbo.WMS_HU hu
+FROM dbo.WMS_FG_HU hu
 WHERE hu.SourceBusinessNo = 'FGI-' + CAST(@ReceiptId AS VARCHAR(20)) AND hu.HUType = 'PALLET'
 ORDER BY hu.Id;";
 
@@ -126,40 +126,40 @@ SELECT TOP (@BoxLimit)
     box.Id AS HuId,
     box.HUCode AS BoxCode,
     box.LifecycleStatus,
-    MIN(item.MaterialCode) AS MaterialCode,
-    MIN(item.MaterialRevision) AS MaterialRevision,
+    MIN(item.ProdNo) AS MaterialCode,
+    MIN(item.ProdRev) AS MaterialRevision,
     ISNULL(SUM(item.Qty), 0) AS TotalQty,
     MIN(item.Uom) AS Uom,
     COUNT(DISTINCT pack.Id) AS InnerPackCount,
     STUFF((
         SELECT DISTINCT ', ' + CASE WHEN weekItem.WeekYear IS NULL OR weekItem.WeekNo IS NULL THEN N'未解析'
             ELSE CAST(weekItem.WeekYear AS VARCHAR(4)) + '-W' + RIGHT('0' + CAST(weekItem.WeekNo AS VARCHAR(2)), 2) END
-        FROM dbo.WMS_HU_Relation weekRelation
-        INNER JOIN dbo.WMS_HU weekPack ON weekPack.Id = weekRelation.ChildHUId
+        FROM dbo.WMS_FG_HU_Relation weekRelation
+        INNER JOIN dbo.WMS_FG_HU weekPack ON weekPack.Id = weekRelation.ChildHUId
             AND weekPack.HUType = 'INNER_PACK' AND weekPack.SourceBusinessNo = box.SourceBusinessNo
-        INNER JOIN dbo.WMS_HU_Item weekItem ON weekItem.HUId = weekPack.Id
+        INNER JOIN dbo.WMS_FG_HU_Item weekItem ON weekItem.HUId = weekPack.Id
         WHERE weekRelation.ParentHUId = box.Id
         FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS WeekCodeSummary,
     box.IsHold,
     activeHold.HoldReasonCode,
-    COALESCE(activeHold.HoldReason, box.HoldReason) AS HoldReason,
+    activeHold.HoldReason AS HoldReason,
     CAST(CASE WHEN EXISTS
-        (SELECT 1 FROM dbo.WMS_HU_HoldLog weekHold WHERE weekHold.HUId = box.Id AND weekHold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND weekHold.IsActive = 1) THEN 1 ELSE 0 END AS BIT) AS HasWeekCodeException
-FROM dbo.WMS_FinishedGoodsInboundReceipt receipt
-INNER JOIN dbo.WMS_HU box ON box.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND box.HUType = 'OUTER_BOX'
-LEFT JOIN dbo.WMS_HU_Relation relation ON relation.ParentHUId = box.Id
-LEFT JOIN dbo.WMS_HU pack ON pack.Id = relation.ChildHUId AND pack.HUType = 'INNER_PACK' AND pack.SourceBusinessNo = box.SourceBusinessNo
-LEFT JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id
+        (SELECT 1 FROM dbo.WMS_FG_HU_HoldLog weekHold WHERE weekHold.HUId = box.Id AND weekHold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND weekHold.IsActive = 1) THEN 1 ELSE 0 END AS BIT) AS HasWeekCodeException
+FROM dbo.WMS_FG_FinishedGoodsInboundReceipt receipt
+INNER JOIN dbo.WMS_FG_HU box ON box.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND box.HUType = 'OUTER_BOX'
+LEFT JOIN dbo.WMS_FG_HU_Relation relation ON relation.ParentHUId = box.Id
+LEFT JOIN dbo.WMS_FG_HU pack ON pack.Id = relation.ChildHUId AND pack.HUType = 'INNER_PACK' AND pack.SourceBusinessNo = box.SourceBusinessNo
+LEFT JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id
 OUTER APPLY
 (
     SELECT TOP 1 hold.HoldReasonCode, hold.HoldReason
-    FROM dbo.WMS_HU_HoldLog hold
+    FROM dbo.WMS_FG_HU_HoldLog hold
     WHERE hold.HUId = box.Id AND hold.IsActive = 1
-    ORDER BY hold.HoldTime DESC, hold.Id DESC
+    ORDER BY hold.HoldDt DESC, hold.Id DESC
 ) activeHold
 WHERE receipt.Id = @ReceiptId
-GROUP BY box.Id, box.HUCode, box.LifecycleStatus, box.IsHold, box.HoldReason, box.SourceBusinessNo,
-    activeHold.HoldReasonCode, activeHold.HoldReason, receipt.ReceiveTime
+GROUP BY box.Id, box.HUCode, box.LifecycleStatus, box.IsHold, box.SourceBusinessNo,
+    activeHold.HoldReasonCode, activeHold.HoldReason, receipt.ReceiveDt
 ORDER BY box.Id;";
 
         public FinishedGoodsInboundRecordResultDto Query(FinishedGoodsInboundRecordQuery query)
@@ -229,7 +229,7 @@ ORDER BY box.Id;";
             NullableDateTime(command, "@ToTimeExclusive", query.ToTimeExclusive);
             Varchar(command, "@PlantCode", query.PlantCode, 20);
             Varchar(command, "@SourceSystem", query.SourceSystem, 30);
-            Varchar(command, "@SourceType", query.SourceType, 30);
+            Varchar(command, "@SourceType", query.SourceType, 50);
             Varchar(command, "@SourceEntityId", query.SourceEntityId, 100);
             Varchar(command, "@PalletCode", query.PalletCode, 100);
             Varchar(command, "@BoxCode", query.BoxCode, 100);

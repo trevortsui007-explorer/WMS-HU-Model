@@ -18,8 +18,8 @@ namespace WMS_HU_Model.Repositories
             {
                 conn.Open();
                 ReceiptRow existing = conn.QueryFirstOrDefault<ReceiptRow>(@"
-SELECT Id, SnapshotHash, HashVersion, ReceiveTime
-FROM dbo.WMS_FinishedGoodsInboundReceipt
+SELECT Id, SnapshotHash, HashVersion, ReceiveDt AS ReceiveTime
+FROM dbo.WMS_FG_FinishedGoodsInboundReceipt
 WHERE SourceSystem = @SourceSystem AND SourceType = @SourceType AND SourceEntityId = @SourceEntityId;",
                     new { command.Snapshot.SourceSystem, command.Snapshot.SourceType, command.Snapshot.SourceEntityId });
                 if (existing == null) return null;
@@ -39,8 +39,8 @@ WHERE SourceSystem = @SourceSystem AND SourceType = @SourceType AND SourceEntity
                     try
                     {
                         ReceiptRow existing = conn.QueryFirstOrDefault<ReceiptRow>(@"
-SELECT Id, SnapshotHash, HashVersion, ReceiveTime
-FROM dbo.WMS_FinishedGoodsInboundReceipt WITH (UPDLOCK, HOLDLOCK)
+SELECT Id, SnapshotHash, HashVersion, ReceiveDt AS ReceiveTime
+FROM dbo.WMS_FG_FinishedGoodsInboundReceipt WITH (UPDLOCK, HOLDLOCK)
 WHERE SourceSystem = @SourceSystem AND SourceType = @SourceType AND SourceEntityId = @SourceEntityId;",
                             new { command.Snapshot.SourceSystem, command.Snapshot.SourceType, command.Snapshot.SourceEntityId }, tran);
                         if (existing != null)
@@ -56,16 +56,16 @@ WHERE SourceSystem = @SourceSystem AND SourceType = @SourceType AND SourceEntity
                         }
 
                         long receiptId = conn.ExecuteScalar<long>(@"
-INSERT INTO dbo.WMS_FinishedGoodsInboundReceipt
+INSERT INTO dbo.WMS_FG_FinishedGoodsInboundReceipt
 (
     SourceSystem, SourceType, SourceEntityId, SnapshotHash, HashVersion,
-    RequestId, Operator, Remark, ReceiveTime, CreateTime
+    RequestId, ReceiveDt, ReceiveBy, Remark
 )
 OUTPUT INSERTED.Id
 VALUES
 (
     @SourceSystem, @SourceType, @SourceEntityId, @SnapshotHash, @HashVersion,
-    @RequestId, @Operator, @Remark, @ReceiveTime, @ReceiveTime
+    @RequestId, @ReceiveTime, @Operator, @Remark
 );", new
                         {
                             command.Snapshot.SourceSystem,
@@ -83,41 +83,41 @@ VALUES
 
                         long? palletId = null;
                         string businessNo = "FGI-" + receiptId;
-                        string operationNo = "FGI-RECEIVE-" + receiptId;
+                        int operationSequence = 0;
                         if (command.Snapshot.Pallet != null)
                         {
                             string palletCode = string.IsNullOrWhiteSpace(command.Snapshot.Pallet.PalletCode) ? "FGI-P-" + receiptId : command.Snapshot.Pallet.PalletCode.Trim();
                             palletId = InsertHu(conn, tran, palletCode, "PALLET", command.Snapshot.PlantCode, command.Snapshot.SourceSystem, command.Snapshot.Pallet.SourceEntityId, businessNo, command);
-                            InsertOperation(conn, tran, operationNo, "RECEIVE", palletId.Value, null, businessNo, command, "Finished goods inbound pallet received.");
+                            InsertOperation(conn, tran, CreateOperationNo(receiptId, ++operationSequence), "RECEIVE", palletId.Value, null, businessNo, command, "Finished goods inbound pallet received.");
                         }
 
                         foreach (FinishedGoodsInboundBoxSnapshot box in command.Snapshot.Boxes)
                         {
                             bool weekException = box.InnerPacks.Exists(x => !x.WeekResolutionSucceeded);
                             long boxId = InsertHu(conn, tran, box.BoxCode.Trim(), "OUTER_BOX", command.Snapshot.PlantCode, command.Snapshot.SourceSystem, box.SourceEntityId, businessNo, command, weekException);
-                            InsertOperation(conn, tran, operationNo, "CREATE_HU", boxId, palletId, businessNo, command, "Finished goods inbound outer box created.");
+                            InsertOperation(conn, tran, CreateOperationNo(receiptId, ++operationSequence), "CREATE_HU", boxId, palletId, businessNo, command, "Finished goods inbound outer box created.");
                             if (!string.IsNullOrWhiteSpace(box.AlternateBoxCode) && !string.Equals(box.AlternateBoxCode.Trim(), box.BoxCode.Trim(), StringComparison.Ordinal))
                                 InsertIdentifier(conn, tran, boxId, "ALTERNATE_BOX_CODE", box.AlternateBoxCode.Trim(), command);
-                            if (weekException) InsertWeekCodeHold(conn, tran, boxId, operationNo, businessNo, box, command);
+                            if (weekException) InsertWeekCodeHold(conn, tran, boxId, CreateOperationNo(receiptId, ++operationSequence), businessNo, box, command);
                             if (palletId.HasValue)
                             {
-                                InsertRelation(conn, tran, palletId.Value, boxId, operationNo, command.Operator);
-                                InsertOperation(conn, tran, operationNo, "ATTACH_HU", boxId, palletId, businessNo, command, "Outer box attached to inbound pallet.");
+                                InsertRelation(conn, tran, palletId.Value, boxId, CreateRelationOperationNo(receiptId, ++operationSequence), command.Operator);
+                                InsertOperation(conn, tran, CreateOperationNo(receiptId, ++operationSequence), "ATTACH_HU", boxId, palletId, businessNo, command, "Outer box attached to inbound pallet.");
                             }
                             else
                             {
                                 long locationId = GetInboundPendingLocationId(conn, tran, command.Snapshot.PlantCode);
                                 InsertDirectLocation(conn, tran, boxId, locationId, "OUTER_BOX", box.SourceEntityId, businessNo, command);
-                                InsertOperation(conn, tran, operationNo, "RECEIVE", boxId, null, businessNo, command, "Finished goods inbound root box received.");
+                                InsertOperation(conn, tran, CreateOperationNo(receiptId, ++operationSequence), "RECEIVE", boxId, null, businessNo, command, "Finished goods inbound root box received.");
                             }
                             foreach (FinishedGoodsInboundPackSnapshot pack in box.InnerPacks)
                             {
                                 long packId = InsertHu(conn, tran, pack.PackCode.Trim(), "INNER_PACK", command.Snapshot.PlantCode, command.Snapshot.SourceSystem, pack.SourceEntityId, businessNo, command);
                                 if (!string.IsNullOrWhiteSpace(pack.PackId))
                                     InsertPackIdIdentifier(conn, tran, packId, pack, command);
-                                InsertRelation(conn, tran, boxId, packId, operationNo, command.Operator);
+                                InsertRelation(conn, tran, boxId, packId, CreateRelationOperationNo(receiptId, ++operationSequence), command.Operator);
                                 InsertItem(conn, tran, packId, box, pack, command);
-                                InsertOperation(conn, tran, operationNo, "CREATE_HU", packId, boxId, businessNo, command, "Finished goods inbound inner pack created and attached.");
+                                InsertOperation(conn, tran, CreateOperationNo(receiptId, ++operationSequence), "CREATE_HU", packId, boxId, businessNo, command, "Finished goods inbound inner pack created and attached.");
                             }
                         }
                         if (palletId.HasValue)
@@ -153,8 +153,8 @@ VALUES
         private static long InsertHu(SqlConnection conn, SqlTransaction tran, string code, string type, string plant, string sourceSystem, string sourceId, string businessNo, FinishedGoodsInboundCommand command, bool isHold = false)
         {
             return conn.ExecuteScalar<long>(@"
-INSERT INTO dbo.WMS_HU
-(HUCode, HUType, PlantCode, LifecycleStatus, IsHold, SourceSystem, SourceEntityId, SourceBusinessNo, CreateUser, CreateTime)
+INSERT INTO dbo.WMS_FG_HU
+(HUCode, HUType, PlantCode, LifecycleStatus, IsHold, SourceSystem, SourceEntityId, SourceBusinessNo, CreateBy, CreateDt)
 OUTPUT INSERTED.Id
 VALUES (@Code, @Type, @Plant, 'ACTIVE', @IsHold, @SourceSystem, @SourceId, @BusinessNo, @Operator, @ReceiveTime);",
                 new { Code = code, Type = type, Plant = plant.Trim(), SourceSystem = sourceSystem.Trim(), SourceId = sourceId.Trim(), BusinessNo = businessNo, IsHold = isHold, command.Operator, command.ReceiveTime }, tran);
@@ -163,24 +163,22 @@ VALUES (@Code, @Type, @Plant, 'ACTIVE', @IsHold, @SourceSystem, @SourceId, @Busi
         private static void InsertIdentifier(SqlConnection conn, SqlTransaction tran, long huId, string type, string value, FinishedGoodsInboundCommand command)
         {
             conn.Execute(@"
-INSERT INTO dbo.WMS_HU_Identifier
-(HUId, IdentifierType, IdentifierValue, IsPrimary, IsActive, EffectiveFrom, CreateUser, CreateTime)
-VALUES (@HuId, @Type, @Value, 0, 1, @ReceiveTime, @Operator, @ReceiveTime);",
+INSERT INTO dbo.WMS_FG_HU_Identifier
+            (HUId, IdentifierType, IdentifierValue, IsActive, EffectiveFrom, CreateBy, CreateDt)
+VALUES (@HuId, @Type, @Value, 1, @ReceiveTime, @Operator, @ReceiveTime);",
                 new { HuId = huId, Type = type, Value = value, command.Operator, command.ReceiveTime }, tran);
         }
 
         private static void InsertPackIdIdentifier(SqlConnection conn, SqlTransaction tran, long huId, FinishedGoodsInboundPackSnapshot pack, FinishedGoodsInboundCommand command)
         {
             conn.Execute(@"
-INSERT INTO dbo.WMS_HU_Identifier
-(HUId, IdentifierType, IdentifierValue, IsPrimary, IsActive, EffectiveFrom, SourceSystem, SourceEntityId, CreateUser, CreateTime)
-VALUES (@HuId, 'MES_PACK_ID', @PackId, 0, 1, @ReceiveTime, @SourceSystem, @SourceEntityId, @Operator, @ReceiveTime);",
+INSERT INTO dbo.WMS_FG_HU_Identifier
+            (HUId, IdentifierType, IdentifierValue, IsActive, EffectiveFrom, CreateBy, CreateDt)
+VALUES (@HuId, 'MES_PACK_ID', @PackId, 1, @ReceiveTime, @Operator, @ReceiveTime);",
                 new
                 {
                     HuId = huId,
                     PackId = pack.PackId.Trim(),
-                    SourceSystem = command.Snapshot.SourceSystem,
-                    SourceEntityId = pack.SourceEntityId,
                     command.Operator,
                     command.ReceiveTime
                 }, tran);
@@ -189,31 +187,31 @@ VALUES (@HuId, 'MES_PACK_ID', @PackId, 0, 1, @ReceiveTime, @SourceSystem, @Sourc
         private static void InsertRelation(SqlConnection conn, SqlTransaction tran, long parentId, long childId, string operationNo, string operatorCode)
         {
             conn.Execute(@"
-INSERT INTO dbo.WMS_HU_Relation
-(ParentHUId, ChildHUId, RelationType, EffectiveFrom, IsActive, OperationNo, CreateUser, CreateTime)
-VALUES (@ParentId, @ChildId, 'CONTAIN', SYSDATETIME(), 1, @OperationNo, @Operator, SYSDATETIME());",
+INSERT INTO dbo.WMS_FG_HU_Relation
+(ParentHUId, ChildHUId, EffectiveFrom, IsActive, OperationNo, CreateBy)
+VALUES (@ParentId, @ChildId, SYSDATETIME(), 1, @OperationNo, @Operator);",
                 new { ParentId = parentId, ChildId = childId, OperationNo = operationNo, Operator = operatorCode }, tran);
         }
 
         private static void InsertItem(SqlConnection conn, SqlTransaction tran, long huId, FinishedGoodsInboundBoxSnapshot box, FinishedGoodsInboundPackSnapshot pack, FinishedGoodsInboundCommand command)
         {
             conn.Execute(@"
-INSERT INTO dbo.WMS_HU_Item
+INSERT INTO dbo.WMS_FG_HU_Item
 (
-    HUId, MaterialCode, MaterialRevision, DateCode, SAPBatchNo, Qty, Uom, StockStatus, IsActive,
+    HUId, ProdNo, ProdRev, DateCode, SAPBatchNo, Qty, Uom, StockStatus, IsActive,
     WeekFormatCode, WeekYear, WeekNo, WeekSortKey, WeekRuleSource, WeekRuleValue, WeekResolvedTime,
-    CreateUser, CreateTime
+    CreateBy, CreateDt
 )
 VALUES
 (
-    @HuId, @MaterialCode, @MaterialRevision, @DateCode, @SAPBatchNo, @Qty, @Uom, 'AVAILABLE', 1,
+    @HuId, @ProdNo, @ProdRev, @DateCode, @SAPBatchNo, @Qty, @Uom, 'AVAILABLE', 1,
     @WeekFormatCode, @WeekYear, @WeekNo, @WeekSortKey, @WeekRuleSource, @WeekRuleValue, @WeekResolvedTime,
     @Operator, @ReceiveTime
 );", new
             {
                 HuId = huId,
-                MaterialCode = box.MaterialCode.Trim(),
-                MaterialRevision = string.IsNullOrWhiteSpace(box.MaterialRevision) ? null : box.MaterialRevision.Trim(),
+                ProdNo = box.MaterialCode.Trim(),
+                ProdRev = string.IsNullOrWhiteSpace(box.MaterialRevision) ? null : box.MaterialRevision.Trim(),
                 DateCode = pack.DateCode,
                 SAPBatchNo = pack.SapBatchNo,
                 pack.Qty,
@@ -234,10 +232,10 @@ VALUES
         {
             List<long> locations = conn.Query<long>(@"
 SELECT l.Id
-FROM dbo.WMS_Location l WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_WarehousePlant wp WITH (UPDLOCK, HOLDLOCK) ON wp.WarehouseId = l.WarehouseId
+FROM dbo.WMS_FG_Location l WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_WarehousePlant wp WITH (UPDLOCK, HOLDLOCK) ON wp.WarehouseId = l.WarehouseId
 WHERE wp.PlantCode = @PlantCode AND wp.IsActive = 1
-  AND l.LocationCode = 'INBOUND-PENDING' AND l.MasterStatus = 'ACTIVE' AND l.IsVirtual = 1;", new { PlantCode = plantCode.Trim() }, tran).AsList();
+  AND l.LocationCode = 'INBOUND-PENDING' AND l.IsActive = 1 AND l.IsVirtual = 1;", new { PlantCode = plantCode.Trim() }, tran).AsList();
             if (locations.Count != 1) throw new InvalidOperationException(locations.Count == 0 ? "未找到有效INBOUND-PENDING虚拟库位。" : "存在多个有效INBOUND-PENDING虚拟库位。");
             return locations[0];
         }
@@ -248,10 +246,10 @@ WHERE wp.PlantCode = @PlantCode AND wp.IsActive = 1
             string moveNo = FinishedGoodsInboundSnapshotHasher.CreateMoveNo(command.Snapshot, rootHuType, rootSourceId);
             long moveLogId = HuMoveLogWriter.Insert(conn, tran, moveNo, huId, null, locationId, "RECEIVE", null, businessNo, null, moveRequestId, null, command.Operator, command.ReceiveTime, command.Remark);
             conn.Execute(@"
-INSERT INTO dbo.WMS_HU_CurrentLocation
-(HUId, LocationId, LocationSince, LastMoveLogId, LastMoveNo, LastMoveType, LastOperator, ModifyTime)
-VALUES (@HuId, @LocationId, @ReceiveTime, @MoveLogId, @MoveNo, 'RECEIVE', @Operator, @ReceiveTime);",
-                new { HuId = huId, LocationId = locationId, command.ReceiveTime, MoveLogId = moveLogId, MoveNo = moveNo, command.Operator }, tran);
+INSERT INTO dbo.WMS_FG_HU_CurrentLocation
+(HUId, LocationId, LocationSince, LastMoveLogId, CreateBy)
+VALUES (@HuId, @LocationId, @ReceiveTime, @MoveLogId, @Operator);",
+                new { HuId = huId, LocationId = locationId, command.ReceiveTime, MoveLogId = moveLogId, command.Operator }, tran);
         }
 
         private static void InsertWeekCodeHold(SqlConnection conn, SqlTransaction tran, long huId, string operationNo, string businessNo, FinishedGoodsInboundBoxSnapshot box, FinishedGoodsInboundCommand command)
@@ -261,7 +259,7 @@ VALUES (@HuId, @LocationId, @ReceiveTime, @MoveLogId, @MoveNo, 'RECEIVE', @Opera
             string reason = string.IsNullOrWhiteSpace(failedPack.WeekFailureCode) ? "WEEKCODE_UNRESOLVED" : failedPack.WeekFailureCode;
             if (!string.IsNullOrWhiteSpace(failedPack.WeekFailureMessage)) reason += ": " + failedPack.WeekFailureMessage;
             if (reason.Length > 500) reason = reason.Substring(0, 500);
-            conn.Execute(@"INSERT INTO dbo.WMS_HU_HoldLog (HoldNo, HUId, HoldType, HoldReasonCode, HoldReason, IsActive, HoldTime, HoldUser)
+            conn.Execute(@"INSERT INTO dbo.WMS_FG_HU_HoldLog (HoldNo, HUId, HoldType, HoldReasonCode, HoldReason, IsActive, HoldDt, HoldBy)
 VALUES (@HoldNo, @HuId, 'INBOUND_EXCEPTION', 'WEEKCODE_UNRESOLVED', @Reason, 1, @Now, @Operator);",
                 new { HoldNo = holdNo, HuId = huId, Reason = reason, Now = command.ReceiveTime, command.Operator }, tran);
             InsertOperation(conn, tran, operationNo, "HU_HOLD", huId, null, businessNo, command, reason);
@@ -282,8 +280,8 @@ VALUES (@HoldNo, @HuId, 'INBOUND_EXCEPTION', 'WEEKCODE_UNRESOLVED', @Reason, 1, 
                 int lockResult = conn.ExecuteScalar<int>("DECLARE @r INT; EXEC @r = sp_getapplock @Resource=@Resource, @LockMode='Exclusive', @LockOwner='Transaction'; SELECT @r;", new { Resource = "WMS_BARCODE:" + code }, tran);
                 if (lockResult < 0) throw new InvalidOperationException("无法获取扫码身份锁。");
                 int conflicts = conn.ExecuteScalar<int>(@"SELECT COUNT(1) FROM (
-SELECT Id FROM dbo.WMS_HU WHERE UPPER(HUCode) = @Code
-UNION ALL SELECT HUId FROM dbo.WMS_HU_Identifier WHERE IsActive = 1 AND UPPER(IdentifierValue) = @Code) x;", new { Code = code }, tran);
+SELECT Id FROM dbo.WMS_FG_HU WHERE UPPER(HUCode) = @Code
+UNION ALL SELECT HUId FROM dbo.WMS_FG_HU_Identifier WHERE IsActive = 1 AND UPPER(IdentifierValue) = @Code) x;", new { Code = code }, tran);
                 if (conflicts > 0) throw new InvalidOperationException("扫码身份已存在：" + code);
             }
         }
@@ -291,6 +289,16 @@ UNION ALL SELECT HUId FROM dbo.WMS_HU_Identifier WHERE IsActive = 1 AND UPPER(Id
         private static void InsertOperation(SqlConnection conn, SqlTransaction tran, string operationNo, string operationType, long huId, long? relatedHuId, string businessNo, FinishedGoodsInboundCommand command, string remark)
         {
             HuOperationLogWriter.Insert(conn, tran, operationNo, operationType, huId, relatedHuId, businessNo, command.RequestId, command.Operator, command.ReceiveTime, null, remark);
+        }
+
+        private static string CreateOperationNo(long receiptId, int sequence)
+        {
+            return "FGI-OP-" + receiptId + "-" + sequence.ToString("D4");
+        }
+
+        private static string CreateRelationOperationNo(long receiptId, int sequence)
+        {
+            return "FGI-REL-" + receiptId + "-" + sequence.ToString("D4");
         }
 
         private static FinishedGoodsInboundResultDto ToResult(ReceiptRow row, FinishedGoodsInboundCommand command, bool duplicate)

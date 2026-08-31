@@ -11,7 +11,7 @@ namespace WMS_HU_Model.Models.Inbound
             if (snapshot == null) return "Snapshot不能为空。";
             Normalize(snapshot);
             if (!Required(snapshot.SourceSystem, 30, "SourceSystem", out string error)) return error;
-            if (!Required(snapshot.SourceType, 30, "SourceType", out error)) return error;
+            if (!Required(snapshot.SourceType, 50, "SourceType", out error)) return error;
             if (!Required(snapshot.SourceEntityId, 100, "SourceEntityId", out error)) return error;
             if (!Required(snapshot.PlantCode, 20, "PlantCode", out error)) return error;
             if (!Optional(snapshot.SourceReferenceNo, 100, "SourceReferenceNo", out error)) return error;
@@ -35,16 +35,16 @@ namespace WMS_HU_Model.Models.Inbound
                 if (!Required(box.SourceEntityId, 100, "Box.SourceEntityId", out error) || !boxIds.Add(box.SourceEntityId.Trim())) return error ?? "Box.SourceEntityId重复。";
                 if (!Required(box.BoxCode, 100, "Box.BoxCode", out error) || !boxCodes.Add(box.BoxCode.Trim())) return error ?? "Box.BoxCode重复。";
                 if (!scannableCodes.Add(box.BoxCode.Trim())) return "Snapshot内扫码码冲突。";
-                if (!Optional(box.AlternateBoxCode, 200, "Box.AlternateBoxCode", out error)) return error;
+                if (!Optional(box.AlternateBoxCode, 100, "Box.AlternateBoxCode", out error)) return error;
                 if (!string.IsNullOrWhiteSpace(box.AlternateBoxCode)
                     && !string.Equals(box.AlternateBoxCode, box.BoxCode, StringComparison.OrdinalIgnoreCase)
                     && !scannableCodes.Add(box.AlternateBoxCode.Trim())) return "Snapshot内扫码码冲突。";
                 if (!Required(box.MaterialCode, 50, "Box.MaterialCode", out error)) return error;
-                if (!Optional(box.MaterialRevision, 30, "Box.MaterialRevision", out error)) return error;
+                if (!Optional(box.MaterialRevision, 20, "Box.MaterialRevision", out error)) return error;
                 if (!Required(box.Uom, 20, "Box.Uom", out error)) return error;
                 if (!string.Equals(box.Uom.Trim(), "PCS", StringComparison.Ordinal)) return "Box.Uom必须为PCS。";
-                if (!Optional(box.WeekRuleSource, 30, "Box.WeekRuleSource", out error)) return error;
-                if (!Optional(box.WeekRuleValue, 100, "Box.WeekRuleValue", out error)) return error;
+                if (!Optional(box.WeekRuleSource, 100, "Box.WeekRuleSource", out error)) return error;
+                if (!Optional(box.WeekRuleValue, 500, "Box.WeekRuleValue", out error)) return error;
                 if (box.InnerPacks == null || box.InnerPacks.Count == 0) return "每个Box至少需要一个InnerPack。";
                 foreach (FinishedGoodsInboundPackSnapshot pack in box.InnerPacks)
                 {

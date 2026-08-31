@@ -80,8 +80,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bootstrapper.cs" />
-    <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Infrastructure\Sap\S0089SapOutboundPostingClient.cs" />
+    <Compile Include="Modules\FinishedGoodsInboundIntegrationModule.cs" />
     <Compile Include="Modules\FinishedGoodsInboundReadModule.cs" />
     <Compile Include="Modules\FinishedGoodsInventoryModule.cs" />
     <Compile Include="Modules\InventoryQueryModule.cs" />
@@ -94,7 +94,10 @@
     <Compile Include="Modules\MasterDataMaintenanceModule.cs" />
     <Compile Include="Modules\AuditModule.cs" />
     <Compile Include="Modules\MonitoringModule.cs" />
-    <Compile Include="Modules\OutboundModule.cs" />
+    <Compile Include="Modules\OutboundOrderModule.cs" />
+    <Compile Include="Modules\OutboundPickingModule.cs" />
+    <Compile Include="Modules\OutboundExceptionModule.cs" />
+    <Compile Include="Modules\OutboundSapPostingModule.cs" />
     <Compile Include="Modules\SapOutboundIntegrationModule.cs" />
     <Compile Include="Modules\WeekCodeAuditModule.cs" />
     <Compile Include="Modules\WeekCodeRecalculateModule.cs" />
@@ -157,8 +160,3 @@
   </Target>
   -->
 </Project>
-
-
-
-
-

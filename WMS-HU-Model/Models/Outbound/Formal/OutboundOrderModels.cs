@@ -190,13 +190,6 @@ namespace WMS_HU_Model.Models.Outbound.Formal
         }
     }
 
-    public class ShipOutboundRequest
-    {
-        public string RequestId { get; set; }
-        public string Operator { get; set; }
-        public string Remark { get; set; }
-    }
-
     public class ReturnPickDetailRequest
     {
         public string RequestId { get; set; }

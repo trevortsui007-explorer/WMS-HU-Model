@@ -1,0 +1,61 @@
+using Nancy;
+using Nancy.ModelBinding;
+using System;
+using System.Collections.Generic;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.Outbound.Formal;
+using WMS_HU_Model.Models.Outbound.Integration;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+using WMS.Infrastructure.Sap;
+
+namespace WMS.Modules
+{    public class OutboundExceptionModule : NancyModule
+    {
+        private readonly IOutboundExceptionService _exceptionService;
+
+        public OutboundExceptionModule()
+            : base("/api/wms/outbound")
+        {
+            _exceptionService = new OutboundExceptionService(new OutboundExceptionRepository());
+
+            Post("/pick-details/{detailId}/return", args =>
+            {
+                object rawDetailId = args.detailId;
+                long detailId;
+                if (!long.TryParse(Convert.ToString(rawDetailId), out detailId))
+                    return Response.AsJson(ApiResult.Fail("detailId格式无效。"));
+
+                ReturnPickDetailRequest request = this.Bind<ReturnPickDetailRequest>();
+                OperationResult<OutboundActionResultDto> result = _exceptionService.ReturnPickDetail(detailId, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
+            Post("/returned/{huCode}/putaway", args =>
+            {
+                object rawHuCode = args.huCode;
+                string huCode = Convert.ToString(rawHuCode);
+                ReturnToStockRequest request = this.Bind<ReturnToStockRequest>();
+                OperationResult<OutboundActionResultDto> result = _exceptionService.ReturnToStock(huCode, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
+            Post("/pick-batches/{pickBatchNo}/replace", args =>
+            {
+                object rawPickBatchNo = args.pickBatchNo;
+                string pickBatchNo = Convert.ToString(rawPickBatchNo);
+                ReplacementRequest request = this.Bind<ReplacementRequest>();
+                OperationResult<StartPickingResultDto> result = _exceptionService.ReserveReplacement(
+                    pickBatchNo,
+                    request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+        }
+    }
+}

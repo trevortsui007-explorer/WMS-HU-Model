@@ -1,0 +1,63 @@
+using Nancy;
+using Nancy.ModelBinding;
+using System;
+using System.Collections.Generic;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.Outbound.Formal;
+using WMS_HU_Model.Models.Outbound.Integration;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+using WMS.Infrastructure.Sap;
+
+namespace WMS.Modules
+{    public class OutboundOrderModule : NancyModule
+    {
+        private readonly IOutboundOrderService _orderService;
+
+        public OutboundOrderModule()
+            : base("/api/wms/outbound")
+        {
+            _orderService = new OutboundOrderService(new OutboundOrderRepository());
+
+            Get("/orders", _ =>
+            {
+                OutboundOrderQuery query = this.Bind<OutboundOrderQuery>();
+                OperationResult<List<OutboundOrderDto>> result = _orderService.GetOrders(query);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
+            Get("/orders/{vbeln}", args =>
+            {
+                object rawVbeln = args.vbeln;
+                string vbeln = Convert.ToString(rawVbeln);
+                OperationResult<OutboundOrderDto> result = _orderService.GetOrder(vbeln);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
+            Get("/orders/{vbeln}/picking-state", args =>
+            {
+                object rawVbeln = args.vbeln;
+                string vbeln = Convert.ToString(rawVbeln);
+                OperationResult<OutboundPickingStateDto> result = _orderService.GetPickingState(vbeln);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+
+            Post("/orders/{vbeln}/void", args =>
+            {
+                object rawVbeln = args.vbeln;
+                string vbeln = Convert.ToString(rawVbeln);
+                OutboundActionRequest request = this.Bind<OutboundActionRequest>();
+                OperationResult<OutboundActionResultDto> result = _orderService.VoidOrder(vbeln, request);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
+                    : Response.AsJson(ApiResult.Fail(result.Message));
+            });
+        }
+    }
+}

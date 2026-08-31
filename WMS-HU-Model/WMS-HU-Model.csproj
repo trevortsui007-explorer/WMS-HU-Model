@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -102,46 +102,30 @@
     <Compile Include="Models\MasterData\CreateLocationRequest.cs" />
     <Compile Include="Models\MasterData\LocationDto.cs" />
     <Compile Include="Models\MasterData\MasterDataMaintenanceModels.cs" />
+    <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
     <Compile Include="Models\Audit\AuditModels.cs" />
     <Compile Include="Models\Monitoring\MonitoringModels.cs" />
-    <Compile Include="Models\MasterData\UpdateLocationRequest.cs" />
     <Compile Include="Models\WeekCode\WeekCodeSnapshot.cs" />
     <Compile Include="Models\WeekCode\WeekCodeAuditModels.cs" />
     <Compile Include="Models\WeekCode\WeekCodeRecalculateModels.cs" />
     <Compile Include="Models\WeekCode\MesWeekCodeRuleModels.cs" />
-    <Compile Include="Models\Outbound\OutboundBatchPlanDto.cs" />
-    <Compile Include="Models\Outbound\OutboundBatchPlanItemDto.cs" />
-    <Compile Include="Models\Outbound\OutboundBatchPlanRequest.cs" />
-    <Compile Include="Models\Outbound\OutboundPickCandidateDto.cs" />
-    <Compile Include="Models\Outbound\OutboundQueueItemDto.cs" />
-    <Compile Include="Models\Outbound\OutboundQueueQuery.cs" />
-    <Compile Include="Models\Outbound\PickBatchCommand.cs" />
-    <Compile Include="Models\Outbound\PickBatchItemResultDto.cs" />
-    <Compile Include="Models\Outbound\PickBatchPersistenceResult.cs" />
-    <Compile Include="Models\Outbound\PickBatchRequest.cs" />
-    <Compile Include="Models\Outbound\PickBatchResultDto.cs" />
-    <Compile Include="Models\Outbound\PickNextCommand.cs" />
-    <Compile Include="Models\Outbound\PickNextRequest.cs" />
-    <Compile Include="Models\Outbound\PickPersistenceResult.cs" />
-    <Compile Include="Models\Outbound\PickResultDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundAllocationCandidateDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundAllocationPlanDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundInnerPackCandidateDto.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundOrderModels.cs" />
     <Compile Include="Models\Outbound\Formal\OutboundPickingStateModels.cs" />
     <Compile Include="Models\Outbound\Integration\SapOutboundOrderReceiveModels.cs" />
-    <Compile Include="Models\Putaway\PalletPutawayStatusDto.cs" />
     <Compile Include="Models\Outbound\Integration\SapOutboundPostingModels.cs" />
+    <Compile Include="Models\Putaway\PalletPutawayStatusDto.cs" />
     <Compile Include="Models\Putaway\PutawayBoxRequest.cs" />
     <Compile Include="Models\Putaway\PutawayCommand.cs" />
+    <Compile Include="Models\Putaway\DirectReceivePutawayCommand.cs" />
     <Compile Include="Models\Putaway\PutawayPersistenceResult.cs" />
     <Compile Include="Models\Putaway\PutawayResultDto.cs" />
-    <Compile Include="Models\Putaway\DirectReceivePutawayCommand.cs" />
     <Compile Include="Models\Putaway\PutawayRecommendationModels.cs" />
     <Compile Include="Models\Putaway\WholePalletPutawayModels.cs" />
     <Compile Include="Models\Relocation\RelocationModels.cs" />
     <Compile Include="Models\Repack\BoxRepackStatusDto.cs" />
-    <Compile Include="Models\Repack\MergeBoxModels.cs" />
     <Compile Include="Models\Repack\PackInnerCommand.cs" />
     <Compile Include="Models\Repack\PackInnerPersistenceResult.cs" />
     <Compile Include="Models\Repack\PackInnerRequest.cs" />
@@ -155,7 +139,7 @@
     <Compile Include="Models\Repack\UnpackInnerRequest.cs" />
     <Compile Include="Models\Repack\UnpackInnerResultDto.cs" />
     <Compile Include="Models\Repack\UnpackBoxModels.cs" />
-    <Compile Include="Models\Rules\OutboundFifoPlanner.cs" />
+    <Compile Include="Models\Repack\MergeBoxModels.cs" />
     <Compile Include="Models\Rules\CanonicalOuterBoxCode.cs" />
     <Compile Include="Models\Rules\MergeBoxRules.cs" />
     <Compile Include="Models\Rules\OutboundAllocationPlanner.cs" />
@@ -196,35 +180,37 @@
     <Compile Include="Repositories\Impl\MasterDataMaintenanceRepository.cs" />
     <Compile Include="Repositories\Impl\AuditRepository.cs" />
     <Compile Include="Repositories\Impl\MonitoringRepository.cs" />
-    <Compile Include="Repositories\Impl\OutboundRepository.cs" />
     <Compile Include="Repositories\Impl\RepackRepository.cs" />
-    <Compile Include="Repositories\Impl\MergeBoxRepository.cs" />
     <Compile Include="Repositories\Impl\RelocationRepository.cs" />
     <Compile Include="Repositories\Impl\WholeBoxUnpackRepository.cs" />
-    <Compile Include="Repositories\IOutboundRepository.cs" />
-    <Compile Include="Repositories\IFormalOutboundRepository.cs" />
+    <Compile Include="Repositories\Impl\MergeBoxRepository.cs" />
+    <Compile Include="Repositories\IOutboundOrderRepository.cs" />
+    <Compile Include="Repositories\IOutboundPickingRepository.cs" />
+    <Compile Include="Repositories\IOutboundExceptionRepository.cs" />
     <Compile Include="Repositories\ISapOutboundOrderReceiveRepository.cs" />
+    <Compile Include="Repositories\ISapOutboundPostingRepository.cs" />
     <Compile Include="Repositories\IPutawayRepository.cs" />
     <Compile Include="Repositories\IPutawayRecommendationRepository.cs" />
-    <Compile Include="Repositories\ISapOutboundPostingRepository.cs" />
     <Compile Include="Repositories\Impl\PutawayRepository.cs" />
-    <Compile Include="Repositories\Impl\DirectReceivePutawayRepository.cs" />
-    <Compile Include="Repositories\Impl\PutawayIdempotencyReader.cs" />
     <Compile Include="Repositories\Impl\PutawayRecommendationRepository.cs" />
-    <Compile Include="Repositories\Impl\FormalOutboundRepository.cs" />
+    <Compile Include="Repositories\Impl\PutawayIdempotencyReader.cs" />
+    <Compile Include="Repositories\Impl\DirectReceivePutawayRepository.cs" />
+    <Compile Include="Repositories\Impl\OutboundOrderRepository.cs" />
+    <Compile Include="Repositories\Impl\OutboundPickingRepository.cs" />
+    <Compile Include="Repositories\Impl\OutboundExceptionRepository.cs" />
     <Compile Include="Repositories\Impl\SapOutboundOrderReceiveRepository.cs" />
+    <Compile Include="Repositories\Impl\SapOutboundPostingRepository.cs" />
     <Compile Include="Repositories\IRepackRepository.cs" />
     <Compile Include="Repositories\IRelocationRepository.cs" />
     <Compile Include="Services\IHuLocationService.cs" />
     <Compile Include="Services\IInventoryQueryService.cs" />
-    <Compile Include="Repositories\Impl\SapOutboundPostingRepository.cs" />
     <Compile Include="Services\IFinishedGoodsInboundService.cs" />
     <Compile Include="Services\IFinishedGoodsInboundReadService.cs" />
+    <Compile Include="Services\ISapChargResolver.cs" />
     <Compile Include="Services\IHuService.cs" />
     <Compile Include="Services\IHuDetailService.cs" />
     <Compile Include="Services\IHuIdentifierService.cs" />
     <Compile Include="Services\IHuHoldService.cs" />
-    <Compile Include="Services\ISapChargResolver.cs" />
     <Compile Include="Services\ILocationService.cs" />
     <Compile Include="Services\IMasterDataMaintenanceService.cs" />
     <Compile Include="Services\IAuditService.cs" />
@@ -244,44 +230,36 @@
     <Compile Include="Services\MasterDataMaintenanceService.cs" />
     <Compile Include="Services\AuditService.cs" />
     <Compile Include="Services\MonitoringService.cs" />
-    <Compile Include="Services\Impl\OutboundService.cs" />
     <Compile Include="Services\Impl\PutawayService.cs" />
     <Compile Include="Services\Impl\PutawayRecommendationService.cs" />
     <Compile Include="Services\Impl\RepackService.cs" />
     <Compile Include="Services\Impl\RelocationService.cs" />
     <Compile Include="Services\Impl\UnavailableWeekCodeRuleProvider.cs" />
     <Compile Include="Services\Impl\WeekCodeResolver.cs" />
-    <Compile Include="Services\Impl\FormalOutboundService.cs" />
+    <Compile Include="Services\Impl\OutboundOrderService.cs" />
+    <Compile Include="Services\Impl\OutboundPickingService.cs" />
+    <Compile Include="Services\Impl\OutboundExceptionService.cs" />
     <Compile Include="Services\Impl\SapOutboundOrderReceiveService.cs" />
-    <Compile Include="Services\IOutboundService.cs" />
-    <Compile Include="Services\IFormalOutboundService.cs" />
-    <Compile Include="Services\ISapOutboundOrderReceiveService.cs" />
-    <Compile Include="Services\IPutawayService.cs" />
-    <Compile Include="Services\IPutawayRecommendationService.cs" />
     <Compile Include="Services\Impl\SapOutboundPostingService.cs" />
     <Compile Include="Services\Impl\SapChargResolver.cs" />
+    <Compile Include="Services\IOutboundOrderService.cs" />
+    <Compile Include="Services\IOutboundPickingService.cs" />
+    <Compile Include="Services\IOutboundExceptionService.cs" />
+    <Compile Include="Services\ISapOutboundOrderReceiveService.cs" />
+    <Compile Include="Services\ISapOutboundPostingClient.cs" />
+    <Compile Include="Services\ISapOutboundPostingService.cs" />
+    <Compile Include="Services\IPutawayService.cs" />
+    <Compile Include="Services\IPutawayRecommendationService.cs" />
     <Compile Include="Services\IRepackService.cs" />
     <Compile Include="Services\IRelocationService.cs" />
     <Compile Include="Services\IWeekCodeResolver.cs" />
     <Compile Include="Services\IWeekCodeRuleProvider.cs" />
     <Compile Include="Services\IWeekCodeAuditService.cs" />
-    <Compile Include="Services\ISapOutboundPostingClient.cs" />
-    <Compile Include="Services\ISapOutboundPostingService.cs" />
-    <Compile Include="Services\IWeekCodeRecalculateService.cs" />
     <Compile Include="Services\IFinishedGoodsInventoryService.cs" />
+    <Compile Include="Services\IWeekCodeRecalculateService.cs" />
     <Compile Include="Services\WeekCodeAuditService.cs" />
-    <Compile Include="Services\WeekCodeRecalculateService.cs" />
     <Compile Include="Services\FinishedGoodsInventoryService.cs" />
+    <Compile Include="Services\WeekCodeRecalculateService.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
-
-
-
-
-
-
-
-
-
-

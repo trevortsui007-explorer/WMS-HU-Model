@@ -20,7 +20,7 @@ namespace WMS_HU_Model.Repositories
 
         public static bool RequestIdExists(SqlConnection connection, SqlTransaction transaction, string requestId)
         {
-            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
+            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = requestId;
@@ -31,8 +31,8 @@ namespace WMS_HU_Model.Repositories
         public static PutawayResultDto Read(SqlConnection connection, SqlTransaction transaction, string requestId, bool lockRows)
         {
             string operationTable = lockRows
-                ? "dbo.WMS_HU_OperationLog op WITH (UPDLOCK,HOLDLOCK)"
-                : "dbo.WMS_HU_OperationLog op";
+                ? "dbo.WMS_FG_HU_OperationLog op WITH (UPDLOCK,HOLDLOCK)"
+                : "dbo.WMS_FG_HU_OperationLog op";
             string sql = @"
 SELECT TOP 1
     op.OperationNo,
@@ -43,21 +43,21 @@ SELECT TOP 1
     box.HUCode AS BoxHUCode,
     fromLoc.LocationCode AS FromLocationCode,
     toLoc.LocationCode AS ToLocationCode,
-    moveLog.MoveTime AS PutawayTime,
+    moveLog.MoveDt AS PutawayTime,
     CASE WHEN pallet.Id IS NULL THEN 0 ELSE
     (
         SELECT COUNT(1)
-        FROM dbo.WMS_HU_Relation remainRel
-        INNER JOIN dbo.WMS_HU remainHU ON remainHU.Id=remainRel.ChildHUId
+        FROM dbo.WMS_FG_HU_Relation remainRel
+        INNER JOIN dbo.WMS_FG_HU remainHU ON remainHU.Id=remainRel.ChildHUId
         WHERE remainRel.ParentHUId=pallet.Id AND remainRel.IsActive=1
           AND remainHU.HUType='OUTER_BOX' AND remainHU.LifecycleStatus='ACTIVE'
     ) END AS RemainingBoxCount
 FROM " + operationTable + @"
-INNER JOIN dbo.WMS_HU box ON box.Id=op.HUId
-LEFT JOIN dbo.WMS_HU pallet ON pallet.Id=op.RelatedHUId AND pallet.HUType='PALLET'
-INNER JOIN dbo.WMS_HU_MoveLog moveLog ON moveLog.MoveNo=op.OperationNo AND moveLog.HUId=box.Id
-LEFT JOIN dbo.WMS_Location fromLoc ON fromLoc.Id=moveLog.FromLocationId
-INNER JOIN dbo.WMS_Location toLoc ON toLoc.Id=moveLog.ToLocationId
+INNER JOIN dbo.WMS_FG_HU box ON box.Id=op.HUId
+LEFT JOIN dbo.WMS_FG_HU pallet ON pallet.Id=op.RelatedHUId AND pallet.HUType='PALLET'
+INNER JOIN dbo.WMS_FG_HU_MoveLog moveLog ON moveLog.MoveNo=op.OperationNo AND moveLog.HUId=box.Id
+LEFT JOIN dbo.WMS_FG_Location fromLoc ON fromLoc.Id=moveLog.FromLocationId
+INNER JOIN dbo.WMS_FG_Location toLoc ON toLoc.Id=moveLog.ToLocationId
 WHERE op.OperationType='PUTAWAY' AND op.RequestId=@RequestId
 ORDER BY op.Id;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))

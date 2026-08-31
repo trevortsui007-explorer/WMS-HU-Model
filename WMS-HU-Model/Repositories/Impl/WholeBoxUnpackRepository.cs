@@ -14,19 +14,19 @@ namespace WMS_HU_Model.Repositories
         {
             if (string.IsNullOrWhiteSpace(requestId)) return null;
             const string headerSql = @"
-SELECT TOP 1 op.OperationNo, box.HUCode AS BoxHuCode, op.OperationTime
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU box ON box.Id = op.HUId
+SELECT TOP 1 op.OperationNo, box.HUCode AS BoxHuCode, op.OperationDt AS OperationTime
+FROM dbo.WMS_FG_HU_OperationLog op
+INNER JOIN dbo.WMS_FG_HU box ON box.Id = op.HUId
 WHERE op.OperationType = 'UNPACK_BOX' AND op.RequestId = @RequestId;";
             HeaderRow header = DbExecutor.QueryFirstOrDefault<HeaderRow>(headerSql, new { RequestId = requestId });
             if (header == null) return null;
             const string itemSql = @"
 SELECT innerHU.HUCode AS InnerPackCode, sourceLoc.LocationCode AS FromLocationCode, targetLoc.LocationCode AS ToLocationCode
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU innerHU ON innerHU.Id = op.HUId
-INNER JOIN dbo.WMS_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = op.HUId
-LEFT JOIN dbo.WMS_Location sourceLoc ON sourceLoc.Id = moveLog.FromLocationId
-INNER JOIN dbo.WMS_Location targetLoc ON targetLoc.Id = moveLog.ToLocationId
+FROM dbo.WMS_FG_HU_OperationLog op
+INNER JOIN dbo.WMS_FG_HU innerHU ON innerHU.Id = op.HUId
+INNER JOIN dbo.WMS_FG_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = op.HUId
+LEFT JOIN dbo.WMS_FG_Location sourceLoc ON sourceLoc.Id = moveLog.FromLocationId
+INNER JOIN dbo.WMS_FG_Location targetLoc ON targetLoc.Id = moveLog.ToLocationId
 WHERE op.OperationType = 'UNPACK_INNER' AND op.RequestId = @RequestId
 ORDER BY innerHU.HUCode;";
             List<ItemRow> items = DbExecutor.Query<ItemRow>(itemSql, new { RequestId = requestId });
@@ -132,7 +132,7 @@ ORDER BY innerHU.HUCode;";
 
         private static bool RequestIdExists(SqlConnection connection, SqlTransaction transaction, string requestId)
         {
-            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
+            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = requestId;
@@ -145,11 +145,11 @@ ORDER BY innerHU.HUCode;";
             const string sql = @"
 SELECT box.Id,box.HUCode,box.HUType,box.PlantCode,box.LifecycleStatus,box.IsHold,
        cl.LocationId,loc.LocationCode,w.WarehouseCode,z.ZoneCode
-FROM dbo.WMS_HU box WITH (UPDLOCK,HOLDLOCK)
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=box.Id
-LEFT JOIN dbo.WMS_Location loc ON loc.Id=cl.LocationId
-LEFT JOIN dbo.WMS_Warehouse w ON w.Id=loc.WarehouseId
-LEFT JOIN dbo.WMS_Zone z ON z.Id=loc.ZoneId
+FROM dbo.WMS_FG_HU box WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=box.Id
+LEFT JOIN dbo.WMS_FG_Location loc ON loc.Id=cl.LocationId
+LEFT JOIN dbo.WMS_FG_Warehouse w ON w.Id=loc.WarehouseId
+LEFT JOIN dbo.WMS_FG_Zone z ON z.Id=loc.ZoneId
 WHERE box.HUCode=@BoxHuCode;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -181,10 +181,10 @@ WHERE box.HUCode=@BoxHuCode;";
         private static TargetRow ReadTarget(SqlConnection connection, SqlTransaction transaction, string warehouseCode, string locationCode)
         {
             const string sql = @"
-SELECT l.Id,l.LocationCode,l.MasterStatus,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,z.ZoneCode
-FROM dbo.WMS_Location l WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId
-INNER JOIN dbo.WMS_Zone z ON z.Id=l.ZoneId
+SELECT l.Id,l.LocationCode,l.IsActive,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,z.ZoneCode
+FROM dbo.WMS_FG_Location l WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=l.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone z ON z.Id=l.ZoneId
 WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -196,7 +196,7 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
                     return new TargetRow
                     {
                         Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]),
-                        MasterStatus = Convert.ToString(reader["MasterStatus"]), IsVirtual = Convert.ToBoolean(reader["IsVirtual"]),
+                        IsActive = Convert.ToBoolean(reader["IsActive"]), IsVirtual = Convert.ToBoolean(reader["IsVirtual"]),
                         PlantPolicy = Convert.ToString(reader["PlantPolicy"]), DedicatedPlantCode = DbString(reader, "DedicatedPlantCode"), ZoneCode = Convert.ToString(reader["ZoneCode"])
                     };
                 }
@@ -206,9 +206,9 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
         private static string ValidateTarget(SqlConnection connection, SqlTransaction transaction, TargetRow target, string warehouseCode, string plantCode)
         {
             if (target == null) return "目标货位不存在。";
-            if (target.MasterStatus != "ACTIVE" || target.IsVirtual || target.ZoneCode != "STORAGE") return "拆出的内包必须进入当前仓库可用的实体STORAGE货位。";
+            if (!target.IsActive || target.IsVirtual || target.ZoneCode != "STORAGE") return "拆出的内包必须进入当前仓库可用的实体STORAGE货位。";
             if (target.PlantPolicy == "DEDICATED" && !string.Equals(target.DedicatedPlantCode, plantCode, StringComparison.OrdinalIgnoreCase)) return "目标货位属于其他厂别专用货位。";
-            const string plantSql = @"SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
+            const string plantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_WarehousePlant wp INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
             using (SqlCommand plantCommand = new SqlCommand(plantSql, connection, transaction))
             {
                 plantCommand.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = warehouseCode;
@@ -217,7 +217,7 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
             }
             if (target.PlantPolicy == "SAME_PLANT")
             {
-                const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation cl INNER JOIN dbo.WMS_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
+                const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation cl INNER JOIN dbo.WMS_FG_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
                 using (SqlCommand command = new SqlCommand(samePlantSql, connection, transaction))
                 {
                     command.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
@@ -233,9 +233,9 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
             const string sql = @"
 SELECT r.Id AS RelationId,innerHU.Id,innerHU.HUCode,innerHU.HUType,innerHU.PlantCode,
        innerHU.LifecycleStatus,innerHU.IsHold,CAST(CASE WHEN cl.HUId IS NULL THEN 0 ELSE 1 END AS bit) AS HasDirectLocation
-FROM dbo.WMS_HU_Relation r WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_HU innerHU WITH (UPDLOCK,HOLDLOCK) ON innerHU.Id=r.ChildHUId
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=innerHU.Id
+FROM dbo.WMS_FG_HU_Relation r WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_HU innerHU WITH (UPDLOCK,HOLDLOCK) ON innerHU.Id=r.ChildHUId
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=innerHU.Id
 WHERE r.ParentHUId=@BoxHuId AND r.IsActive=1
 ORDER BY innerHU.HUCode;";
             List<ChildRow> result = new List<ChildRow>();
@@ -267,7 +267,7 @@ ORDER BY innerHU.HUCode;";
 
         private static bool CloseRelation(SqlConnection connection, SqlTransaction transaction, long relationId, string operationNo, string operatorCode, DateTime now)
         {
-            const string sql = @"UPDATE dbo.WMS_HU_Relation SET EffectiveTo=@Now,IsActive=0,CloseOperationNo=@OperationNo,CloseUser=@Operator,CloseReason=N'UNPACK_INNER' WHERE Id=@RelationId AND IsActive=1;";
+            const string sql = @"UPDATE dbo.WMS_FG_HU_Relation SET EffectiveTo=@Now,IsActive=0,CloseOperationNo=@OperationNo,CloseUser=@Operator,CloseReason=N'UNPACK_INNER' WHERE Id=@RelationId AND IsActive=1;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
@@ -280,7 +280,7 @@ ORDER BY innerHU.HUCode;";
 
         private static void InsertCurrentLocation(SqlConnection connection, SqlTransaction transaction, long huId, long locationId, long moveLogId, string moveNo, string operatorCode, DateTime now)
         {
-            const string sql = @"INSERT INTO dbo.WMS_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,LastMoveNo,LastMoveType,LastOperator) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@MoveNo,'UNPACK_INNER',@Operator);";
+            const string sql = @"INSERT INTO dbo.WMS_FG_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,CreateBy) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@Operator);";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@HUId", SqlDbType.BigInt).Value = huId;
@@ -308,7 +308,7 @@ ORDER BY innerHU.HUCode;";
         private class HeaderRow { public string OperationNo { get; set; } public string BoxHuCode { get; set; } public DateTime OperationTime { get; set; } }
         private class ItemRow { public string InnerPackCode { get; set; } public string FromLocationCode { get; set; } public string ToLocationCode { get; set; } }
         private class SourceRow { public long Id { get; set; } public string HuCode { get; set; } public string HuType { get; set; } public string PlantCode { get; set; } public string LifecycleStatus { get; set; } public bool IsHold { get; set; } public long? LocationId { get; set; } public string LocationCode { get; set; } public string WarehouseCode { get; set; } public string ZoneCode { get; set; } }
-        private class TargetRow { public long Id { get; set; } public string LocationCode { get; set; } public string MasterStatus { get; set; } public bool IsVirtual { get; set; } public string PlantPolicy { get; set; } public string DedicatedPlantCode { get; set; } public string ZoneCode { get; set; } }
+        private class TargetRow { public long Id { get; set; } public string LocationCode { get; set; } public bool IsActive { get; set; } public bool IsVirtual { get; set; } public string PlantPolicy { get; set; } public string DedicatedPlantCode { get; set; } public string ZoneCode { get; set; } }
         private class ChildRow { public long RelationId { get; set; } public long Id { get; set; } public string HuCode { get; set; } public string HuType { get; set; } public string PlantCode { get; set; } public string LifecycleStatus { get; set; } public bool IsHold { get; set; } public bool HasDirectLocation { get; set; } }
     }
 }

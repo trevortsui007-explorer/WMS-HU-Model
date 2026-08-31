@@ -19,7 +19,7 @@ namespace WMS_HU_Model.Repositories
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(@"
 SELECT TOP 1 DetailJson
-FROM dbo.WMS_HU_OperationLog
+FROM dbo.WMS_FG_HU_OperationLog
 WHERE RequestId=@RequestId AND OperationType='MERGE_BOX'
 ORDER BY Id;", connection))
             {
@@ -142,7 +142,7 @@ ORDER BY Id;", connection))
         {
             const string sql = @"
 SELECT OperationType,DetailJson
-FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK,HOLDLOCK)
+FROM dbo.WMS_FG_HU_OperationLog WITH (UPDLOCK,HOLDLOCK)
 WHERE RequestId=@RequestId
 ORDER BY Id;";
             bool exists = false;
@@ -183,26 +183,26 @@ ORDER BY Id;";
         {
             StringBuilder sql = new StringBuilder(@"
 SELECT h.Id,h.HUCode,h.HUType,h.PlantCode,h.LifecycleStatus,h.IsHold,
-       CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.WMS_HU_Relation ar WITH (UPDLOCK,HOLDLOCK) WHERE ar.ChildHUId=h.Id AND ar.IsActive=1) THEN 1 ELSE 0 END AS bit) AS HasActiveParent,
-       cl.LocationId,l.LocationCode,l.MasterStatus AS LocationStatus,l.IsVirtual,
-       w.WarehouseCode,CAST(CASE WHEN w.IsActive=1 THEN 'ACTIVE' ELSE 'INACTIVE' END AS varchar(20)) AS WarehouseStatus,
-       z.ZoneCode,CAST(CASE WHEN z.IsActive=1 THEN 'ACTIVE' ELSE 'INACTIVE' END AS varchar(20)) AS ZoneStatus,
+       CAST(CASE WHEN EXISTS(SELECT 1 FROM dbo.WMS_FG_HU_Relation ar WITH (UPDLOCK,HOLDLOCK) WHERE ar.ChildHUId=h.Id AND ar.IsActive=1) THEN 1 ELSE 0 END AS bit) AS HasActiveParent,
+       cl.LocationId,l.LocationCode,l.IsActive AS LocationIsActive,l.IsVirtual,
+       w.WarehouseCode,w.IsActive AS WarehouseIsActive,
+       z.ZoneCode,z.IsActive AS ZoneIsActive,
        itemFacts.ActiveItemCount,itemFacts.MaterialCodeCount,itemFacts.MaterialRevisionCount,
        itemFacts.MaterialCode,itemFacts.MaterialRevision,itemFacts.TotalQty
-FROM dbo.WMS_HU h WITH (UPDLOCK,HOLDLOCK)
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=h.Id
-LEFT JOIN dbo.WMS_Location l WITH (UPDLOCK,HOLDLOCK) ON l.Id=cl.LocationId
-LEFT JOIN dbo.WMS_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=l.WarehouseId
-LEFT JOIN dbo.WMS_Zone z WITH (UPDLOCK,HOLDLOCK) ON z.Id=l.ZoneId
+FROM dbo.WMS_FG_HU h WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=h.Id
+LEFT JOIN dbo.WMS_FG_Location l WITH (UPDLOCK,HOLDLOCK) ON l.Id=cl.LocationId
+LEFT JOIN dbo.WMS_FG_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=l.WarehouseId
+LEFT JOIN dbo.WMS_FG_Zone z WITH (UPDLOCK,HOLDLOCK) ON z.Id=l.ZoneId
 OUTER APPLY
 (
     SELECT COUNT(1) AS ActiveItemCount,
-           COUNT(DISTINCT item.MaterialCode) AS MaterialCodeCount,
-           COUNT(DISTINCT ISNULL(item.MaterialRevision,'<NULL>')) AS MaterialRevisionCount,
-           MIN(item.MaterialCode) AS MaterialCode,
-           MIN(item.MaterialRevision) AS MaterialRevision,
+           COUNT(DISTINCT item.ProdNo) AS MaterialCodeCount,
+           COUNT(DISTINCT ISNULL(item.ProdRev,'<NULL>')) AS MaterialRevisionCount,
+           MIN(item.ProdNo) AS MaterialCode,
+           MIN(item.ProdRev) AS MaterialRevision,
            ISNULL(SUM(item.Qty),0) AS TotalQty
-    FROM dbo.WMS_HU_Item item WITH (UPDLOCK,HOLDLOCK)
+    FROM dbo.WMS_FG_HU_Item item WITH (UPDLOCK,HOLDLOCK)
     WHERE item.HUId=h.Id AND item.IsActive=1
 ) itemFacts
 WHERE h.HUCode IN (");
@@ -225,8 +225,8 @@ WHERE h.HUCode IN (");
                         HuId = Convert.ToInt64(reader["Id"]), HuCode = Convert.ToString(reader["HUCode"]), HuType = Convert.ToString(reader["HUType"]),
                         PlantCode = Convert.ToString(reader["PlantCode"]), LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]), IsHold = Convert.ToBoolean(reader["IsHold"]),
                         HasActiveParent = Convert.ToBoolean(reader["HasActiveParent"]), LocationId = NullableLong(reader, "LocationId"), LocationCode = NullableString(reader, "LocationCode"),
-                        WarehouseCode = NullableString(reader, "WarehouseCode"), WarehouseStatus = NullableString(reader, "WarehouseStatus"), ZoneCode = NullableString(reader, "ZoneCode"),
-                        ZoneStatus = NullableString(reader, "ZoneStatus"), LocationStatus = NullableString(reader, "LocationStatus"), IsVirtual = NullableBoolean(reader, "IsVirtual"),
+                        WarehouseCode = NullableString(reader, "WarehouseCode"), WarehouseIsActive = NullableBoolean(reader, "WarehouseIsActive"), ZoneCode = NullableString(reader, "ZoneCode"),
+                        ZoneIsActive = NullableBoolean(reader, "ZoneIsActive"), LocationIsActive = NullableBoolean(reader, "LocationIsActive"), IsVirtual = NullableBoolean(reader, "IsVirtual"),
                         ActiveItemCount = Convert.ToInt32(reader["ActiveItemCount"]), MaterialCodeCount = Convert.ToInt32(reader["MaterialCodeCount"]),
                         MaterialRevisionCount = Convert.ToInt32(reader["MaterialRevisionCount"]), MaterialCode = NullableString(reader, "MaterialCode"),
                         MaterialRevision = NullableString(reader, "MaterialRevision"), TotalQty = Convert.ToDecimal(reader["TotalQty"])
@@ -239,11 +239,11 @@ WHERE h.HUCode IN (");
         private static TargetLocation ReadTarget(SqlConnection connection, SqlTransaction transaction, string warehouseCode)
         {
             const string sql = @"
-SELECT l.Id,l.LocationCode,l.MasterStatus,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,
+SELECT l.Id,l.LocationCode,l.IsActive,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,
        z.ZoneCode,z.IsActive AS ZoneIsActive,w.IsActive AS WarehouseIsActive
-FROM dbo.WMS_Location l WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=l.WarehouseId
-INNER JOIN dbo.WMS_Zone z WITH (UPDLOCK,HOLDLOCK) ON z.Id=l.ZoneId
+FROM dbo.WMS_FG_Location l WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=l.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone z WITH (UPDLOCK,HOLDLOCK) ON z.Id=l.ZoneId
 WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode='INBOUND-PENDING';";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -253,7 +253,7 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode='INBOUND-PENDING';";
                     if (!reader.Read()) return null;
                     TargetLocation result = new TargetLocation
                     {
-                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), MasterStatus = Convert.ToString(reader["MasterStatus"]),
+                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), IsActive = Convert.ToBoolean(reader["IsActive"]),
                         IsVirtual = Convert.ToBoolean(reader["IsVirtual"]), PlantPolicy = Convert.ToString(reader["PlantPolicy"]), DedicatedPlantCode = NullableString(reader, "DedicatedPlantCode"),
                         ZoneCode = Convert.ToString(reader["ZoneCode"]), ZoneIsActive = Convert.ToBoolean(reader["ZoneIsActive"]), WarehouseIsActive = Convert.ToBoolean(reader["WarehouseIsActive"])
                     };
@@ -267,15 +267,15 @@ WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode='INBOUND-PENDING';";
         {
             if (target == null) return "未找到当前仓库的INBOUND-PENDING库位。";
             if (target.IsAmbiguous) return "当前仓库存在多个INBOUND-PENDING库位。";
-            if (!target.WarehouseIsActive || !target.ZoneIsActive || target.MasterStatus != "ACTIVE" || !target.IsVirtual || target.ZoneCode != "RECEIVE")
+            if (!target.WarehouseIsActive || !target.ZoneIsActive || !target.IsActive || !target.IsVirtual || target.ZoneCode != "RECEIVE")
                 return "INBOUND-PENDING必须是当前仓库可用的RECEIVE虚拟库位。";
             if (target.PlantPolicy == "DEDICATED" && !string.Equals(target.DedicatedPlantCode, plantCode, StringComparison.OrdinalIgnoreCase))
                 return "INBOUND-PENDING属于其他厂别专用库位。";
 
             const string warehousePlantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_WarehousePlant wp WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=wp.WarehouseId
+FROM dbo.WMS_FG_WarehousePlant wp WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse w WITH (UPDLOCK,HOLDLOCK) ON w.Id=wp.WarehouseId
 WHERE w.WarehouseCode=@WarehouseCode AND w.IsActive=1 AND wp.PlantCode=@PlantCode AND wp.IsActive=1;";
             using (SqlCommand command = new SqlCommand(warehousePlantSql, connection, transaction))
             {
@@ -288,8 +288,8 @@ WHERE w.WarehouseCode=@WarehouseCode AND w.IsActive=1 AND wp.PlantCode=@PlantCod
             {
                 const string samePlantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_HU h WITH (UPDLOCK,HOLDLOCK) ON h.Id=cl.HUId
+FROM dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_HU h WITH (UPDLOCK,HOLDLOCK) ON h.Id=cl.HUId
 WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>@PlantCode;";
                 using (SqlCommand command = new SqlCommand(samePlantSql, connection, transaction))
                 {
@@ -304,7 +304,7 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
         private static int? AllocateSequence(SqlConnection connection, SqlTransaction transaction, DateTime businessDate, string plantCode, out string error)
         {
             error = null;
-            const string selectSql = @"SELECT CurrentNo FROM dbo.WMS_BoxCodeSequence WITH (UPDLOCK,HOLDLOCK) WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode;";
+            const string selectSql = @"SELECT CurrentNo FROM dbo.WMS_FG_BoxCodeSequence WITH (UPDLOCK,HOLDLOCK) WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode;";
             int? current;
             using (SqlCommand command = new SqlCommand(selectSql, connection, transaction))
             {
@@ -315,7 +315,7 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
             }
             if (!current.HasValue)
             {
-                const string insertSql = @"INSERT INTO dbo.WMS_BoxCodeSequence(BusinessDate,PlantCode,CurrentNo,CreateTime) VALUES(@BusinessDate,@PlantCode,1,@Now);";
+                const string insertSql = @"INSERT INTO dbo.WMS_FG_BoxCodeSequence(BusinessDate,PlantCode,CurrentNo,CreateDt) VALUES(@BusinessDate,@PlantCode,1,@Now);";
                 using (SqlCommand command = new SqlCommand(insertSql, connection, transaction))
                 {
                     command.Parameters.Add("@BusinessDate", SqlDbType.Date).Value = businessDate;
@@ -330,7 +330,7 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
                 error = "BOX_CODE_DAILY_SEQUENCE_EXHAUSTED: 当前厂别当日OUTER_BOX标准箱码已用尽。";
                 return null;
             }
-            const string updateSql = @"UPDATE dbo.WMS_BoxCodeSequence SET CurrentNo=CurrentNo+1,ModifyTime=@Now WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode AND CurrentNo=@CurrentNo;";
+            const string updateSql = @"UPDATE dbo.WMS_FG_BoxCodeSequence SET CurrentNo=CurrentNo+1,LastEditDt=@Now WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode AND CurrentNo=@CurrentNo;";
             using (SqlCommand command = new SqlCommand(updateSql, connection, transaction))
             {
                 command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = DateTime.Now;
@@ -345,7 +345,7 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
         private static long InsertBox(SqlConnection connection, SqlTransaction transaction, string huCode, string plantCode, MergeBoxCommand command, DateTime now)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_HU(HUCode,HUType,PlantCode,LifecycleStatus,IsHold,SourceSystem,SourceEntityId,SourceBusinessNo,Remark,CreateUser,CreateTime)
+INSERT INTO dbo.WMS_FG_HU(HUCode,HUType,PlantCode,LifecycleStatus,IsHold,SourceSystem,SourceEntityId,SourceBusinessNo,Remark,CreateBy,CreateDt)
 OUTPUT INSERTED.Id
 VALUES(@HUCode,'OUTER_BOX',@PlantCode,'ACTIVE',0,'WMS',@SourceEntityId,@BusinessNo,@Remark,@Operator,@Now);";
             using (SqlCommand sqlCommand = new SqlCommand(sql, connection, transaction))
@@ -366,7 +366,7 @@ VALUES(@HUCode,'OUTER_BOX',@PlantCode,'ACTIVE',0,'WMS',@SourceEntityId,@Business
             string moveNo = command.OperationNo + "-BOX";
             long moveLogId = HuMoveLogWriter.Insert(connection, transaction, moveNo, boxHuId, null, locationId, "RECEIVE", null,
                 command.BusinessNo, null, command.RequestId + ":BOX", "MERGE_BOX", command.Operator, now, command.Remark);
-            const string sql = @"INSERT INTO dbo.WMS_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,LastMoveNo,LastMoveType,LastOperator,ModifyTime) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@MoveNo,'RECEIVE',@Operator,@Now);";
+            const string sql = @"INSERT INTO dbo.WMS_FG_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,CreateBy) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@Operator);";
             using (SqlCommand sqlCommand = new SqlCommand(sql, connection, transaction))
             {
                 sqlCommand.Parameters.Add("@HUId", SqlDbType.BigInt).Value = boxHuId;
@@ -381,7 +381,7 @@ VALUES(@HUCode,'OUTER_BOX',@PlantCode,'ACTIVE',0,'WMS',@SourceEntityId,@Business
 
         private static void InsertRelation(SqlConnection connection, SqlTransaction transaction, long parentHuId, long childHuId, string operationNo, string operatorCode, DateTime now)
         {
-            const string sql = @"INSERT INTO dbo.WMS_HU_Relation(ParentHUId,ChildHUId,RelationType,EffectiveFrom,IsActive,OperationNo,CreateUser,CreateTime) VALUES(@ParentHUId,@ChildHUId,'CONTAIN',@Now,1,@OperationNo,@Operator,@Now);";
+            const string sql = @"INSERT INTO dbo.WMS_FG_HU_Relation(ParentHUId,ChildHUId,EffectiveFrom,IsActive,OperationNo,CreateBy) VALUES(@ParentHUId,@ChildHUId,@Now,1,@OperationNo,@Operator);";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@ParentHUId", SqlDbType.BigInt).Value = parentHuId;
@@ -395,7 +395,7 @@ VALUES(@HUCode,'OUTER_BOX',@PlantCode,'ACTIVE',0,'WMS',@SourceEntityId,@Business
 
         private static bool DeleteDirectLocation(SqlConnection connection, SqlTransaction transaction, long huId, long locationId)
         {
-            const string sql = @"DELETE FROM dbo.WMS_HU_CurrentLocation WHERE HUId=@HUId AND LocationId=@LocationId;";
+            const string sql = @"DELETE FROM dbo.WMS_FG_HU_CurrentLocation WHERE HUId=@HUId AND LocationId=@LocationId;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@HUId", SqlDbType.BigInt).Value = huId;
@@ -433,7 +433,7 @@ VALUES(@HUCode,'OUTER_BOX',@PlantCode,'ACTIVE',0,'WMS',@SourceEntityId,@Business
         {
             public long Id { get; set; }
             public string LocationCode { get; set; }
-            public string MasterStatus { get; set; }
+            public bool IsActive { get; set; }
             public bool IsVirtual { get; set; }
             public string PlantPolicy { get; set; }
             public string DedicatedPlantCode { get; set; }

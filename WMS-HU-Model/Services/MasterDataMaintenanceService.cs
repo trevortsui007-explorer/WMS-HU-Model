@@ -36,7 +36,7 @@ namespace WMS_HU_Model.Services
             string error = ValidateWarehouse(request == null ? null : request.WarehouseCode, request == null ? null : request.WarehouseName,
                 request == null ? null : request.WarehouseType, request == null ? null : request.Operator, true);
             if (error != null) return OperationResult<WarehouseDto>.Fail(error);
-            if (request.Remark != null && request.Remark.Trim().Length > 1000) return OperationResult<WarehouseDto>.Fail("Remark长度不能超过1000。");
+            if (request.Remark != null && request.Remark.Trim().Length > 500) return OperationResult<WarehouseDto>.Fail("Remark长度不能超过500。");
             request.WarehouseCode = Text(request.WarehouseCode, true);
             request.WarehouseName = Text(request.WarehouseName, false);
             request.WarehouseType = Text(request.WarehouseType, true);
@@ -54,7 +54,7 @@ namespace WMS_HU_Model.Services
             string error = ValidateWarehouse(code, request == null ? null : request.WarehouseName,
                 request == null ? null : request.WarehouseType, request == null ? null : request.Operator, false);
             if (error != null) return OperationResult<WarehouseDto>.Fail(error);
-            if (request.Remark != null && request.Remark.Trim().Length > 1000) return OperationResult<WarehouseDto>.Fail("Remark长度不能超过1000。");
+            if (request.Remark != null && request.Remark.Trim().Length > 500) return OperationResult<WarehouseDto>.Fail("Remark长度不能超过500。");
             if (_repository.GetWarehouse(code) == null) return OperationResult<WarehouseDto>.Fail("仓库不存在。");
             request.WarehouseName = Text(request.WarehouseName, false);
             request.WarehouseType = Text(request.WarehouseType, true);
@@ -101,7 +101,7 @@ namespace WMS_HU_Model.Services
             string error = ValidatePlant(request == null ? null : request.WarehouseCode, request == null ? null : request.PlantCode,
                 request == null ? null : request.SapStorageLocation, request == null ? null : request.Operator);
             if (error != null) return OperationResult<WarehousePlantDto>.Fail(error);
-            if (request.Remark != null && request.Remark.Trim().Length > 1000) return OperationResult<WarehousePlantDto>.Fail("Remark长度不能超过1000。");
+            if (request.Remark != null && request.Remark.Trim().Length > 500) return OperationResult<WarehousePlantDto>.Fail("Remark长度不能超过500。");
             NormalizePlant(request);
             WarehouseDto warehouse = _repository.GetWarehouse(request.WarehouseCode);
             if (warehouse == null || !warehouse.IsActive) return OperationResult<WarehousePlantDto>.Fail("新增映射只能选择启用仓库。");
@@ -117,7 +117,7 @@ namespace WMS_HU_Model.Services
             string plant = Text(plantCode, true);
             string error = ValidatePlant(code, plant, request == null ? null : request.SapStorageLocation, request == null ? null : request.Operator);
             if (error != null) return OperationResult<WarehousePlantDto>.Fail(error);
-            if (request.Remark != null && request.Remark.Trim().Length > 1000) return OperationResult<WarehousePlantDto>.Fail("Remark长度不能超过1000。");
+            if (request.Remark != null && request.Remark.Trim().Length > 500) return OperationResult<WarehousePlantDto>.Fail("Remark长度不能超过500。");
             if (_repository.GetWarehousePlant(code, plant) == null) return OperationResult<WarehousePlantDto>.Fail("厂别映射不存在。");
             request.SapStorageLocation = Text(request.SapStorageLocation, true);
             request.Remark = Text(request.Remark, false);
@@ -140,7 +140,7 @@ namespace WMS_HU_Model.Services
                 WarehouseDto warehouse = _repository.GetWarehouse(code);
                 if (warehouse == null || !warehouse.IsActive) return OperationResult<WarehousePlantDto>.Fail("停用仓库下的映射不能启用。");
             }
-            _repository.SetWarehousePlantActive(code, plant, isActive);
+            _repository.SetWarehousePlantActive(code, plant, isActive, request.Operator);
             return OperationResult<WarehousePlantDto>.Success(_repository.GetWarehousePlant(code, plant), isActive ? "厂别映射已启用。" : "厂别映射已停用。");
         }
 
@@ -163,8 +163,8 @@ namespace WMS_HU_Model.Services
             string normalizedName = Text(name, false);
             string normalizedType = Text(type, true);
             if (requireCode && normalizedCode == null) return "WarehouseCode不能为空。";
-            if (normalizedCode != null && normalizedCode.Length > 30) return "WarehouseCode长度不能超过30。";
-            if (normalizedName == null || normalizedName.Length > 200) return "WarehouseName不能为空且长度不能超过200。";
+            if (normalizedCode != null && normalizedCode.Length > 20) return "WarehouseCode长度不能超过20。";
+            if (normalizedName == null || normalizedName.Length > 100) return "WarehouseName不能为空且长度不能超过100。";
             if (normalizedType != FinishedGoodsWarehouseType) return "WarehouseType仅支持FINISHED_GOODS。";
             if (!ValidOperator(Text(operatorName, false))) return "Operator不能为空且长度不能超过50。";
             return null;
@@ -175,9 +175,9 @@ namespace WMS_HU_Model.Services
             string code = Text(warehouseCode, true);
             string plant = Text(plantCode, true);
             string sap = Text(sapStorageLocation, true);
-            if (code == null || code.Length > 30) return "WarehouseCode不能为空且长度不能超过30。";
+            if (code == null || code.Length > 20) return "WarehouseCode不能为空且长度不能超过20。";
             if (plant == null || plant.Length > 20) return "PlantCode不能为空且长度不能超过20。";
-            if (sap != null && sap.Length > 20) return "SAPStorageLocation长度不能超过20。";
+            if (sap == null || sap.Length > 20) return "SAPStorageLocation不能为空且长度不能超过20。";
             if (!ValidOperator(Text(operatorName, false))) return "Operator不能为空且长度不能超过50。";
             return null;
         }

@@ -5,11 +5,6 @@ namespace WMS_HU_Model.Repositories
 {
     public interface IHuLocationRepository
     {
-        HuLocationDto GetLocation(
-            long huId);
-
-        List<HuLocationDto> GetLocations(IList<long> huIds);
-
         HuMoveLogDto GetMoveByRequestId(
             string requestId);
 

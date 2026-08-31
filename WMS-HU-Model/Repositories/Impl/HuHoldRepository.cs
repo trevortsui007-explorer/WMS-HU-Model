@@ -59,10 +59,10 @@ namespace WMS_HU_Model.Repositories
                         string token = Guid.NewGuid().ToString("N").Substring(0, 12).ToUpperInvariant();
                         string holdNo = "HD" + now.ToString("yyyyMMddHHmmss") + token;
                         conn.Execute(@"
-INSERT INTO dbo.WMS_HU_HoldLog
+INSERT INTO dbo.WMS_FG_HU_HoldLog
 (
     HoldNo, HUId, HoldType, HoldReasonCode, HoldReason,
-    IsActive, HoldTime, HoldUser, HoldRequestId
+    IsActive, HoldDt, HoldBy, HoldRequestId
 )
 VALUES
 (
@@ -70,8 +70,8 @@ VALUES
     1, @Now, @Operator, @RequestId
 );
 
-UPDATE dbo.WMS_HU
-SET IsHold = 1, HoldReason = @Reason, ModifyTime = @Now
+UPDATE dbo.WMS_FG_HU
+SET IsHold = 1, LastEditBy = @Operator, LastEditDt = @Now
 WHERE Id = @HUId AND IsHold = 0;",
                             new
                             {
@@ -150,7 +150,7 @@ WHERE Id = @HUId AND IsHold = 0;",
 
                         const string activeSql = @"
 SELECT TOP 1 Id, HoldNo
-FROM dbo.WMS_HU_HoldLog WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+FROM dbo.WMS_FG_HU_HoldLog WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
 WHERE HUId = @HUId AND IsActive = 1;";
                         ActiveHoldRow hold = conn.QueryFirstOrDefault<ActiveHoldRow>(
                             activeSql,
@@ -164,13 +164,13 @@ WHERE HUId = @HUId AND IsActive = 1;";
 
                         DateTime now = DateTime.Now;
                         conn.Execute(@"
-UPDATE dbo.WMS_HU_HoldLog
-SET IsActive = 0, ReleaseTime = @Now, ReleaseUser = @Operator,
+UPDATE dbo.WMS_FG_HU_HoldLog
+SET IsActive = 0, ReleaseDt = @Now, ReleaseBy = @Operator,
     ReleaseReason = @Reason, ReleaseRequestId = @RequestId
 WHERE Id = @HoldLogId AND IsActive = 1;
 
-UPDATE dbo.WMS_HU
-SET IsHold = 0, HoldReason = NULL, ModifyTime = @Now
+UPDATE dbo.WMS_FG_HU
+SET IsHold = 0, LastEditBy = @Operator, LastEditDt = @Now
 WHERE Id = @HUId AND IsHold = 1;",
                             new
                             {
@@ -209,7 +209,7 @@ WHERE Id = @HUId AND IsHold = 1;",
         {
             const string sql = @"
 SELECT TOP 1 Id, HUCode, HUType, IsHold
-FROM dbo.WMS_HU WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+FROM dbo.WMS_FG_HU WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
 WHERE HUCode = @HUCode;";
             return conn.QueryFirstOrDefault<HuHoldRow>(sql, new { HUCode = huCode }, tran);
         }
@@ -223,8 +223,8 @@ WHERE HUCode = @HUCode;";
             string condition = holdAction ? "log.HoldRequestId = @RequestId" : "log.ReleaseRequestId = @RequestId";
             string sql = @"
 SELECT TOP 1 hu.HUCode AS HuCode, log.HoldNo, log.IsActive AS IsHold
-FROM dbo.WMS_HU_HoldLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
+FROM dbo.WMS_FG_HU_HoldLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
 WHERE " + condition + ";";
             return conn.QueryFirstOrDefault<HuHoldResultDto>(sql, new { RequestId = requestId }, tran);
         }
@@ -233,11 +233,11 @@ WHERE " + condition + ";";
         {
             const string sql = @"
 SELECT CASE WHEN
-    EXISTS (SELECT 1 FROM dbo.WMS_HU_MoveLog WHERE RequestId = @RequestId)
- OR EXISTS (SELECT 1 FROM dbo.WMS_HU_OperationLog WHERE RequestId = @RequestId)
- OR EXISTS (SELECT 1 FROM dbo.WMS_HU_HoldLog WHERE HoldRequestId = @RequestId OR ReleaseRequestId = @RequestId)
- OR EXISTS (SELECT 1 FROM dbo.WMS_OutboundAllocation WHERE RequestId = @RequestId OR ReleaseRequestId = @RequestId)
- OR EXISTS (SELECT 1 FROM dbo.WMS_OutboundPickException WHERE RequestId = @RequestId)
+    EXISTS (SELECT 1 FROM dbo.WMS_FG_HU_MoveLog WHERE RequestId = @RequestId)
+ OR EXISTS (SELECT 1 FROM dbo.WMS_FG_HU_OperationLog WHERE RequestId = @RequestId)
+ OR EXISTS (SELECT 1 FROM dbo.WMS_FG_HU_HoldLog WHERE HoldRequestId = @RequestId OR ReleaseRequestId = @RequestId)
+ OR EXISTS (SELECT 1 FROM dbo.WMS_FG_OutboundAllocation WHERE RequestId = @RequestId OR ReleaseRequestId = @RequestId)
+ OR EXISTS (SELECT 1 FROM dbo.WMS_FG_OutboundPickException WHERE RequestId = @RequestId)
 THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END;";
             return conn.ExecuteScalar<bool>(sql, new { RequestId = requestId }, tran);
         }

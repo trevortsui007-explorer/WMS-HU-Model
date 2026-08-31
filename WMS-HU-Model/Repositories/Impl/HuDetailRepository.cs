@@ -17,9 +17,9 @@ SELECT
     pack.LifecycleStatus,
     pack.IsHold,
     item.Id AS ItemId,
-    item.MaterialCode,
-    item.MaterialRevision,
-    item.BatchNo,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
+    item.LotNo AS BatchNo,
     item.ProductionOrderNo,
     item.DateCode,
     item.WeekFormatCode,
@@ -31,11 +31,11 @@ SELECT
     item.Qty,
     item.Uom,
     item.StockStatus,
-    item.CreateTime AS CreatedTime
-FROM dbo.WMS_HU_Relation relation
-INNER JOIN dbo.WMS_HU pack ON pack.Id = relation.ChildHUId
+    item.CreateDt AS CreatedTime
+FROM dbo.WMS_FG_HU_Relation relation
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = relation.ChildHUId
     AND pack.HUType = 'INNER_PACK'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE relation.ParentHUId = @HUId AND relation.IsActive = 1
 ORDER BY pack.Id, item.Id;";
 
@@ -47,9 +47,9 @@ SELECT
     hu.LifecycleStatus,
     hu.IsHold,
     item.Id AS ItemId,
-    item.MaterialCode,
-    item.MaterialRevision,
-    item.BatchNo,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
+    item.LotNo AS BatchNo,
     item.ProductionOrderNo,
     item.DateCode,
     item.WeekFormatCode,
@@ -61,9 +61,9 @@ SELECT
     item.Qty,
     item.Uom,
     item.StockStatus,
-    item.CreateTime AS CreatedTime
-FROM dbo.WMS_HU hu
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = hu.Id AND item.IsActive = 1
+    item.CreateDt AS CreatedTime
+FROM dbo.WMS_FG_HU hu
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = hu.Id AND item.IsActive = 1
 WHERE hu.Id = @HUId
 ORDER BY item.Id;";
 
@@ -75,8 +75,8 @@ SELECT
     box.LifecycleStatus,
     box.IsHold,
     CAST(NULL AS BIGINT) AS ItemId,
-    MIN(item.MaterialCode) AS MaterialCode,
-    MIN(item.MaterialRevision) AS MaterialRevision,
+    MIN(item.ProdNo) AS MaterialCode,
+    MIN(item.ProdRev) AS MaterialRevision,
     CAST(NULL AS VARCHAR(100)) AS BatchNo,
     CAST(NULL AS VARCHAR(50)) AS ProductionOrderNo,
     CAST(NULL AS VARCHAR(50)) AS DateCode,
@@ -89,13 +89,13 @@ SELECT
     ISNULL(SUM(item.Qty), 0) AS Qty,
     MIN(item.Uom) AS Uom,
     MIN(item.StockStatus) AS StockStatus,
-    MIN(item.CreateTime) AS CreatedTime
-FROM dbo.WMS_HU_Relation palletRelation
-INNER JOIN dbo.WMS_HU box ON box.Id = palletRelation.ChildHUId
+    MIN(item.CreateDt) AS CreatedTime
+FROM dbo.WMS_FG_HU_Relation palletRelation
+INNER JOIN dbo.WMS_FG_HU box ON box.Id = palletRelation.ChildHUId
     AND box.HUType = 'OUTER_BOX'
-LEFT JOIN dbo.WMS_HU_Relation boxRelation ON boxRelation.ParentHUId = box.Id AND boxRelation.IsActive = 1
-LEFT JOIN dbo.WMS_HU pack ON pack.Id = boxRelation.ChildHUId AND pack.HUType = 'INNER_PACK'
-LEFT JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU_Relation boxRelation ON boxRelation.ParentHUId = box.Id AND boxRelation.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU pack ON pack.Id = boxRelation.ChildHUId AND pack.HUType = 'INNER_PACK'
+LEFT JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE palletRelation.ParentHUId = @HUId AND palletRelation.IsActive = 1
 GROUP BY box.Id, box.HUCode, box.HUType, box.LifecycleStatus, box.IsHold
 ORDER BY box.Id;";
@@ -110,14 +110,14 @@ SELECT TOP (@Top)
     log.BusinessNo,
     log.RequestId,
     log.DetailJson,
-    log.Operator,
-    log.OperationTime,
+    log.OperationBy AS Operator,
+    log.OperationDt AS OperationTime,
     log.Remark
-FROM dbo.WMS_HU_OperationLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-LEFT JOIN dbo.WMS_HU related ON related.Id = log.RelatedHUId
+FROM dbo.WMS_FG_HU_OperationLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+LEFT JOIN dbo.WMS_FG_HU related ON related.Id = log.RelatedHUId
 WHERE log.HUId = @HUId
-ORDER BY log.OperationTime DESC, log.Id DESC;";
+ORDER BY log.OperationDt DESC, log.Id DESC;";
 
         public const string HoldLogsSql = @"
 SELECT TOP (@Top)
@@ -131,17 +131,17 @@ SELECT TOP (@Top)
     log.SourceBizId,
     log.SourceBizNo,
     log.IsActive,
-    log.HoldTime,
-    log.HoldUser,
+    log.HoldDt AS HoldTime,
+    log.HoldBy AS HoldUser,
     log.HoldRequestId,
-    log.ReleaseTime,
-    log.ReleaseUser,
+    log.ReleaseDt AS ReleaseTime,
+    log.ReleaseBy AS ReleaseUser,
     log.ReleaseReason,
     log.ReleaseRequestId
-FROM dbo.WMS_HU_HoldLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
+FROM dbo.WMS_FG_HU_HoldLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
 WHERE log.HUId = @HUId
-ORDER BY log.HoldTime DESC, log.Id DESC;";
+ORDER BY log.HoldDt DESC, log.Id DESC;";
 
         private const string ActiveHoldSql = @"
 SELECT TOP 1
@@ -155,17 +155,17 @@ SELECT TOP 1
     log.SourceBizId,
     log.SourceBizNo,
     log.IsActive,
-    log.HoldTime,
-    log.HoldUser,
+    log.HoldDt AS HoldTime,
+    log.HoldBy AS HoldUser,
     log.HoldRequestId,
-    log.ReleaseTime,
-    log.ReleaseUser,
+    log.ReleaseDt AS ReleaseTime,
+    log.ReleaseBy AS ReleaseUser,
     log.ReleaseReason,
     log.ReleaseRequestId
-FROM dbo.WMS_HU_HoldLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
+FROM dbo.WMS_FG_HU_HoldLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
 WHERE log.HUId = @HUId AND log.IsActive = 1
-ORDER BY log.HoldTime DESC, log.Id DESC;";
+ORDER BY log.HoldDt DESC, log.Id DESC;";
 
         public List<HuDetailContentDto> GetContents(long huId, string huType)
         {

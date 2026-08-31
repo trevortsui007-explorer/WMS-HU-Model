@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using Dapper;
@@ -11,22 +11,20 @@ namespace WMS_HU_Model.Repositories
     {
         public const string MaintenanceListSql = @"
 SELECT l.Id, w.WarehouseCode, w.WarehouseName, z.ZoneCode, z.ZoneName,
-    l.LocationCode, l.LocationName, p.LocationCode AS ParentLocationCode,
-    l.LocationLevel, l.LocationTypeCode, l.ManageMode, l.IsVirtual, l.IsScannable,
-    l.ScanCode, l.CapacityMode, l.CapacityQty, l.MaxWeightKg, l.PlantPolicy,
+    l.LocationCode, l.LocationName, l.LocationCode AS ScanCode,
+    l.LocationTypeCode, l.IsVirtual, l.IsActive, l.PlantPolicy,
     l.DedicatedPlantCode, l.AllowMixedMaterial, l.AllowMixedBatch, l.AllowMixedOrder,
     l.PutawayPriority, l.PickingPriority, l.RouteSequence,
     l.PhysicalRackGroupCode, l.PhysicalRowCode, l.PositionSequence,
-    l.MasterStatus, l.Remark,
-    (SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation currentLocation WHERE currentLocation.LocationId=l.Id) AS CurrentHuCount
-FROM dbo.WMS_Location l
-INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId
-INNER JOIN dbo.WMS_Zone z ON z.Id=l.ZoneId
-LEFT JOIN dbo.WMS_Location p ON p.Id=l.ParentLocationId
+    CASE WHEN l.IsActive=1 THEN 'ACTIVE' ELSE 'INACTIVE' END AS MasterStatus, l.Remark,
+    (SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation currentLocation WHERE currentLocation.LocationId=l.Id) AS CurrentHuCount
+FROM dbo.WMS_FG_Location l
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=l.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone z ON z.Id=l.ZoneId
 WHERE (@WarehouseCode IS NULL OR w.WarehouseCode=@WarehouseCode)
   AND (@LocationCode IS NULL OR l.LocationCode LIKE '%' + @LocationCode + '%')
   AND (@LocationTypeCode IS NULL OR l.LocationTypeCode=@LocationTypeCode)
-  AND (@MasterStatus IS NULL OR l.MasterStatus=@MasterStatus)
+  AND (@IsActive IS NULL OR l.IsActive=@IsActive)
 ORDER BY w.WarehouseCode,z.SortNo,l.RouteSequence,l.LocationCode;";
 
         public List<LocationDto> GetList(
@@ -44,17 +42,10 @@ SELECT
     l.LocationCode,
     l.LocationName,
 
-    p.LocationCode AS ParentLocationCode,
-
-    l.LocationLevel,
     l.LocationTypeCode,
-    l.ManageMode,
     l.IsVirtual,
-    l.IsScannable,
-    l.ScanCode,
-    l.CapacityMode,
-    l.CapacityQty,
-    l.MaxWeightKg,
+    l.IsActive,
+    l.LocationCode AS ScanCode,
     l.PlantPolicy,
     l.DedicatedPlantCode,
     l.AllowMixedMaterial,
@@ -66,19 +57,16 @@ SELECT
     l.PhysicalRackGroupCode,
     l.PhysicalRowCode,
     l.PositionSequence,
-    l.MasterStatus,
+    CASE WHEN l.IsActive=1 THEN 'ACTIVE' ELSE 'INACTIVE' END AS MasterStatus,
     l.Remark
 
-FROM dbo.WMS_Location l
+FROM dbo.WMS_FG_Location l
 
-INNER JOIN dbo.WMS_Warehouse w
+INNER JOIN dbo.WMS_FG_Warehouse w
     ON l.WarehouseId = w.Id
 
-INNER JOIN dbo.WMS_Zone z
+INNER JOIN dbo.WMS_FG_Zone z
     ON l.ZoneId = z.Id
-
-LEFT JOIN dbo.WMS_Location p
-    ON l.ParentLocationId = p.Id
 
 WHERE
     (@WarehouseCode IS NULL
@@ -115,7 +103,9 @@ ORDER BY
                 WarehouseCode = string.IsNullOrWhiteSpace(query.WarehouseCode) ? null : query.WarehouseCode,
                 LocationCode = string.IsNullOrWhiteSpace(query.LocationCode) ? null : query.LocationCode,
                 LocationTypeCode = string.IsNullOrWhiteSpace(query.LocationTypeCode) ? null : query.LocationTypeCode,
-                MasterStatus = string.IsNullOrWhiteSpace(query.MasterStatus) ? null : query.MasterStatus
+                IsActive = string.IsNullOrWhiteSpace(query.MasterStatus)
+                    ? (bool?)null
+                    : string.Equals(query.MasterStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase)
             });
         }
 
@@ -134,17 +124,10 @@ SELECT
     l.LocationCode,
     l.LocationName,
 
-    p.LocationCode AS ParentLocationCode,
-
-    l.LocationLevel,
     l.LocationTypeCode,
-    l.ManageMode,
     l.IsVirtual,
-    l.IsScannable,
-    l.ScanCode,
-    l.CapacityMode,
-    l.CapacityQty,
-    l.MaxWeightKg,
+    l.IsActive,
+    l.LocationCode AS ScanCode,
     l.PlantPolicy,
     l.DedicatedPlantCode,
     l.AllowMixedMaterial,
@@ -156,19 +139,16 @@ SELECT
     l.PhysicalRackGroupCode,
     l.PhysicalRowCode,
     l.PositionSequence,
-    l.MasterStatus,
+    CASE WHEN l.IsActive=1 THEN 'ACTIVE' ELSE 'INACTIVE' END AS MasterStatus,
     l.Remark
 
-FROM dbo.WMS_Location l
+FROM dbo.WMS_FG_Location l
 
-INNER JOIN dbo.WMS_Warehouse w
+INNER JOIN dbo.WMS_FG_Warehouse w
     ON l.WarehouseId = w.Id
 
-INNER JOIN dbo.WMS_Zone z
+INNER JOIN dbo.WMS_FG_Zone z
     ON l.ZoneId = z.Id
-
-LEFT JOIN dbo.WMS_Location p
-    ON l.ParentLocationId = p.Id
 
 WHERE
     w.WarehouseCode = @WarehouseCode
@@ -188,7 +168,7 @@ AND l.LocationCode = @LocationCode;
         {
             const string sql = @"
 SELECT Id
-FROM dbo.WMS_Warehouse
+FROM dbo.WMS_FG_Warehouse
 WHERE WarehouseCode = @WarehouseCode
 AND IsActive = 1;
 ";
@@ -200,7 +180,7 @@ AND IsActive = 1;
 
         public long? GetWarehouseIdAny(string warehouseCode)
         {
-            const string sql = "SELECT Id FROM dbo.WMS_Warehouse WHERE WarehouseCode=@WarehouseCode;";
+            const string sql = "SELECT Id FROM dbo.WMS_FG_Warehouse WHERE WarehouseCode=@WarehouseCode;";
             return DbExecutor.ExecuteScalar<long?>(sql, new { WarehouseCode = warehouseCode });
         }
 
@@ -210,7 +190,7 @@ AND IsActive = 1;
         {
             const string sql = @"
 SELECT Id
-FROM dbo.WMS_Zone
+FROM dbo.WMS_FG_Zone
 WHERE WarehouseId = @WarehouseId
 AND ZoneCode = @ZoneCode
 AND IsActive = 1;
@@ -231,7 +211,7 @@ AND IsActive = 1;
         {
             const string sql = @"
 SELECT Id
-FROM dbo.WMS_Location
+FROM dbo.WMS_FG_Location
 WHERE WarehouseId = @WarehouseId
 AND LocationCode = @LocationCode;
 ";
@@ -257,26 +237,17 @@ AND LocationCode = @LocationCode;
         public long Insert(
             long warehouseId,
             long zoneId,
-            long? parentLocationId,
             CreateLocationRequest request)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_Location
+INSERT INTO dbo.WMS_FG_Location
 (
     WarehouseId,
     ZoneId,
     LocationCode,
     LocationName,
-    ParentLocationId,
-    LocationLevel,
     LocationTypeCode,
-    ManageMode,
     IsVirtual,
-    IsScannable,
-    ScanCode,
-    CapacityMode,
-    CapacityQty,
-    MaxWeightKg,
     PlantPolicy,
     DedicatedPlantCode,
     AllowMixedMaterial,
@@ -285,9 +256,9 @@ INSERT INTO dbo.WMS_Location
     PutawayPriority,
     PickingPriority,
     RouteSequence,
-    MasterStatus,
+    IsActive,
     Remark,
-    CreateUser
+    CreateBy
 )
 VALUES
 (
@@ -295,16 +266,8 @@ VALUES
     @ZoneId,
     @LocationCode,
     @LocationName,
-    @ParentLocationId,
-    @LocationLevel,
     @LocationTypeCode,
-    @ManageMode,
     @IsVirtual,
-    @IsScannable,
-    @ScanCode,
-    @CapacityMode,
-    @CapacityQty,
-    @MaxWeightKg,
     @PlantPolicy,
     @DedicatedPlantCode,
     @AllowMixedMaterial,
@@ -313,9 +276,9 @@ VALUES
     @PutawayPriority,
     @PickingPriority,
     @RouteSequence,
-    'ACTIVE',
+    1,
     @Remark,
-    @CreateUser
+    @CreateBy
 );
 
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
@@ -326,31 +289,21 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
                 CreateParameters(
                     warehouseId,
                     zoneId,
-                    parentLocationId,
                     request));
         }
 
         public bool Update(
             long locationId,
             long zoneId,
-            long? parentLocationId,
             UpdateLocationRequest request)
         {
             const string sql = @"
-UPDATE dbo.WMS_Location
+UPDATE dbo.WMS_FG_Location
 
 SET
     ZoneId              = @ZoneId,
     LocationName        = @LocationName,
-    ParentLocationId    = @ParentLocationId,
-    LocationLevel       = @LocationLevel,
     LocationTypeCode    = @LocationTypeCode,
-    ManageMode          = @ManageMode,
-    IsScannable         = @IsScannable,
-    ScanCode            = @ScanCode,
-    CapacityMode        = @CapacityMode,
-    CapacityQty         = @CapacityQty,
-    MaxWeightKg         = @MaxWeightKg,
     PlantPolicy         = @PlantPolicy,
     DedicatedPlantCode  = @DedicatedPlantCode,
     AllowMixedMaterial  = @AllowMixedMaterial,
@@ -359,17 +312,15 @@ SET
     PutawayPriority     = @PutawayPriority,
     PickingPriority     = @PickingPriority,
     RouteSequence       = @RouteSequence,
-    MasterStatus        = @MasterStatus,
     Remark              = @Remark,
-    ModifyUser          = @ModifyUser,
-    ModifyTime          = SYSDATETIME()
+    LastEditBy          = @LastEditBy,
+    LastEditDt          = SYSDATETIME()
 
 WHERE Id = @LocationId;
 ";
 
             DynamicParameters parameters = CreateParameters(
                 zoneId,
-                parentLocationId,
                 request);
 
             parameters.Add("@LocationId", locationId, DbType.Int64);
@@ -379,26 +330,26 @@ WHERE Id = @LocationId;
 
         public int CountCurrentHus(long locationId)
         {
-            const string sql = "SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation WHERE LocationId=@LocationId;";
+            const string sql = "SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation WHERE LocationId=@LocationId;";
             return DbExecutor.ExecuteScalar<int>(sql, new { LocationId = locationId });
         }
 
-        public bool SetMasterStatus(long locationId, string masterStatus, string operatorName)
+        public bool SetActive(long locationId, bool isActive, string operatorName)
         {
-            const string sql = @"UPDATE dbo.WMS_Location SET MasterStatus=@MasterStatus,
-ModifyUser=@Operator, ModifyTime=SYSDATETIME()
+            const string sql = @"UPDATE dbo.WMS_FG_Location SET IsActive=@IsActive,
+LastEditBy=@Operator, LastEditDt=SYSDATETIME()
 WHERE Id=@LocationId
   AND
   (
-      @MasterStatus='ACTIVE'
+      @IsActive=1
       OR NOT EXISTS
       (
-          SELECT 1 FROM dbo.WMS_HU_CurrentLocation currentLocation
+          SELECT 1 FROM dbo.WMS_FG_HU_CurrentLocation currentLocation
           WHERE currentLocation.LocationId=@LocationId
       )
   );";
             DynamicParameters parameters = new DynamicParameters();
-            parameters.Add("@MasterStatus", masterStatus, DbType.AnsiString, size: 20);
+            parameters.Add("@IsActive", isActive, DbType.Boolean);
             parameters.Add("@Operator", DbParameterValue.StringOrNull(operatorName), DbType.AnsiString, size: 50);
             parameters.Add("@LocationId", locationId, DbType.Int64);
             return DbExecutor.Execute(sql, parameters) > 0;
@@ -407,25 +358,16 @@ WHERE Id=@LocationId
         private static DynamicParameters CreateParameters(
             long warehouseId,
             long zoneId,
-            long? parentLocationId,
             CreateLocationRequest request)
         {
             DynamicParameters parameters = new DynamicParameters();
             parameters.Add("@WarehouseId", warehouseId, DbType.Int64);
             parameters.Add("@ZoneId", zoneId, DbType.Int64);
-            parameters.Add("@LocationCode", request.LocationCode, DbType.AnsiString, size: 100);
-            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 200);
-            parameters.Add("@ParentLocationId", parentLocationId, DbType.Int64);
-            parameters.Add("@LocationLevel", request.LocationLevel, DbType.AnsiString, size: 20);
+            parameters.Add("@LocationCode", request.LocationCode, DbType.AnsiString, size: 50);
+            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 100);
             parameters.Add("@LocationTypeCode", request.LocationTypeCode, DbType.AnsiString, size: 30);
-            parameters.Add("@ManageMode", request.ManageMode, DbType.AnsiString, size: 30);
             parameters.Add("@IsVirtual", request.IsVirtual, DbType.Boolean);
-            parameters.Add("@IsScannable", request.IsScannable, DbType.Boolean);
-            parameters.Add("@ScanCode", DbParameterValue.StringOrNull(request.ScanCode), DbType.AnsiString, size: 100);
-            parameters.Add("@CapacityMode", request.CapacityMode, DbType.AnsiString, size: 30);
-            parameters.Add("@CapacityQty", request.CapacityQty, DbType.Decimal, precision: 18, scale: 4);
-            parameters.Add("@MaxWeightKg", request.MaxWeightKg, DbType.Decimal, precision: 18, scale: 4);
-            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 20);
+            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 30);
             parameters.Add("@DedicatedPlantCode", DbParameterValue.StringOrNull(request.DedicatedPlantCode), DbType.AnsiString, size: 20);
             parameters.Add("@AllowMixedMaterial", request.AllowMixedMaterial, DbType.Boolean);
             parameters.Add("@AllowMixedBatch", request.AllowMixedBatch, DbType.Boolean);
@@ -434,29 +376,20 @@ WHERE Id=@LocationId
             parameters.Add("@PickingPriority", request.PickingPriority, DbType.Int32);
             parameters.Add("@RouteSequence", request.RouteSequence, DbType.Int32);
             parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
-            parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
+            parameters.Add("@CreateBy", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
             return parameters;
         }
 
         private static DynamicParameters CreateParameters(
             long zoneId,
-            long? parentLocationId,
             UpdateLocationRequest request)
         {
             DynamicParameters parameters = new DynamicParameters();
             parameters.Add("@ZoneId", zoneId, DbType.Int64);
-            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 200);
-            parameters.Add("@ParentLocationId", parentLocationId, DbType.Int64);
-            parameters.Add("@LocationLevel", request.LocationLevel, DbType.AnsiString, size: 20);
+            parameters.Add("@LocationName", DbParameterValue.StringOrNull(request.LocationName), DbType.String, size: 100);
             parameters.Add("@LocationTypeCode", request.LocationTypeCode, DbType.AnsiString, size: 30);
-            parameters.Add("@ManageMode", request.ManageMode, DbType.AnsiString, size: 30);
-            parameters.Add("@IsScannable", request.IsScannable, DbType.Boolean);
-            parameters.Add("@ScanCode", DbParameterValue.StringOrNull(request.ScanCode), DbType.AnsiString, size: 100);
-            parameters.Add("@CapacityMode", request.CapacityMode, DbType.AnsiString, size: 30);
-            parameters.Add("@CapacityQty", request.CapacityQty, DbType.Decimal, precision: 18, scale: 4);
-            parameters.Add("@MaxWeightKg", request.MaxWeightKg, DbType.Decimal, precision: 18, scale: 4);
-            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 20);
+            parameters.Add("@PlantPolicy", request.PlantPolicy, DbType.AnsiString, size: 30);
             parameters.Add("@DedicatedPlantCode", DbParameterValue.StringOrNull(request.DedicatedPlantCode), DbType.AnsiString, size: 20);
             parameters.Add("@AllowMixedMaterial", request.AllowMixedMaterial, DbType.Boolean);
             parameters.Add("@AllowMixedBatch", request.AllowMixedBatch, DbType.Boolean);
@@ -464,9 +397,8 @@ WHERE Id=@LocationId
             parameters.Add("@PutawayPriority", request.PutawayPriority, DbType.Int32);
             parameters.Add("@PickingPriority", request.PickingPriority, DbType.Int32);
             parameters.Add("@RouteSequence", request.RouteSequence, DbType.Int32);
-            parameters.Add("@MasterStatus", request.MasterStatus, DbType.AnsiString, size: 20);
             parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
-            parameters.Add("@ModifyUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
+            parameters.Add("@LastEditBy", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
             return parameters;
         }

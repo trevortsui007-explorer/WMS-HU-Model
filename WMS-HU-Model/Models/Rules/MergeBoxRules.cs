@@ -20,8 +20,8 @@ namespace WMS_HU_Model.Rules
                 if (fact.LifecycleStatus != "ACTIVE") return "内包[" + requestedCode + "]不是ACTIVE状态。";
                 if (fact.IsHold) return "内包[" + requestedCode + "]当前已被冻结。";
                 if (fact.HasActiveParent) return "内包[" + requestedCode + "]已经存在有效父HU。";
-                if (!fact.LocationId.HasValue || fact.LocationStatus != "ACTIVE" || fact.IsVirtual
-                    || fact.ZoneCode != "STORAGE" || fact.ZoneStatus != "ACTIVE" || fact.WarehouseStatus != "ACTIVE")
+                if (!fact.LocationId.HasValue || !fact.LocationIsActive || fact.IsVirtual
+                    || fact.ZoneCode != "STORAGE" || !fact.ZoneIsActive || !fact.WarehouseIsActive)
                     return "内包[" + requestedCode + "]必须位于有效的实体STORAGE货位。";
                 if (!string.Equals(fact.WarehouseCode, warehouseCode, StringComparison.OrdinalIgnoreCase))
                     return "内包[" + requestedCode + "]不属于指定仓库。";

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
@@ -27,14 +27,14 @@ SELECT
     ps.PackageSpecCode,
     h.LifecycleStatus,
     h.IsHold,
-    h.HoldReason,
+    (SELECT TOP 1 hold.HoldReason FROM dbo.WMS_FG_HU_HoldLog hold WHERE hold.HUId=h.Id AND hold.IsActive=1 ORDER BY hold.Id DESC) AS HoldReason,
     h.SourceSystem,
     h.SourceEntityId,
     h.SourceBusinessNo,
     h.Remark,
-    h.CreateTime
-FROM dbo.WMS_HU h
-LEFT JOIN dbo.WMS_PackageSpec ps
+    h.CreateDt AS CreateTime
+FROM dbo.WMS_FG_HU h
+LEFT JOIN dbo.WMS_FG_PackageSpec ps
     ON h.PackageSpecId = ps.Id
 WHERE h.HUCode = @HUCode;
 ";
@@ -51,7 +51,7 @@ WHERE h.HUCode = @HUCode;
         {
             const string sql = @"
 SELECT Id
-FROM dbo.WMS_HU
+FROM dbo.WMS_FG_HU
 WHERE HUCode = @HUCode;
 ";
 
@@ -67,7 +67,7 @@ WHERE HUCode = @HUCode;
         {
             const string sql = @"
 SELECT HUType
-FROM dbo.WMS_HU
+FROM dbo.WMS_FG_HU
 WHERE Id = @HUId;
 ";
 
@@ -83,7 +83,7 @@ WHERE Id = @HUId;
         {
             const string sql = @"
 SELECT PlantCode
-FROM dbo.WMS_HU
+FROM dbo.WMS_FG_HU
 WHERE Id = @HUId;
 ";
 
@@ -99,7 +99,7 @@ WHERE Id = @HUId;
         {
             const string sql = @"
 SELECT Id
-FROM dbo.WMS_PackageSpec
+FROM dbo.WMS_FG_PackageSpec
 WHERE PackageSpecCode = @PackageSpecCode
 AND IsActive = 1;
 ";
@@ -165,7 +165,7 @@ AND IsActive = 1;
             long? packageSpecId)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_HU
+INSERT INTO dbo.WMS_FG_HU
 (
     HUCode,
     HUType,
@@ -177,7 +177,7 @@ INSERT INTO dbo.WMS_HU
     SourceEntityId,
     SourceBusinessNo,
     Remark,
-    CreateUser
+    CreateBy
 )
 VALUES
 (
@@ -191,7 +191,7 @@ VALUES
     @SourceEntityId,
     @SourceBusinessNo,
     @Remark,
-    @CreateUser
+    @CreateBy
 );
 
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
@@ -206,7 +206,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
             parameters.Add("@SourceEntityId", DbParameterValue.StringOrNull(request.SourceEntityId), DbType.AnsiString, size: 100);
             parameters.Add("@SourceBusinessNo", DbParameterValue.StringOrNull(request.SourceBusinessNo), DbType.AnsiString, size: 100);
             parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
-            parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
+            parameters.Add("@CreateBy", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
             return DbExecutor.ExecuteScalar<long>(conn, tran, sql, parameters);
         }
@@ -222,7 +222,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
         {
             const string sql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_Relation
+FROM dbo.WMS_FG_HU_Relation
 WHERE ChildHUId = @ChildHUId
 AND IsActive = 1;
 ";
@@ -246,16 +246,16 @@ SELECT TOP 1
     ps.PackageSpecCode,
     parent.LifecycleStatus,
     parent.IsHold,
-    parent.HoldReason,
+    (SELECT TOP 1 hold.HoldReason FROM dbo.WMS_FG_HU_HoldLog hold WHERE hold.HUId=parent.Id AND hold.IsActive=1 ORDER BY hold.Id DESC) AS HoldReason,
     parent.SourceSystem,
     parent.SourceEntityId,
     parent.SourceBusinessNo,
     parent.Remark,
-    parent.CreateTime
-FROM dbo.WMS_HU_Relation r
-INNER JOIN dbo.WMS_HU parent
+    parent.CreateDt AS CreateTime
+FROM dbo.WMS_FG_HU_Relation r
+INNER JOIN dbo.WMS_FG_HU parent
     ON parent.Id = r.ParentHUId
-LEFT JOIN dbo.WMS_PackageSpec ps
+LEFT JOIN dbo.WMS_FG_PackageSpec ps
     ON ps.Id = parent.PackageSpecId
 WHERE r.ChildHUId = @ChildHUId
 AND r.IsActive = 1;
@@ -310,7 +310,7 @@ AND r.IsActive = 1;
             AS VARCHAR(MAX)
         ) AS HUPath
     FROM Descendants d
-    INNER JOIN dbo.WMS_HU_Relation r
+    INNER JOIN dbo.WMS_FG_HU_Relation r
         ON r.ParentHUId = d.HUId
        AND r.IsActive = 1
     WHERE d.HUPath NOT LIKE
@@ -375,35 +375,31 @@ OPTION (MAXRECURSION 100);
                             throw new InvalidOperationException("子HU已经存在有效父HU，请先拆出后再重新建立关系。");
 
                         const string relationSql = @"
-INSERT INTO dbo.WMS_HU_Relation
+INSERT INTO dbo.WMS_FG_HU_Relation
 (
     ParentHUId,
     ChildHUId,
-    RelationType,
     EffectiveFrom,
     IsActive,
     OperationNo,
-    CreateUser,
-    CreateTime
+    CreateBy
 )
 VALUES
 (
     @ParentHUId,
     @ChildHUId,
-    'CONTAIN',
     SYSDATETIME(),
     1,
     @OperationNo,
-    @CreateUser,
-    SYSDATETIME()
+    @CreateBy
 );
 ";
 
                         DynamicParameters relationParameters = new DynamicParameters();
                         relationParameters.Add("@ParentHUId", parentHuId, DbType.Int64);
                         relationParameters.Add("@ChildHUId", childHuId, DbType.Int64);
-                        relationParameters.Add("@OperationNo", operationNo, DbType.AnsiString, size: 50);
-                        relationParameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
+                        relationParameters.Add("@OperationNo", operationNo, DbType.AnsiString, size: 100);
+                        relationParameters.Add("@CreateBy", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
                         DbExecutor.Execute(conn, tran, relationSql, relationParameters);
 
@@ -449,7 +445,7 @@ VALUES
              */
             const string sql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_Relation WITH (UPDLOCK, HOLDLOCK)
+FROM dbo.WMS_FG_HU_Relation WITH (UPDLOCK, HOLDLOCK)
 WHERE ChildHUId = @ChildHUId
 AND IsActive = 1;
 ";
@@ -484,17 +480,14 @@ AND IsActive = 1;
                     try
                     {
                         const string sql = @"
-INSERT INTO dbo.WMS_HU_Item
+INSERT INTO dbo.WMS_FG_HU_Item
 (
     HUId,
-    MaterialCode,
-    MaterialRevision,
-    BatchNo,
+    ProdNo,
+    ProdRev,
+    LotNo,
     SAPBatchNo,
     ProductionOrderNo,
-    CustomerCode,
-    SalesOrderNo,
-    SalesOrderItem,
     DateCode,
     WeekFormatCode,
     WeekYear,
@@ -508,8 +501,8 @@ INSERT INTO dbo.WMS_HU_Item
     StockStatus,
     IsActive,
     Remark,
-    CreateUser,
-    CreateTime
+    CreateBy,
+    CreateDt
 )
 VALUES
 (
@@ -519,9 +512,6 @@ VALUES
     @BatchNo,
     @SAPBatchNo,
     @ProductionOrderNo,
-    @CustomerCode,
-    @SalesOrderNo,
-    @SalesOrderItem,
     @DateCode,
     @WeekFormatCode,
     @WeekYear,
@@ -535,7 +525,7 @@ VALUES
     @StockStatus,
     1,
     @Remark,
-    @CreateUser,
+    @CreateBy,
     SYSDATETIME()
 );
 
@@ -545,26 +535,23 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
                         DynamicParameters parameters = new DynamicParameters();
                         parameters.Add("@HUId", huId, DbType.Int64);
                         parameters.Add("@MaterialCode", request.MaterialCode, DbType.AnsiString, size: 50);
-                        parameters.Add("@MaterialRevision", DbParameterValue.StringOrNull(request.MaterialRevision), DbType.AnsiString, size: 30);
-                        parameters.Add("@BatchNo", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 100);
-                        parameters.Add("@SAPBatchNo", DbParameterValue.StringOrNull(request.SapBatchNo), DbType.AnsiString, size: 100);
+                        parameters.Add("@MaterialRevision", DbParameterValue.StringOrNull(request.MaterialRevision), DbType.AnsiString, size: 20);
+                        parameters.Add("@BatchNo", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 50);
+                        parameters.Add("@SAPBatchNo", DbParameterValue.StringOrNull(request.SapBatchNo), DbType.AnsiString, size: 50);
                         parameters.Add("@ProductionOrderNo", DbParameterValue.StringOrNull(request.ProductionOrderNo), DbType.AnsiString, size: 50);
-                        parameters.Add("@CustomerCode", DbParameterValue.StringOrNull(request.CustomerCode), DbType.AnsiString, size: 50);
-                        parameters.Add("@SalesOrderNo", DbParameterValue.StringOrNull(request.SalesOrderNo), DbType.AnsiString, size: 50);
-                        parameters.Add("@SalesOrderItem", DbParameterValue.StringOrNull(request.SalesOrderItem), DbType.AnsiString, size: 30);
                         parameters.Add("@DateCode", DbParameterValue.StringOrNull(request.DateCode), DbType.AnsiString, size: 50);
                         parameters.Add("@WeekFormatCode", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekFormatCode), DbType.AnsiString, size: 30);
-                        parameters.Add("@WeekYear", weekCode == null ? null : (object)weekCode.WeekYear, DbType.Int16);
-                        parameters.Add("@WeekNo", weekCode == null ? null : (object)weekCode.WeekNo, DbType.Byte);
+                        parameters.Add("@WeekYear", weekCode == null ? null : (object)weekCode.WeekYear, DbType.Int32);
+                        parameters.Add("@WeekNo", weekCode == null ? null : (object)weekCode.WeekNo, DbType.Int32);
                         parameters.Add("@WeekSortKey", weekCode == null ? null : (object)weekCode.WeekSortKey, DbType.Int32);
-                        parameters.Add("@WeekRuleSource", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleSource), DbType.AnsiString, size: 30);
-                        parameters.Add("@WeekRuleValue", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleValue), DbType.AnsiString, size: 100);
+                        parameters.Add("@WeekRuleSource", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleSource), DbType.AnsiString, size: 100);
+                        parameters.Add("@WeekRuleValue", DbParameterValue.StringOrNull(weekCode == null ? null : weekCode.WeekRuleValue), DbType.String, size: 500);
                         parameters.Add("@WeekResolvedTime", weekCode == null ? null : (object)weekCode.WeekResolvedTime, DbType.DateTime2);
                         parameters.Add("@Qty", request.Qty, DbType.Decimal, precision: 18, scale: 4);
                         parameters.Add("@Uom", request.Uom, DbType.AnsiString, size: 20);
-                        parameters.Add("@StockStatus", request.StockStatus, DbType.AnsiString, size: 20);
+                        parameters.Add("@StockStatus", request.StockStatus, DbType.AnsiString, size: 30);
                         parameters.Add("@Remark", DbParameterValue.StringOrNull(request.Remark), DbType.String, size: 500);
-                        parameters.Add("@CreateUser", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
+                        parameters.Add("@CreateBy", DbParameterValue.StringOrNull(request.Operator), DbType.AnsiString, size: 50);
 
                         long itemId = DbExecutor.ExecuteScalar<long>(conn, tran, sql, parameters);
 
@@ -624,7 +611,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
             '/'
             AS VARCHAR(MAX)
         ) AS HUPath
-    FROM dbo.WMS_HU h
+    FROM dbo.WMS_FG_HU h
     WHERE h.Id = @RootHUId
 
     UNION ALL
@@ -645,10 +632,10 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
             AS VARCHAR(MAX)
         ) AS HUPath
     FROM HuTree parent
-    INNER JOIN dbo.WMS_HU_Relation relation
+    INNER JOIN dbo.WMS_FG_HU_Relation relation
         ON relation.ParentHUId = parent.HUId
        AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU child
+    INNER JOIN dbo.WMS_FG_HU child
         ON child.Id = relation.ChildHUId
     WHERE parent.HUPath NOT LIKE
         '%/' +
@@ -690,10 +677,10 @@ OPTION (MAXRECURSION 100);
             const string sql = @"
 SELECT
     Id,
-    MaterialCode,
-    MaterialRevision,
-    BatchNo,
-    SAPBatchNo,
+    ProdNo AS MaterialCode,
+    ProdRev AS MaterialRevision,
+    LotNo AS BatchNo,
+    SAPBatchNo AS SapBatchNo,
     ProductionOrderNo,
     DateCode,
     WeekFormatCode,
@@ -706,8 +693,8 @@ SELECT
     Qty,
     Uom,
     StockStatus,
-    CreateTime
-FROM dbo.WMS_HU_Item
+    CreateDt AS CreateTime
+FROM dbo.WMS_FG_HU_Item
 WHERE HUId = @HUId
 AND IsActive = 1
 ORDER BY Id;

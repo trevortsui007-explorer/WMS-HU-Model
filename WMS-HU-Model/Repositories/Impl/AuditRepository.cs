@@ -12,34 +12,34 @@ namespace WMS_HU_Model.Repositories
         private const int CommandTimeoutSeconds = 15;
 
         public const string OperationFromWhereSql = @"
-FROM dbo.WMS_HU_OperationLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-LEFT JOIN dbo.WMS_HU related ON related.Id = log.RelatedHUId
-WHERE log.OperationTime >= @FromTime AND log.OperationTime < @ToTimeExclusive
+FROM dbo.WMS_FG_HU_OperationLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+LEFT JOIN dbo.WMS_FG_HU related ON related.Id = log.RelatedHUId
+WHERE log.OperationDt >= @FromTime AND log.OperationDt < @ToTimeExclusive
   AND (@HUCode IS NULL OR hu.HUCode = @HUCode)
   AND (@RequestId IS NULL OR log.RequestId = @RequestId)
-  AND (@Operator IS NULL OR log.Operator LIKE '%' + @Operator + '%')
+  AND (@Operator IS NULL OR log.OperationBy LIKE '%' + @Operator + '%')
   AND (@OperationType IS NULL OR log.OperationType = @OperationType)";
 
         public const string OperationRowsSql = @"
 SELECT
     log.Id, log.OperationNo, log.OperationType,
     hu.HUCode, hu.HUType, related.HUCode AS RelatedHuCode,
-    log.BusinessNo, log.RequestId, log.DetailJson, log.Operator,
-    log.OperationTime, log.Remark
+    log.BusinessNo, log.RequestId, log.DetailJson, log.OperationBy AS Operator,
+    log.OperationDt AS OperationTime, log.Remark
 " + OperationFromWhereSql + @"
-ORDER BY log.OperationTime DESC, log.Id DESC
+ORDER BY log.OperationDt DESC, log.Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
         public const string MoveFromWhereSql = @"
-FROM dbo.WMS_HU_MoveLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-LEFT JOIN dbo.WMS_Location fromLocation ON fromLocation.Id = log.FromLocationId
-INNER JOIN dbo.WMS_Location toLocation ON toLocation.Id = log.ToLocationId
-WHERE log.MoveTime >= @FromTime AND log.MoveTime < @ToTimeExclusive
+FROM dbo.WMS_FG_HU_MoveLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+LEFT JOIN dbo.WMS_FG_Location fromLocation ON fromLocation.Id = log.FromLocationId
+INNER JOIN dbo.WMS_FG_Location toLocation ON toLocation.Id = log.ToLocationId
+WHERE log.MoveDt >= @FromTime AND log.MoveDt < @ToTimeExclusive
   AND (@HUCode IS NULL OR hu.HUCode = @HUCode)
   AND (@RequestId IS NULL OR log.RequestId = @RequestId)
-  AND (@Operator IS NULL OR log.Operator LIKE '%' + @Operator + '%')
+  AND (@Operator IS NULL OR log.MoveBy LIKE '%' + @Operator + '%')
   AND (@MoveType IS NULL OR log.MoveType = @MoveType)";
 
         public const string MoveRowsSql = @"
@@ -47,19 +47,19 @@ SELECT
     log.Id, log.MoveNo, hu.HUCode, hu.HUType,
     fromLocation.LocationCode AS FromLocationCode,
     toLocation.LocationCode AS ToLocationCode,
-    log.MoveType, log.ScannedLocationCode, log.BusinessNo, log.TaskNo,
-    log.RequestId, log.ReasonCode, log.Operator, log.MoveTime, log.Remark
+    log.MoveType, toLocation.LocationCode AS ScannedLocationCode, log.BusinessNo, CAST(NULL AS VARCHAR(100)) AS TaskNo,
+    log.RequestId, log.ReasonCode, log.MoveBy AS Operator, log.MoveDt AS MoveTime, log.Remark
 " + MoveFromWhereSql + @"
-ORDER BY log.MoveTime DESC, log.Id DESC
+ORDER BY log.MoveDt DESC, log.Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
         public const string HoldFromWhereSql = @"
-FROM dbo.WMS_HU_HoldLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-WHERE log.HoldTime >= @FromTime AND log.HoldTime < @ToTimeExclusive
+FROM dbo.WMS_FG_HU_HoldLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+WHERE log.HoldDt >= @FromTime AND log.HoldDt < @ToTimeExclusive
   AND (@HUCode IS NULL OR hu.HUCode = @HUCode)
   AND (@RequestId IS NULL OR log.HoldRequestId = @RequestId OR log.ReleaseRequestId = @RequestId)
-  AND (@Operator IS NULL OR log.HoldUser LIKE '%' + @Operator + '%' OR log.ReleaseUser LIKE '%' + @Operator + '%')
+  AND (@Operator IS NULL OR log.HoldBy LIKE '%' + @Operator + '%' OR log.ReleaseBy LIKE '%' + @Operator + '%')
   AND (@HoldReason IS NULL OR log.HoldReasonCode LIKE '%' + @HoldReason + '%' OR log.HoldReason LIKE '%' + @HoldReason + '%')
   AND (@Status IS NULL OR (@Status = 'ACTIVE' AND log.IsActive = 1) OR (@Status = 'RELEASED' AND log.IsActive = 0))";
 
@@ -68,10 +68,10 @@ SELECT
     log.Id, log.HoldNo, hu.HUCode, hu.HUType,
     log.HoldType, log.HoldReasonCode, log.HoldReason,
     log.SourceBizType, log.SourceBizId, log.SourceBizNo,
-    log.IsActive, log.HoldTime, log.HoldUser, log.HoldRequestId,
-    log.ReleaseTime, log.ReleaseUser, log.ReleaseReason, log.ReleaseRequestId
+    log.IsActive, log.HoldDt AS HoldTime, log.HoldBy AS HoldUser, log.HoldRequestId,
+    log.ReleaseDt AS ReleaseTime, log.ReleaseBy AS ReleaseUser, log.ReleaseReason, log.ReleaseRequestId
 " + HoldFromWhereSql + @"
-ORDER BY log.HoldTime DESC, log.Id DESC
+ORDER BY log.HoldDt DESC, log.Id DESC
 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
         public AuditPageResult<OperationAuditRowDto> QueryOperations(OperationAuditQuery query)
@@ -140,13 +140,13 @@ OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 SELECT TOP (@Top)
     log.Id, log.OperationNo, log.OperationType,
     hu.HUCode, hu.HUType, related.HUCode AS RelatedHuCode,
-    log.BusinessNo, log.RequestId, log.DetailJson, log.Operator,
-    log.OperationTime, log.Remark
-FROM dbo.WMS_HU_OperationLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-LEFT JOIN dbo.WMS_HU related ON related.Id = log.RelatedHUId
+    log.BusinessNo, log.RequestId, log.DetailJson, log.OperationBy AS Operator,
+    log.OperationDt AS OperationTime, log.Remark
+FROM dbo.WMS_FG_HU_OperationLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+LEFT JOIN dbo.WMS_FG_HU related ON related.Id = log.RelatedHUId
 WHERE log.RequestId = @RequestId
-ORDER BY log.OperationTime, log.Id;";
+ORDER BY log.OperationDt, log.Id;";
             return ReadByRequest(sql, requestId, top, ReadOperation);
         }
 
@@ -157,14 +157,14 @@ SELECT TOP (@Top)
     log.Id, log.MoveNo, hu.HUCode, hu.HUType,
     fromLocation.LocationCode AS FromLocationCode,
     toLocation.LocationCode AS ToLocationCode,
-    log.MoveType, log.ScannedLocationCode, log.BusinessNo, log.TaskNo,
-    log.RequestId, log.ReasonCode, log.Operator, log.MoveTime, log.Remark
-FROM dbo.WMS_HU_MoveLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
-LEFT JOIN dbo.WMS_Location fromLocation ON fromLocation.Id = log.FromLocationId
-INNER JOIN dbo.WMS_Location toLocation ON toLocation.Id = log.ToLocationId
+    log.MoveType, toLocation.LocationCode AS ScannedLocationCode, log.BusinessNo, CAST(NULL AS VARCHAR(100)) AS TaskNo,
+    log.RequestId, log.ReasonCode, log.MoveBy AS Operator, log.MoveDt AS MoveTime, log.Remark
+FROM dbo.WMS_FG_HU_MoveLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
+LEFT JOIN dbo.WMS_FG_Location fromLocation ON fromLocation.Id = log.FromLocationId
+INNER JOIN dbo.WMS_FG_Location toLocation ON toLocation.Id = log.ToLocationId
 WHERE log.RequestId = @RequestId
-ORDER BY log.MoveTime, log.Id;";
+ORDER BY log.MoveDt, log.Id;";
             return ReadByRequest(sql, requestId, top, ReadMove);
         }
 
@@ -175,12 +175,12 @@ SELECT TOP (@Top)
     log.Id, log.HoldNo, hu.HUCode, hu.HUType,
     log.HoldType, log.HoldReasonCode, log.HoldReason,
     log.SourceBizType, log.SourceBizId, log.SourceBizNo,
-    log.IsActive, log.HoldTime, log.HoldUser, log.HoldRequestId,
-    log.ReleaseTime, log.ReleaseUser, log.ReleaseReason, log.ReleaseRequestId
-FROM dbo.WMS_HU_HoldLog log
-INNER JOIN dbo.WMS_HU hu ON hu.Id = log.HUId
+    log.IsActive, log.HoldDt AS HoldTime, log.HoldBy AS HoldUser, log.HoldRequestId,
+    log.ReleaseDt AS ReleaseTime, log.ReleaseBy AS ReleaseUser, log.ReleaseReason, log.ReleaseRequestId
+FROM dbo.WMS_FG_HU_HoldLog log
+INNER JOIN dbo.WMS_FG_HU hu ON hu.Id = log.HUId
 WHERE log.HoldRequestId = @RequestId OR log.ReleaseRequestId = @RequestId
-ORDER BY log.HoldTime, log.Id;";
+ORDER BY log.HoldDt, log.Id;";
             return ReadByRequest(sql, requestId, top, ReadHold);
         }
 

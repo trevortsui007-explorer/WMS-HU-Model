@@ -13,7 +13,7 @@ namespace WMS.Modules
         public MonitoringModule()
             : this(new MonitoringService(
                 new MonitoringRepository(),
-                new FinishedGoodsInboundReadService(new FinishedGoodsInboundReadRepository(), new HuLocationRepository()),
+                new FinishedGoodsInboundReadService(new FinishedGoodsInboundReadRepository(), new EffectiveLocationResolver()),
                 new WeekCodeAuditService(new WeekCodeAuditRepository(), new MesFinishedGoodsInboundRepository())))
         {
         }

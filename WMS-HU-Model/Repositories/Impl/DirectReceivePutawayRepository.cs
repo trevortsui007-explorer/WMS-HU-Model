@@ -78,16 +78,16 @@ namespace WMS_HU_Model.Repositories
             const string sql = @"
 SELECT box.Id,box.HUCode,box.HUType,box.PlantCode,box.LifecycleStatus,box.IsHold,
        parent.Id AS ParentHuId,parent.HUType AS ParentHuType,
-       cl.LocationId,loc.LocationCode,loc.MasterStatus,loc.IsVirtual,
+       cl.LocationId,loc.LocationCode,loc.IsActive AS LocationIsActive,loc.IsVirtual,
        zone.ZoneCode,zone.IsActive AS ZoneIsActive,
        warehouse.WarehouseCode,warehouse.IsActive AS WarehouseIsActive
-FROM dbo.WMS_HU box WITH (UPDLOCK,HOLDLOCK)
-LEFT JOIN dbo.WMS_HU_Relation relation WITH (UPDLOCK,HOLDLOCK) ON relation.ChildHUId=box.Id AND relation.IsActive=1
-LEFT JOIN dbo.WMS_HU parent WITH (UPDLOCK,HOLDLOCK) ON parent.Id=relation.ParentHUId
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=box.Id
-LEFT JOIN dbo.WMS_Location loc WITH (UPDLOCK,HOLDLOCK) ON loc.Id=cl.LocationId
-LEFT JOIN dbo.WMS_Zone zone WITH (UPDLOCK,HOLDLOCK) ON zone.Id=loc.ZoneId
-LEFT JOIN dbo.WMS_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=loc.WarehouseId
+FROM dbo.WMS_FG_HU box WITH (UPDLOCK,HOLDLOCK)
+LEFT JOIN dbo.WMS_FG_HU_Relation relation WITH (UPDLOCK,HOLDLOCK) ON relation.ChildHUId=box.Id AND relation.IsActive=1
+LEFT JOIN dbo.WMS_FG_HU parent WITH (UPDLOCK,HOLDLOCK) ON parent.Id=relation.ParentHUId
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=box.Id
+LEFT JOIN dbo.WMS_FG_Location loc WITH (UPDLOCK,HOLDLOCK) ON loc.Id=cl.LocationId
+LEFT JOIN dbo.WMS_FG_Zone zone WITH (UPDLOCK,HOLDLOCK) ON zone.Id=loc.ZoneId
+LEFT JOIN dbo.WMS_FG_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=loc.WarehouseId
 WHERE box.Id=@BoxHuId;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -100,7 +100,7 @@ WHERE box.Id=@BoxHuId;";
                         Id = Convert.ToInt64(reader["Id"]), HuCode = Convert.ToString(reader["HUCode"]), HuType = Convert.ToString(reader["HUType"]),
                         PlantCode = Convert.ToString(reader["PlantCode"]), LifecycleStatus = Convert.ToString(reader["LifecycleStatus"]), IsHold = Convert.ToBoolean(reader["IsHold"]),
                         ParentHuId = NullableLong(reader, "ParentHuId"), ParentHuType = NullableString(reader, "ParentHuType"), LocationId = NullableLong(reader, "LocationId"),
-                        LocationCode = NullableString(reader, "LocationCode"), MasterStatus = NullableString(reader, "MasterStatus"), IsVirtual = NullableBoolean(reader, "IsVirtual"),
+                        LocationCode = NullableString(reader, "LocationCode"), LocationIsActive = NullableBoolean(reader, "LocationIsActive"), IsVirtual = NullableBoolean(reader, "IsVirtual"),
                         ZoneCode = NullableString(reader, "ZoneCode"), ZoneIsActive = NullableBoolean(reader, "ZoneIsActive"),
                         WarehouseCode = NullableString(reader, "WarehouseCode"), WarehouseIsActive = NullableBoolean(reader, "WarehouseIsActive")
                     };
@@ -117,7 +117,7 @@ WHERE box.Id=@BoxHuId;";
             if (source.ParentHuId.HasValue) return "DIRECT_RECEIVE外箱不能存在有效父HU关系。";
             if (!source.LocationId.HasValue) return "外箱没有直接当前位置，库存位置状态不完整。";
             if (source.LocationId.Value != command.FromLocationId) return "外箱当前位置已变化，请重新执行上架。";
-            if (source.MasterStatus != "ACTIVE" || !source.ZoneIsActive || !source.WarehouseIsActive) return "外箱当前收货货位不可用。";
+            if (!source.LocationIsActive || !source.ZoneIsActive || !source.WarehouseIsActive) return "外箱当前收货货位不可用。";
             if (source.ZoneCode == "STORAGE") return "外箱已位于正式储存区，如需调整货位请使用移库作业。";
             if (source.ZoneCode != "RECEIVE") return "DIRECT_RECEIVE外箱必须位于有效RECEIVE收货区域。";
             if (!string.Equals(source.WarehouseCode, command.WarehouseCode, StringComparison.OrdinalIgnoreCase)) return "外箱当前收货货位不属于指定仓库。";
@@ -129,12 +129,12 @@ WHERE box.Id=@BoxHuId;";
         private static DirectTargetRow ReadTarget(SqlConnection connection, SqlTransaction transaction, long locationId)
         {
             const string sql = @"
-SELECT loc.Id,loc.LocationCode,loc.MasterStatus,loc.IsVirtual,loc.PlantPolicy,loc.DedicatedPlantCode,
+SELECT loc.Id,loc.LocationCode,loc.IsActive,loc.IsVirtual,loc.PlantPolicy,loc.DedicatedPlantCode,
        zone.ZoneCode,zone.IsActive AS ZoneIsActive,
        warehouse.WarehouseCode,warehouse.IsActive AS WarehouseIsActive
-FROM dbo.WMS_Location loc WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_Zone zone WITH (UPDLOCK,HOLDLOCK) ON zone.Id=loc.ZoneId
-INNER JOIN dbo.WMS_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=loc.WarehouseId
+FROM dbo.WMS_FG_Location loc WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Zone zone WITH (UPDLOCK,HOLDLOCK) ON zone.Id=loc.ZoneId
+INNER JOIN dbo.WMS_FG_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=loc.WarehouseId
 WHERE loc.Id=@LocationId;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -144,7 +144,7 @@ WHERE loc.Id=@LocationId;";
                     if (!reader.Read()) return null;
                     return new DirectTargetRow
                     {
-                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), MasterStatus = Convert.ToString(reader["MasterStatus"]),
+                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), IsActive = Convert.ToBoolean(reader["IsActive"]),
                         IsVirtual = Convert.ToBoolean(reader["IsVirtual"]), PlantPolicy = Convert.ToString(reader["PlantPolicy"]), DedicatedPlantCode = NullableString(reader, "DedicatedPlantCode"),
                         ZoneCode = Convert.ToString(reader["ZoneCode"]), ZoneIsActive = Convert.ToBoolean(reader["ZoneIsActive"]),
                         WarehouseCode = Convert.ToString(reader["WarehouseCode"]), WarehouseIsActive = Convert.ToBoolean(reader["WarehouseIsActive"])
@@ -156,7 +156,7 @@ WHERE loc.Id=@LocationId;";
         private static string ValidateTarget(SqlConnection connection, SqlTransaction transaction, DirectTargetRow target, DirectReceivePutawayCommand command)
         {
             if (target == null) return "目标货位不存在。";
-            if (target.MasterStatus != "ACTIVE" || !target.ZoneIsActive || !target.WarehouseIsActive) return "目标货位不可用。";
+            if (!target.IsActive || !target.ZoneIsActive || !target.WarehouseIsActive) return "目标货位不可用。";
             if (target.IsVirtual) return "正常上架不能使用虚拟货位。";
             if (target.ZoneCode != "STORAGE") return "正常上架目标必须属于STORAGE区域。";
             if (!string.Equals(target.WarehouseCode, command.WarehouseCode, StringComparison.OrdinalIgnoreCase)) return "目标货位不属于指定仓库。";
@@ -165,8 +165,8 @@ WHERE loc.Id=@LocationId;";
 
             const string warehousePlantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_WarehousePlant mapping WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=mapping.WarehouseId
+FROM dbo.WMS_FG_WarehousePlant mapping WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Warehouse warehouse WITH (UPDLOCK,HOLDLOCK) ON warehouse.Id=mapping.WarehouseId
 WHERE warehouse.WarehouseCode=@WarehouseCode AND warehouse.IsActive=1 AND mapping.PlantCode=@PlantCode AND mapping.IsActive=1;";
             using (SqlCommand sqlCommand = new SqlCommand(warehousePlantSql, connection, transaction))
             {
@@ -179,8 +179,8 @@ WHERE warehouse.WarehouseCode=@WarehouseCode AND warehouse.IsActive=1 AND mappin
             {
                 const string samePlantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_CurrentLocation currentLocation WITH (UPDLOCK,HOLDLOCK)
-INNER JOIN dbo.WMS_HU hu WITH (UPDLOCK,HOLDLOCK) ON hu.Id=currentLocation.HUId
+FROM dbo.WMS_FG_HU_CurrentLocation currentLocation WITH (UPDLOCK,HOLDLOCK)
+INNER JOIN dbo.WMS_FG_HU hu WITH (UPDLOCK,HOLDLOCK) ON hu.Id=currentLocation.HUId
 WHERE currentLocation.LocationId=@LocationId AND hu.PlantCode<>@PlantCode AND hu.LifecycleStatus='ACTIVE';";
                 using (SqlCommand sqlCommand = new SqlCommand(samePlantSql, connection, transaction))
                 {
@@ -195,16 +195,15 @@ WHERE currentLocation.LocationId=@LocationId AND hu.PlantCode<>@PlantCode AND hu
         private static bool UpdateCurrentLocation(SqlConnection connection, SqlTransaction transaction, DirectReceivePutawayCommand command, long targetLocationId, long moveLogId, DateTime now)
         {
             const string sql = @"
-UPDATE dbo.WMS_HU_CurrentLocation
-SET LocationId=@TargetLocationId,LocationSince=@Now,LastMoveLogId=@MoveLogId,LastMoveNo=@MoveNo,
-    LastMoveType='PUTAWAY',LastOperator=@Operator,ModifyTime=@Now
+UPDATE dbo.WMS_FG_HU_CurrentLocation
+SET LocationId=@TargetLocationId,LocationSince=@Now,LastMoveLogId=@MoveLogId,
+    LastEditBy=@Operator,LastEditDt=@Now
 WHERE HUId=@BoxHuId AND LocationId=@SourceLocationId;";
             using (SqlCommand sqlCommand = new SqlCommand(sql, connection, transaction))
             {
                 sqlCommand.Parameters.Add("@TargetLocationId", SqlDbType.BigInt).Value = targetLocationId;
                 sqlCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
                 sqlCommand.Parameters.Add("@MoveLogId", SqlDbType.BigInt).Value = moveLogId;
-                sqlCommand.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
                 sqlCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
                 sqlCommand.Parameters.Add("@BoxHuId", SqlDbType.BigInt).Value = command.BoxHuId;
                 sqlCommand.Parameters.Add("@SourceLocationId", SqlDbType.BigInt).Value = command.FromLocationId;
@@ -248,7 +247,7 @@ WHERE HUId=@BoxHuId AND LocationId=@SourceLocationId;";
             public string ParentHuType { get; set; }
             public long? LocationId { get; set; }
             public string LocationCode { get; set; }
-            public string MasterStatus { get; set; }
+            public bool LocationIsActive { get; set; }
             public bool IsVirtual { get; set; }
             public string ZoneCode { get; set; }
             public bool ZoneIsActive { get; set; }
@@ -260,7 +259,7 @@ WHERE HUId=@BoxHuId AND LocationId=@SourceLocationId;";
         {
             public long Id { get; set; }
             public string LocationCode { get; set; }
-            public string MasterStatus { get; set; }
+            public bool IsActive { get; set; }
             public bool IsVirtual { get; set; }
             public string PlantPolicy { get; set; }
             public string DedicatedPlantCode { get; set; }

@@ -106,31 +106,12 @@ namespace WMS_HU_Model.Services
             if (!PhysicalLocationTypes.Contains(request.LocationTypeCode)) return OperationResult<LocationDto>.Fail("请选择有效的物理货位类型。");
             if (request.ZoneCode != "STORAGE") return OperationResult<LocationDto>.Fail("主管只能在存储区新增物理货位。");
             if (IsProtected(request.LocationCode)) return OperationResult<LocationDto>.Fail("系统关键货位只能由部署脚本维护。");
-            if (request.WarehouseCode.Length > 30 || request.ZoneCode.Length > 30 || request.LocationCode.Length > 50)
+            if (request.WarehouseCode.Length > 20 || request.ZoneCode.Length > 30 || request.LocationCode.Length > 50)
                 return OperationResult<LocationDto>.Fail("WarehouseCode、ZoneCode或LocationCode超过数据库长度限制。");
-            if (request.LocationName != null && request.LocationName.Length > 200) return OperationResult<LocationDto>.Fail("LocationName长度不能超过200。");
-            if (request.ScanCode != null && request.ScanCode.Length > 100) return OperationResult<LocationDto>.Fail("ScanCode长度不能超过100。");
-            if (request.Remark != null && request.Remark.Length > 1000) return OperationResult<LocationDto>.Fail("Remark长度不能超过1000。");
+            if (request.LocationName != null && request.LocationName.Length > 100) return OperationResult<LocationDto>.Fail("LocationName长度不能超过100。");
+            if (request.Remark != null && request.Remark.Length > 500) return OperationResult<LocationDto>.Fail("Remark长度不能超过500。");
             request.IsVirtual = false;
-            request.ManageMode = "CAPACITY_LOCATION";
-            request.CapacityMode = "STACK_POSITION";
-            request.CapacityQty = null;
             request.PlantPolicy = "SAME_PLANT";
-
-            if (request.IsScannable &&
-                string.IsNullOrWhiteSpace(
-                    request.ScanCode))
-            {
-                request.ScanCode =
-                    request.LocationCode;
-            }
-
-            if (request.CapacityQty.HasValue &&
-                request.CapacityQty.Value < 0)
-            {
-                return OperationResult<LocationDto>
-                    .Fail("CapacityQty不能小于0。");
-            }
 
             if (request.PlantPolicy ==
                 "DEDICATED" &&
@@ -167,25 +148,9 @@ namespace WMS_HU_Model.Services
                     .Fail("货位编码已存在。");
             }
 
-            long? parentLocationId = null;
-
-            if (!string.IsNullOrWhiteSpace(
-                request.ParentLocationCode))
-            {
-                parentLocationId =
-                    _repository.GetLocationId(
-                        warehouseId.Value,
-                        request.ParentLocationCode);
-
-                if (!parentLocationId.HasValue)
-                    return OperationResult<LocationDto>
-                        .Fail("父货位不存在。");
-            }
-
             _repository.Insert(
                 warehouseId.Value,
                 zoneId.Value,
-                parentLocationId,
                 request);
 
             var entity =
@@ -224,15 +189,8 @@ namespace WMS_HU_Model.Services
             request.LocationTypeCode = NormalizeCode(request.LocationTypeCode);
             if (!PhysicalLocationTypes.Contains(request.LocationTypeCode)) return OperationResult<LocationDto>.Fail("请选择有效的物理货位类型。");
             if (request.ZoneCode != "STORAGE") return OperationResult<LocationDto>.Fail("主管只能维护存储区物理货位。");
-            if (request.LocationName != null && request.LocationName.Length > 200) return OperationResult<LocationDto>.Fail("LocationName长度不能超过200。");
-            if (request.ScanCode != null && request.ScanCode.Length > 100) return OperationResult<LocationDto>.Fail("ScanCode长度不能超过100。");
-            if (request.Remark != null && request.Remark.Length > 1000) return OperationResult<LocationDto>.Fail("Remark长度不能超过1000。");
-            request.ParentLocationCode = current.ParentLocationCode;
-            request.LocationLevel = current.LocationLevel;
-            request.ManageMode = current.ManageMode;
-            request.CapacityMode = current.CapacityMode;
-            request.CapacityQty = current.CapacityQty;
-            request.MaxWeightKg = current.MaxWeightKg;
+            if (request.LocationName != null && request.LocationName.Length > 100) return OperationResult<LocationDto>.Fail("LocationName长度不能超过100。");
+            if (request.Remark != null && request.Remark.Length > 500) return OperationResult<LocationDto>.Fail("Remark长度不能超过500。");
             request.PlantPolicy = current.PlantPolicy;
             request.DedicatedPlantCode = current.DedicatedPlantCode;
             request.AllowMixedMaterial = current.AllowMixedMaterial;
@@ -241,7 +199,6 @@ namespace WMS_HU_Model.Services
             request.PutawayPriority = current.PutawayPriority;
             request.PickingPriority = current.PickingPriority;
             request.RouteSequence = current.RouteSequence;
-            request.MasterStatus = current.MasterStatus;
 
             var warehouseId =
                 _repository.GetWarehouseIdAny(
@@ -260,25 +217,9 @@ namespace WMS_HU_Model.Services
                 return OperationResult<LocationDto>
                     .Fail("区域不存在。");
 
-            long? parentLocationId = null;
-
-            if (!string.IsNullOrWhiteSpace(
-                request.ParentLocationCode))
-            {
-                parentLocationId =
-                    _repository.GetLocationId(
-                        warehouseId.Value,
-                        request.ParentLocationCode);
-
-                if (!parentLocationId.HasValue)
-                    return OperationResult<LocationDto>
-                        .Fail("父货位不存在。");
-            }
-
             _repository.Update(
                 current.Id,
                 zoneId.Value,
-                parentLocationId,
                 request);
 
             var result =
@@ -303,7 +244,7 @@ namespace WMS_HU_Model.Services
             if (IsSystemLocation(current)) return OperationResult<LocationDto>.Fail("系统货位不允许人工修改状态。");
             if (!isActive && _repository.CountCurrentHus(current.Id) > 0) return OperationResult<LocationDto>.Fail("当前货位仍有库存，请先完成移货，确认货位为空后再下线。");
             if (isActive && !_repository.GetWarehouseId(normalizedWarehouse).HasValue) return OperationResult<LocationDto>.Fail("停用仓库下的货位不能启用。");
-            bool updated = _repository.SetMasterStatus(current.Id, isActive ? "ACTIVE" : "INACTIVE", operatorName);
+            bool updated = _repository.SetActive(current.Id, isActive, operatorName);
             if (!updated && !isActive) return OperationResult<LocationDto>.Fail("当前货位仍有库存，请先完成移货，确认货位为空后再下线。");
             if (!updated) return OperationResult<LocationDto>.Fail("货位状态更新失败。");
             LocationDto result = _repository.GetByCode(normalizedWarehouse, normalizedLocation);

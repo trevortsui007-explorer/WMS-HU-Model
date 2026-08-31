@@ -30,24 +30,22 @@ namespace WMS_HU_Model.Infrastructure.Database
             string remark)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_HU_MoveLog
+INSERT INTO dbo.WMS_FG_HU_MoveLog
 (
     MoveNo,
     HUId,
     FromLocationId,
     ToLocationId,
     MoveType,
-    ScannedLocationCode,
     BusinessNo,
-    TaskNo,
     RequestId,
     ReasonCode,
-    Operator,
+    MoveBy,
     Remark
 )
 OUTPUT
     INSERTED.Id,
-    INSERTED.MoveTime
+    INSERTED.MoveDt AS MoveTime
 VALUES
 (
     @MoveNo,
@@ -55,12 +53,10 @@ VALUES
     @FromLocationId,
     @ToLocationId,
     @MoveType,
-    @ScannedLocationCode,
     @BusinessNo,
-    @TaskNo,
     @RequestId,
     @ReasonCode,
-    @Operator,
+    @MoveBy,
     @Remark
 );
 ";
@@ -106,20 +102,18 @@ VALUES
             string remark)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_HU_MoveLog
+INSERT INTO dbo.WMS_FG_HU_MoveLog
 (
     MoveNo,
     HUId,
     FromLocationId,
     ToLocationId,
     MoveType,
-    ScannedLocationCode,
     BusinessNo,
-    TaskNo,
     RequestId,
     ReasonCode,
-    Operator,
-    MoveTime,
+    MoveBy,
+    MoveDt,
     Remark
 )
 OUTPUT INSERTED.Id
@@ -130,13 +124,11 @@ VALUES
     @FromLocationId,
     @ToLocationId,
     @MoveType,
-    @ScannedLocationCode,
     @BusinessNo,
-    @TaskNo,
     @RequestId,
     @ReasonCode,
-    @Operator,
-    ISNULL(@MoveTime, SYSDATETIME()),
+    @MoveBy,
+    ISNULL(@MoveDt, SYSDATETIME()),
     @Remark
 );
 ";
@@ -177,18 +169,16 @@ VALUES
             string remark)
         {
             DynamicParameters parameters = new DynamicParameters();
-            parameters.Add("@MoveNo", moveNo, DbType.AnsiString, size: 50);
+            parameters.Add("@MoveNo", moveNo, DbType.AnsiString, size: 100);
             parameters.Add("@HUId", huId, DbType.Int64);
             parameters.Add("@FromLocationId", fromLocationId, DbType.Int64);
             parameters.Add("@ToLocationId", toLocationId, DbType.Int64);
             parameters.Add("@MoveType", moveType, DbType.AnsiString, size: 30);
-            parameters.Add("@ScannedLocationCode", DbParameterValue.StringOrNull(scannedLocationCode), DbType.AnsiString, size: 100);
             parameters.Add("@BusinessNo", DbParameterValue.StringOrNull(businessNo), DbType.AnsiString, size: 100);
-            parameters.Add("@TaskNo", DbParameterValue.StringOrNull(taskNo), DbType.AnsiString, size: 100);
             parameters.Add("@RequestId", DbParameterValue.StringOrNull(requestId), DbType.AnsiString, size: 100);
             parameters.Add("@ReasonCode", DbParameterValue.StringOrNull(reasonCode), DbType.AnsiString, size: 50);
-            parameters.Add("@Operator", DbParameterValue.StringOrNull(operatorCode), DbType.AnsiString, size: 50);
-            parameters.Add("@MoveTime", moveTime, DbType.DateTime2);
+            parameters.Add("@MoveBy", DbParameterValue.StringOrNull(operatorCode), DbType.AnsiString, size: 50);
+            parameters.Add("@MoveDt", moveTime, DbType.DateTime2);
             parameters.Add("@Remark", DbParameterValue.StringOrNull(remark), DbType.String, size: 500);
 
             return parameters;

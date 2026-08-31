@@ -32,56 +32,56 @@ SELECT b.Id AS BoxHUId,
        i.WeekYear AS OldWeekYear,
        i.WeekNo AS OldWeekNo,
        i.WeekSortKey AS OldWeekSortKey
-FROM dbo.WMS_HU b
-LEFT JOIN dbo.WMS_HU_CurrentLocation dc ON dc.HUId = b.Id
-LEFT JOIN dbo.WMS_Location dl ON dl.Id = dc.LocationId
-LEFT JOIN dbo.WMS_HU_Relation pr ON pr.ChildHUId = b.Id AND pr.IsActive = 1
-LEFT JOIN dbo.WMS_HU ph ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
-LEFT JOIN dbo.WMS_HU_CurrentLocation pc ON pc.HUId = ph.Id
-LEFT JOIN dbo.WMS_Location pl ON pl.Id = pc.LocationId
-INNER JOIN dbo.WMS_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
-INNER JOIN dbo.WMS_HU p ON p.Id = r.ChildHUId
+FROM dbo.WMS_FG_HU b
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation dc ON dc.HUId = b.Id
+LEFT JOIN dbo.WMS_FG_Location dl ON dl.Id = dc.LocationId
+LEFT JOIN dbo.WMS_FG_HU_Relation pr ON pr.ChildHUId = b.Id AND pr.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU ph ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation pc ON pc.HUId = ph.Id
+LEFT JOIN dbo.WMS_FG_Location pl ON pl.Id = pc.LocationId
+INNER JOIN dbo.WMS_FG_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU p ON p.Id = r.ChildHUId
     AND p.HUType = 'INNER_PACK'
     AND p.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item i ON i.HUId = p.Id AND i.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item i ON i.HUId = p.Id AND i.IsActive = 1
 WHERE b.HUType = 'OUTER_BOX'
   AND b.PlantCode = @PlantCode
   AND b.LifecycleStatus = 'ACTIVE'
-  AND i.MaterialCode = @MaterialCode
-  AND ISNULL(i.MaterialRevision, '') = ISNULL(@MaterialRevision, '')
+  AND i.ProdNo = @MaterialCode
+  AND ISNULL(i.ProdRev, '') = ISNULL(@MaterialRevision, '')
   AND COALESCE(dl.Id, pl.Id) IS NOT NULL
   AND COALESCE(dl.LocationCode, pl.LocationCode) <> 'SHIPPED'
 ORDER BY b.Id, i.Id;";
 
         public const string RevalidateBoxSql = @"
 SELECT i.Id
-FROM dbo.WMS_HU b WITH (UPDLOCK, HOLDLOCK)
-LEFT JOIN dbo.WMS_HU_CurrentLocation dc WITH (UPDLOCK, HOLDLOCK) ON dc.HUId = b.Id
-LEFT JOIN dbo.WMS_Location dl ON dl.Id = dc.LocationId
-LEFT JOIN dbo.WMS_HU_Relation pr WITH (UPDLOCK, HOLDLOCK) ON pr.ChildHUId = b.Id AND pr.IsActive = 1
-LEFT JOIN dbo.WMS_HU ph WITH (UPDLOCK, HOLDLOCK) ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
-LEFT JOIN dbo.WMS_HU_CurrentLocation pc WITH (UPDLOCK, HOLDLOCK) ON pc.HUId = ph.Id
-LEFT JOIN dbo.WMS_Location pl ON pl.Id = pc.LocationId
-INNER JOIN dbo.WMS_HU_Relation r WITH (UPDLOCK, HOLDLOCK) ON r.ParentHUId = b.Id AND r.IsActive = 1
-INNER JOIN dbo.WMS_HU p WITH (UPDLOCK, HOLDLOCK) ON p.Id = r.ChildHUId
+FROM dbo.WMS_FG_HU b WITH (UPDLOCK, HOLDLOCK)
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation dc WITH (UPDLOCK, HOLDLOCK) ON dc.HUId = b.Id
+LEFT JOIN dbo.WMS_FG_Location dl ON dl.Id = dc.LocationId
+LEFT JOIN dbo.WMS_FG_HU_Relation pr WITH (UPDLOCK, HOLDLOCK) ON pr.ChildHUId = b.Id AND pr.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU ph WITH (UPDLOCK, HOLDLOCK) ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation pc WITH (UPDLOCK, HOLDLOCK) ON pc.HUId = ph.Id
+LEFT JOIN dbo.WMS_FG_Location pl ON pl.Id = pc.LocationId
+INNER JOIN dbo.WMS_FG_HU_Relation r WITH (UPDLOCK, HOLDLOCK) ON r.ParentHUId = b.Id AND r.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU p WITH (UPDLOCK, HOLDLOCK) ON p.Id = r.ChildHUId
     AND p.HUType = 'INNER_PACK'
     AND p.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item i WITH (UPDLOCK, HOLDLOCK) ON i.HUId = p.Id AND i.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item i WITH (UPDLOCK, HOLDLOCK) ON i.HUId = p.Id AND i.IsActive = 1
 WHERE b.Id = @BoxHUId
   AND b.HUType = 'OUTER_BOX'
   AND b.PlantCode = @PlantCode
   AND b.LifecycleStatus = 'ACTIVE'
-  AND i.MaterialCode = @MaterialCode
-  AND ISNULL(i.MaterialRevision, '') = ISNULL(@MaterialRevision, '')
+  AND i.ProdNo = @MaterialCode
+  AND ISNULL(i.ProdRev, '') = ISNULL(@MaterialRevision, '')
   AND COALESCE(dl.Id, pl.Id) IS NOT NULL
   AND COALESCE(dl.LocationCode, pl.LocationCode) <> 'SHIPPED';";
 
         private readonly string _connectionString;
 
         public WeekCodeRecalculateRepository()
-            : this(ConfigurationManager.ConnectionStrings["WmsDb"] == null
+            : this(ConfigurationManager.ConnectionStrings["BaseDb"] == null
                 ? null
-                : ConfigurationManager.ConnectionStrings["WmsDb"].ConnectionString)
+                : ConfigurationManager.ConnectionStrings["BaseDb"].ConnectionString)
         {
         }
 
@@ -148,7 +148,7 @@ WHERE b.Id = @BoxHUId
                     foreach (WeekCodeRecalculateItemPlan item in plan.Items)
                     {
                         int affected = connection.Execute(@"
-UPDATE dbo.WMS_HU_Item
+UPDATE dbo.WMS_FG_HU_Item
 SET WeekRuleSource = @WeekRuleSource,
     WeekRuleValue = @WeekRuleValue,
     WeekFormatCode = @WeekFormatCode,
@@ -156,8 +156,8 @@ SET WeekRuleSource = @WeekRuleSource,
     WeekNo = @WeekNo,
     WeekSortKey = @WeekSortKey,
     WeekResolvedTime = @Now,
-    ModifyUser = @Operator,
-    ModifyTime = @Now
+    LastEditBy = @Operator,
+    LastEditDt = @Now
 WHERE Id = @ItemId AND IsActive = 1;", new
                         {
                             item.ItemId,
@@ -179,7 +179,7 @@ WHERE Id = @ItemId AND IsActive = 1;", new
 
                     ActiveHoldRow activeHold = connection.Query<ActiveHoldRow>(@"
 SELECT Id, HoldReasonCode
-FROM dbo.WMS_HU_HoldLog WITH (UPDLOCK, HOLDLOCK)
+FROM dbo.WMS_FG_HU_HoldLog WITH (UPDLOCK, HOLDLOCK)
 WHERE HUId = @BoxHUId AND IsActive = 1;", new { plan.BoxHUId }, transaction).SingleOrDefault();
 
                     bool releasedHold = false;
@@ -187,11 +187,11 @@ WHERE HUId = @BoxHUId AND IsActive = 1;", new { plan.BoxHUId }, transaction).Sin
                     {
                         int unresolvedCount = connection.ExecuteScalar<int>(@"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_Relation r WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_HU p WITH (UPDLOCK, HOLDLOCK) ON p.Id = r.ChildHUId
+FROM dbo.WMS_FG_HU_Relation r WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_HU p WITH (UPDLOCK, HOLDLOCK) ON p.Id = r.ChildHUId
     AND p.HUType = 'INNER_PACK'
     AND p.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item i WITH (UPDLOCK, HOLDLOCK) ON i.HUId = p.Id AND i.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item i WITH (UPDLOCK, HOLDLOCK) ON i.HUId = p.Id AND i.IsActive = 1
 WHERE r.ParentHUId = @BoxHUId
   AND r.IsActive = 1
   AND (i.WeekFormatCode IS NULL OR i.WeekYear IS NULL OR i.WeekNo IS NULL
@@ -201,19 +201,18 @@ WHERE r.ParentHUId = @BoxHUId
                         {
                             string holdReleaseRequestId = BuildHoldReleaseRequestId(request.RequestId, activeHold.Id);
                             connection.Execute(@"
-UPDATE dbo.WMS_HU_HoldLog
+UPDATE dbo.WMS_FG_HU_HoldLog
 SET IsActive = 0,
-    ReleaseTime = @Now,
-    ReleaseUser = @Operator,
+    ReleaseDt = @Now,
+    ReleaseBy = @Operator,
     ReleaseReason = N'WeekCode重算后全箱已解析',
     ReleaseRequestId = @HoldReleaseRequestId
 WHERE Id = @HoldId AND IsActive = 1;
 
-UPDATE dbo.WMS_HU
+UPDATE dbo.WMS_FG_HU
 SET IsHold = 0,
-    HoldReason = NULL,
-    ModifyUser = @Operator,
-    ModifyTime = @Now
+    LastEditBy = @Operator,
+    LastEditDt = @Now
 WHERE Id = @BoxHUId AND IsHold = 1;", new
                             {
                                 Now = now,
@@ -291,7 +290,7 @@ WHERE Id = @BoxHUId AND IsHold = 1;", new
         {
             if (string.IsNullOrWhiteSpace(_connectionString))
             {
-                throw new InvalidOperationException("缺少 WmsDb 连接字符串。");
+                throw new InvalidOperationException("缺少 BaseDb 连接字符串。");
             }
 
             SqlConnection connection = new SqlConnection(_connectionString);

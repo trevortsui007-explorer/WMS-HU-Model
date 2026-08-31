@@ -34,17 +34,15 @@ namespace WMS_HU_Model.Repositories
         long Insert(
             long warehouseId,
             long zoneId,
-            long? parentLocationId,
             CreateLocationRequest request);
 
         bool Update(
             long locationId,
             long zoneId,
-            long? parentLocationId,
             UpdateLocationRequest request);
 
         int CountCurrentHus(long locationId);
 
-        bool SetMasterStatus(long locationId, string masterStatus, string operatorName);
+        bool SetActive(long locationId, bool isActive, string operatorName);
     }
 }

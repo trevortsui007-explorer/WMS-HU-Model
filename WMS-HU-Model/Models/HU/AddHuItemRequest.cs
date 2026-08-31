@@ -7,8 +7,11 @@
         public string BatchNo { get; set; }
         public string SapBatchNo { get; set; }
         public string ProductionOrderNo { get; set; }
+        [System.Obsolete("API compatibility only; not persisted in WMS_FG_HU_Item.")]
         public string CustomerCode { get; set; }
+        [System.Obsolete("API compatibility only; not persisted in WMS_FG_HU_Item.")]
         public string SalesOrderNo { get; set; }
+        [System.Obsolete("API compatibility only; not persisted in WMS_FG_HU_Item.")]
         public string SalesOrderItem { get; set; }
         public string DateCode { get; set; }
         public decimal Qty { get; set; }

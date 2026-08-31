@@ -206,7 +206,7 @@ namespace WMS_HU_Model.Services
             //----------------------------------------------------
             // 7. 托盘必须位于收货区域
             //----------------------------------------------------
-            HuLocationDto palletLocation = _huLocationRepository.GetLocation(pallet.Id);
+            HuLocationDto palletLocation = _effectiveLocationResolver.Resolve(pallet.Id);
 
             if (palletLocation == null || !palletLocation.DirectLocationId.HasValue)
             {
@@ -221,7 +221,7 @@ namespace WMS_HU_Model.Services
             //----------------------------------------------------
             // 8. 外箱应继承托盘位置，不能已有DirectLocation
             //----------------------------------------------------
-            HuLocationDto boxLocation = _huLocationRepository.GetLocation(box.Id);
+            HuLocationDto boxLocation = _effectiveLocationResolver.Resolve(box.Id);
 
             if (boxLocation == null)
             {
@@ -249,7 +249,7 @@ namespace WMS_HU_Model.Services
                 return OperationResult<PutawayResultDto>.Fail("目标货位不存在。");
             }
 
-            if (target.MasterStatus != "ACTIVE")
+            if (!target.IsActive)
             {
                 return OperationResult<PutawayResultDto>.Fail("目标货位当前不可用。");
             }
@@ -346,12 +346,12 @@ namespace WMS_HU_Model.Services
                 return OperationResult<PutawayResultDto>.Fail("外箱当前收货货位不属于指定仓库。");
 
             LocationDto source = _locationRepository.GetByCode(warehouseCode, sourceLocation.DirectLocationCode);
-            if (source == null || source.MasterStatus != "ACTIVE" || source.ZoneCode != "RECEIVE")
+            if (source == null || !source.IsActive || source.ZoneCode != "RECEIVE")
                 return OperationResult<PutawayResultDto>.Fail("外箱当前收货货位不存在或不可用。");
 
             LocationDto target = _locationRepository.GetByCode(warehouseCode, targetCode);
             if (target == null) return OperationResult<PutawayResultDto>.Fail("目标货位不存在。");
-            if (target.MasterStatus != "ACTIVE") return OperationResult<PutawayResultDto>.Fail("目标货位当前不可用。");
+            if (!target.IsActive) return OperationResult<PutawayResultDto>.Fail("目标货位当前不可用。");
             if (target.IsVirtual) return OperationResult<PutawayResultDto>.Fail("正常上架不能使用虚拟货位。");
             if (target.ZoneCode != "STORAGE") return OperationResult<PutawayResultDto>.Fail("正常上架目标必须属于STORAGE区域。");
             if (source.Id == target.Id) return OperationResult<PutawayResultDto>.Fail("目标货位不能与外箱当前收货货位相同。");

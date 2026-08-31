@@ -19,7 +19,7 @@ namespace WMS_HU_Model.Repositories
         bool WarehousePlantExists(string warehouseCode, string plantCode);
         long InsertWarehousePlant(WarehousePlantCreateRequest request);
         bool UpdateWarehousePlant(string warehouseCode, string plantCode, WarehousePlantUpdateRequest request);
-        bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive);
+        bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive, string operatorName);
         List<MasterDataOptionDto> GetWarehouseOptions();
         List<MasterDataOptionDto> GetZoneOptions(string warehouseCode);
     }

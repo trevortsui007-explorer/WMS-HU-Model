@@ -16,8 +16,8 @@ SELECT TOP (@MaxRows)
     box.Id AS BoxHUId,
     box.HUCode AS BoxCode,
     box.PlantCode,
-    item.MaterialCode,
-    item.MaterialRevision,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
     item.DateCode,
     item.WeekRuleSource,
     item.WeekRuleValue,
@@ -30,19 +30,19 @@ SELECT TOP (@MaxRows)
     innerHu.SourceSystem AS PackSourceSystem,
     innerHu.SourceEntityId AS PackSourceEntityId,
     SUM(item.Qty) AS TotalQty
-FROM dbo.WMS_HU box
-INNER JOIN dbo.WMS_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
-INNER JOIN dbo.WMS_HU innerHu ON innerHu.Id = relation.ChildHUId AND innerHu.HUType = 'INNER_PACK'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = innerHu.Id AND item.IsActive = 1
-LEFT JOIN dbo.WMS_HU_HoldLog hold ON hold.HUId = box.Id AND hold.IsActive = 1
+FROM dbo.WMS_FG_HU box
+INNER JOIN dbo.WMS_FG_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU innerHu ON innerHu.Id = relation.ChildHUId AND innerHu.HUType = 'INNER_PACK'
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = innerHu.Id AND item.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU_HoldLog hold ON hold.HUId = box.Id AND hold.IsActive = 1
 WHERE box.HUType = 'OUTER_BOX'
   AND box.LifecycleStatus = 'ACTIVE'
   AND (@PlantCode IS NULL OR box.PlantCode = @PlantCode)
-  AND (@MaterialCode IS NULL OR item.MaterialCode = @MaterialCode)
-  AND (@MaterialRevision IS NULL OR item.MaterialRevision = @MaterialRevision)
+  AND (@MaterialCode IS NULL OR item.ProdNo = @MaterialCode)
+  AND (@MaterialRevision IS NULL OR item.ProdRev = @MaterialRevision)
 GROUP BY
     box.Id, box.HUCode, box.PlantCode,
-    item.MaterialCode, item.MaterialRevision, item.DateCode,
+    item.ProdNo, item.ProdRev, item.DateCode,
     item.WeekRuleSource, item.WeekRuleValue, item.WeekYear, item.WeekNo, item.WeekSortKey,
     box.IsHold, hold.HoldReasonCode, hold.HoldReason,
     innerHu.SourceSystem, innerHu.SourceEntityId

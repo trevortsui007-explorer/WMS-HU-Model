@@ -21,7 +21,7 @@ SELECT
     h.HUCode AS IdentifierValue,
     CAST(NULL AS VARCHAR(50)) AS CustomerCode,
     CAST(1 AS BIT) AS MatchedHUCode
-FROM dbo.WMS_HU h
+FROM dbo.WMS_FG_HU h
 WHERE h.HUCode = @RawValue
 
 UNION ALL
@@ -35,8 +35,8 @@ SELECT
     i.IdentifierValue,
     i.CustomerCode,
     CAST(0 AS BIT) AS MatchedHUCode
-FROM dbo.WMS_HU_Identifier i
-INNER JOIN dbo.WMS_HU h ON h.Id = i.HUId
+FROM dbo.WMS_FG_HU_Identifier i
+INNER JOIN dbo.WMS_FG_HU h ON h.Id = i.HUId
 WHERE i.IdentifierValue = @RawValue
   AND i.IsActive = 1
   AND
@@ -52,7 +52,7 @@ ORDER BY MatchedHUCode DESC, HUId;
             using (SqlConnection conn = DbConnectionFactory.Create())
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
-                cmd.Parameters.Add("@RawValue", SqlDbType.VarChar, 200).Value = rawValue;
+                cmd.Parameters.Add("@RawValue", SqlDbType.VarChar, 100).Value = rawValue;
                 cmd.Parameters.Add("@CustomerCode", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(customerCode);
 
                 conn.Open();

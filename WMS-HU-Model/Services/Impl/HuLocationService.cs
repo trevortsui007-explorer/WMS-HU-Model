@@ -37,7 +37,7 @@ namespace WMS_HU_Model.Services
 
             _huLocationRepository = huLocationRepository;
 
-            _effectiveLocationResolver = effectiveLocationResolver;
+            _effectiveLocationResolver = effectiveLocationResolver ?? throw new ArgumentNullException(nameof(effectiveLocationResolver));
         }
 
         /// <summary>
@@ -330,10 +330,7 @@ namespace WMS_HU_Model.Services
             //--------------------------------------------------
             // 10. 目标货位状态
             //--------------------------------------------------
-            if (!string.Equals(
-                target.MasterStatus,
-                "ACTIVE",
-                StringComparison.OrdinalIgnoreCase))
+            if (!target.IsActive)
             {
                 return
                     OperationResult<HuMoveResultDto>

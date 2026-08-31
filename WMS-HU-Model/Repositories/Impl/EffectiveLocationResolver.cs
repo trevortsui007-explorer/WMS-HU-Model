@@ -13,6 +13,26 @@ namespace WMS_HU_Model.Repositories
     {
         public const string ActiveParentPredicateSql = "parent.LifecycleStatus = 'ACTIVE'";
 
+        // The shared CTE is intentionally kept with the resolver: it is the canonical
+        // SQL definition used where server-side filtering/paging must remain set based.
+        internal const string AncestorAndRankedLocationCteSql = @"
+, Ancestors AS
+(
+    SELECT RootHUId, HUId, HUCode, HUType, LevelNo FROM Roots
+    UNION ALL
+    SELECT ancestor.RootHUId, parent.Id, parent.HUCode, parent.HUType, ancestor.LevelNo + 1
+    FROM Ancestors ancestor
+    INNER JOIN dbo.WMS_FG_HU_Relation relation ON relation.ChildHUId = ancestor.HUId AND relation.IsActive = 1
+    INNER JOIN dbo.WMS_FG_HU parent ON parent.Id = relation.ParentHUId AND parent.LifecycleStatus = 'ACTIVE'
+)
+, RankedEffectiveLocations AS
+(
+    SELECT ancestor.RootHUId, currentLocation.LocationId,
+        ROW_NUMBER() OVER (PARTITION BY ancestor.RootHUId ORDER BY ancestor.LevelNo, ancestor.HUId) AS LocationRank
+    FROM Ancestors ancestor
+    INNER JOIN dbo.WMS_FG_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
+)";
+
         public HuLocationDto Resolve(long huId)
         {
             return ResolveMany(new List<long> { huId }).FirstOrDefault();
@@ -44,18 +64,10 @@ namespace WMS_HU_Model.Repositories
 ;WITH Roots AS
 (
     SELECT h.Id AS RootHUId, h.Id AS HUId, h.HUCode, h.HUType, CAST(0 AS INT) AS LevelNo
-    FROM dbo.WMS_HU h
+    FROM dbo.WMS_FG_HU h
     WHERE h.Id IN (" + parameterNames + @")
-),
-Ancestors AS
-(
-    SELECT RootHUId, HUId, HUCode, HUType, LevelNo FROM Roots
-    UNION ALL
-    SELECT ancestor.RootHUId, parent.Id, parent.HUCode, parent.HUType, ancestor.LevelNo + 1
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_Relation relation ON relation.ChildHUId = ancestor.HUId AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU parent ON parent.Id = relation.ParentHUId AND " + ActiveParentPredicateSql + @"
 )
+" + AncestorAndRankedLocationCteSql + @"
 SELECT
     hu.Id AS HuId,
     hu.HUCode,
@@ -69,8 +81,8 @@ SELECT
     directLocation.LocationTypeCode AS DirectLocationTypeCode,
     directCurrent.LocationSince AS DirectLocationSince,
     directCurrent.LastMoveLogId,
-    directCurrent.LastMoveNo,
-    directCurrent.LastMoveType,
+    directMove.MoveNo AS LastMoveNo,
+    directMove.MoveType AS LastMoveType,
     effective.LocationId AS EffectiveLocationId,
     effective.LocationCode AS EffectiveLocationCode,
     effective.LocationName AS EffectiveLocationName,
@@ -81,11 +93,12 @@ SELECT
     effective.SourceHUCode AS LocationSourceHuCode,
     effective.SourceHUType AS LocationSourceHuType,
     CAST(CASE WHEN effective.SourceHUId IS NULL OR effective.SourceHUId = hu.Id THEN 0 ELSE 1 END AS BIT) AS IsInherited
-FROM dbo.WMS_HU hu
-LEFT JOIN dbo.WMS_HU_CurrentLocation directCurrent ON directCurrent.HUId = hu.Id
-LEFT JOIN dbo.WMS_Location directLocation ON directLocation.Id = directCurrent.LocationId
-LEFT JOIN dbo.WMS_Warehouse directWarehouse ON directWarehouse.Id = directLocation.WarehouseId
-LEFT JOIN dbo.WMS_Zone directZone ON directZone.Id = directLocation.ZoneId
+FROM dbo.WMS_FG_HU hu
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation directCurrent ON directCurrent.HUId = hu.Id
+LEFT JOIN dbo.WMS_FG_Location directLocation ON directLocation.Id = directCurrent.LocationId
+LEFT JOIN dbo.WMS_FG_HU_MoveLog directMove ON directMove.Id = directCurrent.LastMoveLogId
+LEFT JOIN dbo.WMS_FG_Warehouse directWarehouse ON directWarehouse.Id = directLocation.WarehouseId
+LEFT JOIN dbo.WMS_FG_Zone directZone ON directZone.Id = directLocation.ZoneId
 OUTER APPLY
 (
     SELECT TOP 1
@@ -99,10 +112,10 @@ OUTER APPLY
         ancestor.HUCode AS SourceHUCode,
         ancestor.HUType AS SourceHUType
     FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
-    INNER JOIN dbo.WMS_Location location ON location.Id = currentLocation.LocationId
-    INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-    INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
+    INNER JOIN dbo.WMS_FG_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
+    INNER JOIN dbo.WMS_FG_Location location ON location.Id = currentLocation.LocationId
+    INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+    INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
     WHERE ancestor.RootHUId = hu.Id
     ORDER BY ancestor.LevelNo
 ) effective
@@ -131,34 +144,17 @@ OPTION (MAXRECURSION 20);";
 ;WITH Roots AS
 (
     SELECT h.Id AS RootHUId, h.Id AS HUId, h.HUCode, h.HUType, CAST(0 AS INT) AS LevelNo
-    FROM dbo.WMS_HU h
+    FROM dbo.WMS_FG_HU h
     WHERE h.HUType = @HUType
-),
-Ancestors AS
-(
-    SELECT RootHUId, HUId, HUCode, HUType, LevelNo FROM Roots
-    UNION ALL
-    SELECT ancestor.RootHUId, parent.Id, parent.HUCode, parent.HUType, ancestor.LevelNo + 1
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_Relation relation ON relation.ChildHUId = ancestor.HUId AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU parent ON parent.Id = relation.ParentHUId AND ";
-            const string sqlSuffix = @"
-),
-RankedLocations AS
-(
-    SELECT
-        ancestor.RootHUId,
-        currentLocation.LocationId,
-        ROW_NUMBER() OVER (PARTITION BY ancestor.RootHUId ORDER BY ancestor.LevelNo) AS LocationRank
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
 )
+";
+            const string sqlSuffix = @"
 SELECT RootHUId
-FROM RankedLocations
+FROM RankedEffectiveLocations
 WHERE LocationRank = 1 AND LocationId = @LocationId
 ORDER BY RootHUId
 OPTION (MAXRECURSION 20);";
-            string sql = sqlPrefix + ActiveParentPredicateSql + sqlSuffix;
+            string sql = sqlPrefix + AncestorAndRankedLocationCteSql + sqlSuffix;
             List<long> results = new List<long>();
 
             using (SqlConnection connection = DbConnectionFactory.Create())

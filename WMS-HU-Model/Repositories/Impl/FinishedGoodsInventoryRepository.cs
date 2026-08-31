@@ -8,61 +8,69 @@ namespace WMS_HU_Model.Repositories
 {
     public class FinishedGoodsInventoryRepository : IFinishedGoodsInventoryRepository
     {
-        public const string CurrentInventoryFromWhereSql = @"
-FROM dbo.WMS_HU b
-LEFT JOIN dbo.WMS_HU_CurrentLocation dc ON dc.HUId = b.Id
-LEFT JOIN dbo.WMS_Location dl ON dl.Id = dc.LocationId
-LEFT JOIN dbo.WMS_Warehouse dw ON dw.Id = dl.WarehouseId
-LEFT JOIN dbo.WMS_Zone dz ON dz.Id = dl.ZoneId
-LEFT JOIN dbo.WMS_HU_Relation pr ON pr.ChildHUId = b.Id AND pr.IsActive = 1
-LEFT JOIN dbo.WMS_HU ph ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
-LEFT JOIN dbo.WMS_HU_CurrentLocation pc ON pc.HUId = ph.Id
-LEFT JOIN dbo.WMS_Location pl ON pl.Id = pc.LocationId
-LEFT JOIN dbo.WMS_Warehouse pw ON pw.Id = pl.WarehouseId
-LEFT JOIN dbo.WMS_Zone pz ON pz.Id = pl.ZoneId
-LEFT JOIN dbo.WMS_HU_HoldLog hold ON hold.HUId = b.Id AND hold.IsActive = 1
-INNER JOIN dbo.WMS_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
-INNER JOIN dbo.WMS_HU pack ON pack.Id = r.ChildHUId
+        public static readonly string CurrentInventoryFromWhereSql = @"
+;WITH Roots AS
+(
+    SELECT b.Id AS RootHUId, b.Id AS HUId, b.HUCode, b.HUType, CAST(0 AS INT) AS LevelNo
+    FROM dbo.WMS_FG_HU b
+    WHERE b.HUType = 'OUTER_BOX' AND b.LifecycleStatus = 'ACTIVE'
+)
+" + EffectiveLocationResolver.AncestorAndRankedLocationCteSql + @"
+, EffectiveLocations AS
+(
+    SELECT RootHUId, LocationId
+    FROM RankedEffectiveLocations
+    WHERE LocationRank = 1
+)
+FROM dbo.WMS_FG_HU b
+INNER JOIN EffectiveLocations effective ON effective.RootHUId = b.Id
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation dc ON dc.HUId = b.Id
+LEFT JOIN dbo.WMS_FG_Location dl ON dl.Id = effective.LocationId
+LEFT JOIN dbo.WMS_FG_Warehouse dw ON dw.Id = dl.WarehouseId
+LEFT JOIN dbo.WMS_FG_Zone dz ON dz.Id = dl.ZoneId
+LEFT JOIN dbo.WMS_FG_HU_Relation pr ON pr.ChildHUId = b.Id AND pr.IsActive = 1
+LEFT JOIN dbo.WMS_FG_HU ph ON ph.Id = pr.ParentHUId AND ph.LifecycleStatus = 'ACTIVE'
+LEFT JOIN dbo.WMS_FG_HU_HoldLog hold ON hold.HUId = b.Id AND hold.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = r.ChildHUId
     AND pack.HUType = 'INNER_PACK'
     AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
-WHERE b.HUType = 'OUTER_BOX'
-  AND b.LifecycleStatus = 'ACTIVE'
-  AND COALESCE(dl.Id, pl.Id) IS NOT NULL
-  AND COALESCE(dl.LocationCode, pl.LocationCode) <> 'SHIPPED'
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+WHERE dl.Id IS NOT NULL
+  AND dl.LocationCode <> 'SHIPPED'
   AND (@PlantCode IS NULL OR b.PlantCode = @PlantCode)
   AND (@MaterialCode IS NULL OR EXISTS
-      (SELECT 1 FROM dbo.WMS_HU_Relation mr
-       INNER JOIN dbo.WMS_HU mp ON mp.Id = mr.ChildHUId
+      (SELECT 1 FROM dbo.WMS_FG_HU_Relation mr
+       INNER JOIN dbo.WMS_FG_HU mp ON mp.Id = mr.ChildHUId
            AND mp.HUType = 'INNER_PACK' AND mp.LifecycleStatus = 'ACTIVE'
-       INNER JOIN dbo.WMS_HU_Item mi ON mi.HUId = mp.Id AND mi.IsActive = 1
-       WHERE mr.ParentHUId = b.Id AND mr.IsActive = 1 AND mi.MaterialCode = @MaterialCode))
+       INNER JOIN dbo.WMS_FG_HU_Item mi ON mi.HUId = mp.Id AND mi.IsActive = 1
+       WHERE mr.ParentHUId = b.Id AND mr.IsActive = 1 AND mi.ProdNo = @MaterialCode))
   AND (@MaterialRevision IS NULL OR EXISTS
-      (SELECT 1 FROM dbo.WMS_HU_Relation rr
-       INNER JOIN dbo.WMS_HU rp ON rp.Id = rr.ChildHUId
+      (SELECT 1 FROM dbo.WMS_FG_HU_Relation rr
+       INNER JOIN dbo.WMS_FG_HU rp ON rp.Id = rr.ChildHUId
            AND rp.HUType = 'INNER_PACK' AND rp.LifecycleStatus = 'ACTIVE'
-       INNER JOIN dbo.WMS_HU_Item ri ON ri.HUId = rp.Id AND ri.IsActive = 1
-       WHERE rr.ParentHUId = b.Id AND rr.IsActive = 1 AND ISNULL(ri.MaterialRevision, '') = @MaterialRevision))
+       INNER JOIN dbo.WMS_FG_HU_Item ri ON ri.HUId = rp.Id AND ri.IsActive = 1
+       WHERE rr.ParentHUId = b.Id AND rr.IsActive = 1 AND ISNULL(ri.ProdRev, '') = @MaterialRevision))
   AND (@BoxCode IS NULL OR b.HUCode LIKE '%' + @BoxCode + '%')
   AND (@ExactBoxCode IS NULL OR b.HUCode = @ExactBoxCode)
   AND (@InnerPackCode IS NULL OR EXISTS
-      (SELECT 1 FROM dbo.WMS_HU_Relation ir
-       INNER JOIN dbo.WMS_HU ip ON ip.Id = ir.ChildHUId
+      (SELECT 1 FROM dbo.WMS_FG_HU_Relation ir
+       INNER JOIN dbo.WMS_FG_HU ip ON ip.Id = ir.ChildHUId
            AND ip.HUType = 'INNER_PACK' AND ip.LifecycleStatus = 'ACTIVE'
        WHERE ir.ParentHUId = b.Id AND ir.IsActive = 1 AND ip.HUCode LIKE '%' + @InnerPackCode + '%'))
-  AND (@LocationCode IS NULL OR COALESCE(dl.LocationCode, pl.LocationCode) LIKE '%' + @LocationCode + '%')
+  AND (@LocationCode IS NULL OR dl.LocationCode LIKE '%' + @LocationCode + '%')
   AND (@StockStatus IS NULL OR EXISTS
-      (SELECT 1 FROM dbo.WMS_HU_Relation sr
-       INNER JOIN dbo.WMS_HU sp ON sp.Id = sr.ChildHUId
+      (SELECT 1 FROM dbo.WMS_FG_HU_Relation sr
+       INNER JOIN dbo.WMS_FG_HU sp ON sp.Id = sr.ChildHUId
            AND sp.HUType = 'INNER_PACK' AND sp.LifecycleStatus = 'ACTIVE'
-       INNER JOIN dbo.WMS_HU_Item si ON si.HUId = sp.Id AND si.IsActive = 1
+       INNER JOIN dbo.WMS_FG_HU_Item si ON si.HUId = sp.Id AND si.IsActive = 1
        WHERE sr.ParentHUId = b.Id AND sr.IsActive = 1 AND si.StockStatus = @StockStatus))
   AND (@IsHold IS NULL OR b.IsHold = @IsHold)
   AND (@WeekCode IS NULL OR EXISTS
-      (SELECT 1 FROM dbo.WMS_HU_Relation wr
-       INNER JOIN dbo.WMS_HU wp ON wp.Id = wr.ChildHUId
+      (SELECT 1 FROM dbo.WMS_FG_HU_Relation wr
+       INNER JOIN dbo.WMS_FG_HU wp ON wp.Id = wr.ChildHUId
            AND wp.HUType = 'INNER_PACK' AND wp.LifecycleStatus = 'ACTIVE'
-       INNER JOIN dbo.WMS_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
+       INNER JOIN dbo.WMS_FG_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
        WHERE wr.ParentHUId = b.Id AND wr.IsActive = 1
          AND ((wi.WeekYear IS NOT NULL AND wi.WeekNo IS NOT NULL AND
                CAST(wi.WeekYear AS VARCHAR(4)) + '-W' + RIGHT('0' + CAST(wi.WeekNo AS VARCHAR(2)), 2) = @WeekCode)
@@ -70,38 +78,38 @@ WHERE b.HUType = 'OUTER_BOX'
 
         public const string QuantityAggregationSql = "SUM(item.Qty) AS TotalQty";
 
-        private const string CountSql = @"
+        private static readonly string CountSql = @"
 SELECT COUNT(DISTINCT b.Id)
 " + CurrentInventoryFromWhereSql + ";";
 
-        private const string RowsSql = @"
+        private static readonly string RowsSql = @"
 ;WITH InventoryRows AS
 (
 SELECT
     b.Id AS BoxHuId,
     b.HUCode AS BoxCode,
     b.PlantCode,
-    MIN(item.MaterialCode) AS MaterialCode,
-    MIN(item.MaterialRevision) AS MaterialRevision,
+    MIN(item.ProdNo) AS MaterialCode,
+    MIN(item.ProdRev) AS MaterialRevision,
     " + QuantityAggregationSql + @",
     MIN(item.Uom) AS Uom,
-    COALESCE(dl.LocationCode, pl.LocationCode) AS EffectiveLocationCode,
-    COALESCE(dw.WarehouseCode, pw.WarehouseCode) AS WarehouseCode,
-    COALESCE(dz.ZoneCode, pz.ZoneCode) AS ZoneCode,
-    COALESCE(dl.LocationTypeCode, pl.LocationTypeCode) AS LocationTypeCode,
-    CAST(CASE WHEN dl.Id IS NULL AND pl.Id IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS IsLocationInherited,
+    dl.LocationCode AS EffectiveLocationCode,
+    dw.WarehouseCode AS WarehouseCode,
+    dz.ZoneCode AS ZoneCode,
+    dl.LocationTypeCode AS LocationTypeCode,
+    CAST(CASE WHEN dc.HUId IS NULL THEN 1 ELSE 0 END AS BIT) AS IsLocationInherited,
     b.LifecycleStatus,
     b.IsHold,
     hold.HoldReasonCode,
-    COALESCE(hold.HoldReason, b.HoldReason) AS HoldReason,
+    hold.HoldReason AS HoldReason,
     CASE WHEN ph.HUType = 'PALLET' THEN ph.HUCode ELSE NULL END AS ParentPalletCode,
     COUNT(DISTINCT pack.Id) AS InnerPackCount,
-    b.CreateTime AS CreatedTime
+    b.CreateDt AS CreatedTime
 " + CurrentInventoryFromWhereSql + @"
 GROUP BY
-    b.Id, b.HUCode, b.PlantCode, b.LifecycleStatus, b.IsHold, b.HoldReason, b.CreateTime,
-    dl.Id, pl.Id, dl.LocationCode, pl.LocationCode, dw.WarehouseCode, pw.WarehouseCode,
-    dz.ZoneCode, pz.ZoneCode, dl.LocationTypeCode, pl.LocationTypeCode,
+    b.Id, b.HUCode, b.PlantCode, b.LifecycleStatus, b.IsHold, b.CreateDt,
+    dc.HUId, dl.Id, dl.LocationCode, dw.WarehouseCode,
+    dz.ZoneCode, dl.LocationTypeCode,
     hold.HoldReasonCode, hold.HoldReason, ph.HUType, ph.HUCode
 )
 SELECT
@@ -111,26 +119,26 @@ SELECT
             WHEN wi.WeekYear IS NULL OR wi.WeekNo IS NULL THEN N'未解析'
             ELSE CAST(wi.WeekYear AS VARCHAR(4)) + '-W' + RIGHT('0' + CAST(wi.WeekNo AS VARCHAR(2)), 2)
         END
-        FROM dbo.WMS_HU_Relation wr
-        INNER JOIN dbo.WMS_HU wp ON wp.Id = wr.ChildHUId
+        FROM dbo.WMS_FG_HU_Relation wr
+        INNER JOIN dbo.WMS_FG_HU wp ON wp.Id = wr.ChildHUId
             AND wp.HUType = 'INNER_PACK' AND wp.LifecycleStatus = 'ACTIVE'
-        INNER JOIN dbo.WMS_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
+        INNER JOIN dbo.WMS_FG_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
         WHERE wr.ParentHUId = inventory.BoxHuId AND wr.IsActive = 1
         FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS WeekCodeSummary,
     (SELECT COUNT(*) FROM
         (SELECT wi.WeekYear, wi.WeekNo
-         FROM dbo.WMS_HU_Relation wr
-         INNER JOIN dbo.WMS_HU wp ON wp.Id = wr.ChildHUId
+         FROM dbo.WMS_FG_HU_Relation wr
+         INNER JOIN dbo.WMS_FG_HU wp ON wp.Id = wr.ChildHUId
              AND wp.HUType = 'INNER_PACK' AND wp.LifecycleStatus = 'ACTIVE'
-         INNER JOIN dbo.WMS_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
+         INNER JOIN dbo.WMS_FG_HU_Item wi ON wi.HUId = wp.Id AND wi.IsActive = 1
          WHERE wr.ParentHUId = inventory.BoxHuId AND wr.IsActive = 1
          GROUP BY wi.WeekYear, wi.WeekNo) weekGroups) AS WeekCodeCount,
     STUFF((
         SELECT DISTINCT ', ' + si.StockStatus
-        FROM dbo.WMS_HU_Relation sr
-        INNER JOIN dbo.WMS_HU sp ON sp.Id = sr.ChildHUId
+        FROM dbo.WMS_FG_HU_Relation sr
+        INNER JOIN dbo.WMS_FG_HU sp ON sp.Id = sr.ChildHUId
             AND sp.HUType = 'INNER_PACK' AND sp.LifecycleStatus = 'ACTIVE'
-        INNER JOIN dbo.WMS_HU_Item si ON si.HUId = sp.Id AND si.IsActive = 1
+        INNER JOIN dbo.WMS_FG_HU_Item si ON si.HUId = sp.Id AND si.IsActive = 1
         WHERE sr.ParentHUId = inventory.BoxHuId AND sr.IsActive = 1
         FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS StockStatus
 FROM InventoryRows inventory
@@ -144,11 +152,11 @@ SELECT
     item.WeekSortKey,
     COUNT(DISTINCT pack.Id) AS PackCount,
     SUM(item.Qty) AS Qty
-FROM dbo.WMS_HU b
-INNER JOIN dbo.WMS_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
-INNER JOIN dbo.WMS_HU pack ON pack.Id = r.ChildHUId
+FROM dbo.WMS_FG_HU b
+INNER JOIN dbo.WMS_FG_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = r.ChildHUId
     AND pack.HUType = 'INNER_PACK' AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE b.HUCode = @ExactBoxCode AND b.HUType = 'OUTER_BOX' AND b.LifecycleStatus = 'ACTIVE'
 GROUP BY item.WeekYear, item.WeekNo, item.WeekSortKey
 ORDER BY item.WeekSortKey, WeekCode;
@@ -164,11 +172,11 @@ SELECT
     MIN(item.WeekSortKey) AS WeekSortKey,
     MIN(item.StockStatus) AS StockStatus,
     pack.IsHold
-FROM dbo.WMS_HU b
-INNER JOIN dbo.WMS_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
-INNER JOIN dbo.WMS_HU pack ON pack.Id = r.ChildHUId
+FROM dbo.WMS_FG_HU b
+INNER JOIN dbo.WMS_FG_HU_Relation r ON r.ParentHUId = b.Id AND r.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = r.ChildHUId
     AND pack.HUType = 'INNER_PACK' AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE b.HUCode = @ExactBoxCode AND b.HUType = 'OUTER_BOX' AND b.LifecycleStatus = 'ACTIVE'
 GROUP BY pack.Id, pack.HUCode, pack.IsHold
 ORDER BY pack.Id;";

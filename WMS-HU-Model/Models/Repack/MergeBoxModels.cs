@@ -72,10 +72,10 @@ namespace WMS_HU_Model.Models.Repack
         public long? LocationId { get; set; }
         public string LocationCode { get; set; }
         public string WarehouseCode { get; set; }
-        public string WarehouseStatus { get; set; }
+        public bool WarehouseIsActive { get; set; }
         public string ZoneCode { get; set; }
-        public string ZoneStatus { get; set; }
-        public string LocationStatus { get; set; }
+        public bool ZoneIsActive { get; set; }
+        public bool LocationIsActive { get; set; }
         public bool IsVirtual { get; set; }
         public int ActiveItemCount { get; set; }
         public int MaterialCodeCount { get; set; }

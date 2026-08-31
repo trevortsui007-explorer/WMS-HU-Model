@@ -19,19 +19,19 @@ SELECT
     box.IsHold AS BoxIsHold,
     pack.Id AS PackHuId,
     pack.HUCode AS PackCode,
-    item.MaterialCode,
-    item.MaterialRevision,
-    item.BatchNo,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
+    item.LotNo AS BatchNo,
     item.WeekYear,
     item.WeekNo,
     item.WeekSortKey,
     item.Qty
-FROM dbo.WMS_HU box
-INNER JOIN dbo.WMS_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
-INNER JOIN dbo.WMS_HU pack ON pack.Id = relation.ChildHUId
+FROM dbo.WMS_FG_HU box
+INNER JOIN dbo.WMS_FG_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = relation.ChildHUId
     AND pack.HUType = 'INNER_PACK'
     AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE box.Id IN ({HU_IDS})
   AND box.HUType = 'OUTER_BOX'
   AND box.LifecycleStatus = 'ACTIVE'
@@ -45,19 +45,19 @@ SELECT
     box.IsHold AS BoxIsHold,
     pack.Id AS PackHuId,
     pack.HUCode AS PackCode,
-    item.MaterialCode,
-    item.MaterialRevision,
-    item.BatchNo,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
+    item.LotNo AS BatchNo,
     item.WeekYear,
     item.WeekNo,
     item.WeekSortKey,
     item.Qty
-FROM dbo.WMS_HU box
-INNER JOIN dbo.WMS_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
-INNER JOIN dbo.WMS_HU pack ON pack.Id = relation.ChildHUId
+FROM dbo.WMS_FG_HU box
+INNER JOIN dbo.WMS_FG_HU_Relation relation ON relation.ParentHUId = box.Id AND relation.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU pack ON pack.Id = relation.ChildHUId
     AND pack.HUType = 'INNER_PACK'
     AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE box.Id = @BoxHUId
   AND box.HUType = 'OUTER_BOX'
 ORDER BY pack.HUCode, item.Id;";
@@ -70,15 +70,15 @@ SELECT
     CAST(0 AS BIT) AS BoxIsHold,
     pack.Id AS PackHuId,
     pack.HUCode AS PackCode,
-    item.MaterialCode,
-    item.MaterialRevision,
-    item.BatchNo,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
+    item.LotNo AS BatchNo,
     item.WeekYear,
     item.WeekNo,
     item.WeekSortKey,
     item.Qty
-FROM dbo.WMS_HU pack
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+FROM dbo.WMS_FG_HU pack
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE pack.Id = @PackHUId
   AND pack.HUType = 'INNER_PACK'
 ORDER BY item.Id;";
@@ -87,9 +87,9 @@ ORDER BY item.Id;";
         {
             const string sql = @"
 SELECT TOP 1 location.Id, warehouse.WarehouseCode, zone.ZoneCode, location.LocationCode
-FROM dbo.WMS_Location location
-INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
+FROM dbo.WMS_FG_Location location
+INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
 WHERE warehouse.WarehouseCode = @WarehouseCode
   AND location.LocationCode = @LocationCode;";
             return QueryLocation(sql, warehouseCode, locationCode, true);
@@ -99,9 +99,9 @@ WHERE warehouse.WarehouseCode = @WarehouseCode
         {
             const string sql = @"
 SELECT TOP 1 location.Id, warehouse.WarehouseCode, zone.ZoneCode, location.LocationCode
-FROM dbo.WMS_Location location
-INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
+FROM dbo.WMS_FG_Location location
+INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
 WHERE location.LocationCode = @LocationCode
 ORDER BY warehouse.WarehouseCode;";
             return QueryLocation(sql, null, locationCode, false);
@@ -110,10 +110,11 @@ ORDER BY warehouse.WarehouseCode;";
         public HuDto GetHu(long huId)
         {
             const string sql = @"
-SELECT Id, HUCode, HUType, PlantCode, LifecycleStatus, IsHold, HoldReason,
-    SourceSystem, SourceEntityId, SourceBusinessNo, Remark, CreateTime
-FROM dbo.WMS_HU
-WHERE Id = @HUId;";
+SELECT hu.Id, hu.HUCode, hu.HUType, hu.PlantCode, hu.LifecycleStatus, hu.IsHold,
+    (SELECT TOP 1 hold.HoldReason FROM dbo.WMS_FG_HU_HoldLog hold WHERE hold.HUId=hu.Id AND hold.IsActive=1 ORDER BY hold.Id DESC) AS HoldReason,
+    hu.SourceSystem, hu.SourceEntityId, hu.SourceBusinessNo, hu.Remark, hu.CreateDt AS CreateTime
+FROM dbo.WMS_FG_HU hu
+WHERE hu.Id = @HUId;";
 
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
@@ -197,8 +198,8 @@ WHERE Id = @HUId;";
         {
             const string sql = @"
 SELECT TOP 1 parent.HUCode
-FROM dbo.WMS_HU_Relation relation
-INNER JOIN dbo.WMS_HU parent ON parent.Id = relation.ParentHUId
+FROM dbo.WMS_FG_HU_Relation relation
+INNER JOIN dbo.WMS_FG_HU parent ON parent.Id = relation.ParentHUId
     AND parent.HUType = 'OUTER_BOX'
     AND parent.LifecycleStatus = 'ACTIVE'
 WHERE relation.ChildHUId = @PackHUId

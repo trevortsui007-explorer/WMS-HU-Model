@@ -15,13 +15,13 @@ namespace WMS_HU_Model.Repositories
         {
             if (string.IsNullOrWhiteSpace(requestId)) return null;
             const string sql = @"
-SELECT op.OperationNo, op.OperationTime AS MoveTime, box.HUCode AS BoxCode,
+SELECT op.OperationNo, op.OperationDt AS MoveTime, box.HUCode AS BoxCode,
        source.LocationCode AS SourceLocationCode, target.LocationCode AS TargetLocationCode
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU box ON box.Id = op.HUId
-INNER JOIN dbo.WMS_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = op.HUId
-LEFT JOIN dbo.WMS_Location source ON source.Id = moveLog.FromLocationId
-INNER JOIN dbo.WMS_Location target ON target.Id = moveLog.ToLocationId
+FROM dbo.WMS_FG_HU_OperationLog op
+INNER JOIN dbo.WMS_FG_HU box ON box.Id = op.HUId
+INNER JOIN dbo.WMS_FG_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = op.HUId
+LEFT JOIN dbo.WMS_FG_Location source ON source.Id = moveLog.FromLocationId
+INNER JOIN dbo.WMS_FG_Location target ON target.Id = moveLog.ToLocationId
 WHERE op.OperationType = 'MOVE' AND moveLog.MoveType = 'RELOCATION' AND op.RequestId = @RequestId
 ORDER BY box.HUCode;";
             List<BatchRelocationRow> rows = new List<BatchRelocationRow>();
@@ -58,7 +58,7 @@ ORDER BY box.HUCode;";
                 {
                     try
                     {
-                        const string requestSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
+                        const string requestSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_OperationLog WITH (UPDLOCK,HOLDLOCK) WHERE RequestId=@RequestId;";
                         using (SqlCommand requestCommand = new SqlCommand(requestSql, connection, transaction))
                         {
                             requestCommand.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
@@ -69,8 +69,8 @@ ORDER BY box.HUCode;";
                         RelocationLocationRow target = ReadLocation(connection, transaction, command.WarehouseCode, command.TargetLocationCode);
                         if (source == null) { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("源货位不存在或不属于指定仓库。"); }
                         if (target == null) { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("目标货位不存在或不属于指定仓库。"); }
-                        if (source.MasterStatus != "ACTIVE" || source.IsVirtual || source.ZoneCode != "STORAGE") { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("源货位必须是可用的实体STORAGE货位。"); }
-                        if (target.MasterStatus != "ACTIVE" || target.IsVirtual || target.ZoneCode != "STORAGE") { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("目标货位必须是可用的实体STORAGE货位。"); }
+                        if (!source.IsActive || source.IsVirtual || source.ZoneCode != "STORAGE") { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("源货位必须是可用的实体STORAGE货位。"); }
+                        if (!target.IsActive || target.IsVirtual || target.ZoneCode != "STORAGE") { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("目标货位必须是可用的实体STORAGE货位。"); }
                         if (source.Id == target.Id) { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("源货位与目标货位不能相同。"); }
 
                         List<RelocationBoxRow> boxes = ReadBoxes(connection, transaction, command.BoxHuCodes);
@@ -83,7 +83,7 @@ ORDER BY box.HUCode;";
                         List<string> plants = boxes.Select(x => x.PlantCode).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                         foreach (string plant in plants)
                         {
-                            const string plantSql = @"SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
+                            const string plantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_WarehousePlant wp INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
                             using (SqlCommand plantCommand = new SqlCommand(plantSql, connection, transaction))
                             {
                                 plantCommand.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = command.WarehouseCode;
@@ -95,7 +95,7 @@ ORDER BY box.HUCode;";
                         if (target.PlantPolicy == "SAME_PLANT")
                         {
                             if (plants.Count != 1) { transaction.Rollback(); return BatchRelocationPersistenceResult.Fail("SAME_PLANT目标货位不能接收不同厂别的批量外箱。"); }
-                            const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation cl INNER JOIN dbo.WMS_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
+                            const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation cl INNER JOIN dbo.WMS_FG_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
                             using (SqlCommand samePlantCommand = new SqlCommand(samePlantSql, connection, transaction))
                             {
                                 samePlantCommand.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
@@ -113,7 +113,7 @@ ORDER BY box.HUCode;";
                             string itemRequestId = command.RequestId + ":" + (index + 1).ToString("000");
                             long moveLogId = HuMoveLogWriter.Insert(connection, transaction, moveNo, box.Id, source.Id, target.Id, "RELOCATION",
                                 target.LocationCode, null, null, itemRequestId, command.Reason, command.Operator, now, command.Remark);
-                            const string updateSql = @"UPDATE dbo.WMS_HU_CurrentLocation SET LocationId=@LocationId,LocationSince=@Now,LastMoveLogId=@MoveLogId,LastMoveNo=@MoveNo,LastMoveType='RELOCATION',LastOperator=@Operator,ModifyTime=@Now WHERE HUId=@HUId AND LocationId=@SourceLocationId;";
+                            const string updateSql = @"UPDATE dbo.WMS_FG_HU_CurrentLocation SET LocationId=@LocationId,LocationSince=@Now,LastMoveLogId=@MoveLogId,LastEditBy=@Operator,LastEditDt=@Now WHERE HUId=@HUId AND LocationId=@SourceLocationId;";
                             using (SqlCommand updateCommand = new SqlCommand(updateSql, connection, transaction))
                             {
                                 updateCommand.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
@@ -146,7 +146,7 @@ ORDER BY box.HUCode;";
 
         private static RelocationLocationRow ReadLocation(SqlConnection connection, SqlTransaction transaction, string warehouseCode, string locationCode)
         {
-            const string sql = @"SELECT l.Id,l.LocationCode,l.MasterStatus,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,z.ZoneCode FROM dbo.WMS_Location l WITH (UPDLOCK,HOLDLOCK) INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId INNER JOIN dbo.WMS_Zone z ON z.Id=l.ZoneId WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
+            const string sql = @"SELECT l.Id,l.LocationCode,l.IsActive,l.IsVirtual,l.PlantPolicy,l.DedicatedPlantCode,z.ZoneCode FROM dbo.WMS_FG_Location l WITH (UPDLOCK,HOLDLOCK) INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=l.WarehouseId INNER JOIN dbo.WMS_FG_Zone z ON z.Id=l.ZoneId WHERE w.WarehouseCode=@WarehouseCode AND l.LocationCode=@LocationCode;";
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
                 command.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = warehouseCode;
@@ -156,7 +156,7 @@ ORDER BY box.HUCode;";
                     if (!reader.Read()) return null;
                     return new RelocationLocationRow
                     {
-                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), MasterStatus = Convert.ToString(reader["MasterStatus"]),
+                        Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), IsActive = Convert.ToBoolean(reader["IsActive"]),
                         IsVirtual = Convert.ToBoolean(reader["IsVirtual"]), PlantPolicy = Convert.ToString(reader["PlantPolicy"]),
                         DedicatedPlantCode = reader["DedicatedPlantCode"] == DBNull.Value ? null : Convert.ToString(reader["DedicatedPlantCode"]), ZoneCode = Convert.ToString(reader["ZoneCode"])
                     };
@@ -168,7 +168,7 @@ ORDER BY box.HUCode;";
         {
             StringBuilder names = new StringBuilder();
             for (int index = 0; index < boxCodes.Count; index++) { if (index > 0) names.Append(","); names.Append("@Box").Append(index); }
-            string sql = @"SELECT h.Id,h.HUCode,h.HUType,h.PlantCode,h.LifecycleStatus,h.IsHold,cl.LocationId,CAST(CASE WHEN parent.Id IS NULL THEN 0 ELSE 1 END AS bit) AS HasActiveParent FROM dbo.WMS_HU h WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=h.Id OUTER APPLY(SELECT TOP 1 r.Id FROM dbo.WMS_HU_Relation r WITH (UPDLOCK,HOLDLOCK) INNER JOIN dbo.WMS_HU p ON p.Id=r.ParentHUId AND p.LifecycleStatus='ACTIVE' WHERE r.ChildHUId=h.Id AND r.IsActive=1) parent WHERE h.HUCode IN (" + names + ") ORDER BY h.HUCode;";
+            string sql = @"SELECT h.Id,h.HUCode,h.HUType,h.PlantCode,h.LifecycleStatus,h.IsHold,cl.LocationId,CAST(CASE WHEN parent.Id IS NULL THEN 0 ELSE 1 END AS bit) AS HasActiveParent FROM dbo.WMS_FG_HU h WITH (UPDLOCK,HOLDLOCK) LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK,HOLDLOCK) ON cl.HUId=h.Id OUTER APPLY(SELECT TOP 1 r.Id FROM dbo.WMS_FG_HU_Relation r WITH (UPDLOCK,HOLDLOCK) INNER JOIN dbo.WMS_FG_HU p ON p.Id=r.ParentHUId AND p.LifecycleStatus='ACTIVE' WHERE r.ChildHUId=h.Id AND r.IsActive=1) parent WHERE h.HUCode IN (" + names + ") ORDER BY h.HUCode;";
             List<RelocationBoxRow> result = new List<RelocationBoxRow>();
             using (SqlCommand command = new SqlCommand(sql, connection, transaction))
             {
@@ -193,7 +193,7 @@ ORDER BY box.HUCode;";
         }
 
         private class BatchRelocationRow { public string OperationNo { get; set; } public DateTime MoveTime { get; set; } public string BoxCode { get; set; } public string SourceLocationCode { get; set; } public string TargetLocationCode { get; set; } }
-        private class RelocationLocationRow { public long Id { get; set; } public string LocationCode { get; set; } public string MasterStatus { get; set; } public bool IsVirtual { get; set; } public string PlantPolicy { get; set; } public string DedicatedPlantCode { get; set; } public string ZoneCode { get; set; } }
+        private class RelocationLocationRow { public long Id { get; set; } public string LocationCode { get; set; } public bool IsActive { get; set; } public bool IsVirtual { get; set; } public string PlantPolicy { get; set; } public string DedicatedPlantCode { get; set; } public string ZoneCode { get; set; } }
         private class RelocationBoxRow { public long Id { get; set; } public string HuCode { get; set; } public string HuType { get; set; } public string PlantCode { get; set; } public string LifecycleStatus { get; set; } public bool IsHold { get; set; } public long? LocationId { get; set; } public bool HasActiveParent { get; set; } }
     }
 }

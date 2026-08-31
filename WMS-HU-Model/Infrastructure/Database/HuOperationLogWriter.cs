@@ -28,7 +28,7 @@ namespace WMS_HU_Model.Infrastructure.Database
             string remark)
         {
             const string sql = @"
-INSERT INTO dbo.WMS_HU_OperationLog
+INSERT INTO dbo.WMS_FG_HU_OperationLog
 (
     OperationNo,
     OperationType,
@@ -37,8 +37,8 @@ INSERT INTO dbo.WMS_HU_OperationLog
     BusinessNo,
     RequestId,
     DetailJson,
-    Operator,
-    OperationTime,
+    OperationBy,
+    OperationDt,
     Remark
 )
 VALUES
@@ -50,22 +50,22 @@ VALUES
     @BusinessNo,
     @RequestId,
     @DetailJson,
-    @Operator,
-    ISNULL(@OperationTime, SYSDATETIME()),
+    @OperationBy,
+    ISNULL(@OperationDt, SYSDATETIME()),
     @Remark
 );
 ";
 
             DynamicParameters parameters = new DynamicParameters();
-            parameters.Add("@OperationNo", operationNo, DbType.AnsiString, size: 50);
-            parameters.Add("@OperationType", operationType, DbType.AnsiString, size: 30);
+            parameters.Add("@OperationNo", operationNo, DbType.AnsiString, size: 100);
+            parameters.Add("@OperationType", operationType, DbType.AnsiString, size: 50);
             parameters.Add("@HUId", huId, DbType.Int64);
             parameters.Add("@RelatedHUId", relatedHuId, DbType.Int64);
             parameters.Add("@BusinessNo", DbParameterValue.StringOrNull(businessNo), DbType.AnsiString, size: 100);
             parameters.Add("@RequestId", DbParameterValue.StringOrNull(requestId), DbType.AnsiString, size: 100);
             parameters.Add("@DetailJson", DbParameterValue.StringOrNull(detailJson), DbType.String, size: -1);
-            parameters.Add("@Operator", DbParameterValue.StringOrNull(operatorCode), DbType.AnsiString, size: 50);
-            parameters.Add("@OperationTime", operationTime, DbType.DateTime2);
+            parameters.Add("@OperationBy", DbParameterValue.StringOrNull(operatorCode), DbType.AnsiString, size: 50);
+            parameters.Add("@OperationDt", operationTime, DbType.DateTime2);
             parameters.Add("@Remark", DbParameterValue.StringOrNull(remark), DbType.String, size: 500);
 
             DbExecutor.Execute(conn, tran, sql, parameters);

@@ -11,11 +11,11 @@ namespace WMS_HU_Model.Repositories
     {
         public const string WarehouseQuerySql = @"
 SELECT w.Id, w.WarehouseCode, w.WarehouseName, w.WarehouseType, w.IsActive, w.Remark,
-    w.CreateTime, w.ModifyUser, w.ModifyTime,
-    (SELECT COUNT(1) FROM dbo.WMS_Location l WHERE l.WarehouseId = w.Id AND l.MasterStatus = 'ACTIVE') AS ActiveLocationCount,
-    (SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation currentLocation INNER JOIN dbo.WMS_Location l ON l.Id = currentLocation.LocationId WHERE l.WarehouseId = w.Id) AS CurrentHuCount,
-    (SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp WHERE wp.WarehouseId = w.Id AND wp.IsActive = 1) AS ActiveMappingCount
-FROM dbo.WMS_Warehouse w
+    w.CreateDt AS CreateTime, w.LastEditBy AS ModifyUser, w.LastEditDt AS ModifyTime,
+    (SELECT COUNT(1) FROM dbo.WMS_FG_Location l WHERE l.WarehouseId = w.Id AND l.IsActive = 1) AS ActiveLocationCount,
+    (SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation currentLocation INNER JOIN dbo.WMS_FG_Location l ON l.Id = currentLocation.LocationId WHERE l.WarehouseId = w.Id) AS CurrentHuCount,
+    (SELECT COUNT(1) FROM dbo.WMS_FG_WarehousePlant wp WHERE wp.WarehouseId = w.Id AND wp.IsActive = 1) AS ActiveMappingCount
+FROM dbo.WMS_FG_Warehouse w
 WHERE (@WarehouseCode IS NULL OR w.WarehouseCode LIKE '%' + @WarehouseCode + '%')
   AND (@WarehouseName IS NULL OR w.WarehouseName LIKE '%' + @WarehouseName + '%')
   AND (@IsActive IS NULL OR w.IsActive = @IsActive)
@@ -23,9 +23,9 @@ ORDER BY w.WarehouseCode;";
 
         public const string WarehousePlantQuerySql = @"
 SELECT wp.Id, w.WarehouseCode, w.WarehouseName, wp.PlantCode,
-    wp.SAPStorageLocation AS SapStorageLocation, wp.IsActive, wp.Remark, wp.CreateTime
-FROM dbo.WMS_WarehousePlant wp
-INNER JOIN dbo.WMS_Warehouse w ON w.Id = wp.WarehouseId
+    wp.SAPStorageLocation AS SapStorageLocation, wp.IsActive, wp.Remark, wp.CreateDt AS CreateTime
+FROM dbo.WMS_FG_WarehousePlant wp
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id = wp.WarehouseId
 WHERE (@WarehouseCode IS NULL OR w.WarehouseCode = @WarehouseCode)
   AND (@PlantCode IS NULL OR wp.PlantCode LIKE '%' + @PlantCode + '%')
   AND (@IsActive IS NULL OR wp.IsActive = @IsActive)
@@ -37,8 +37,8 @@ ORDER BY w.WarehouseCode, wp.PlantCode;";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(WarehouseQuerySql, connection))
             {
-                AddString(command, "@WarehouseCode", query.WarehouseCode, 30);
-                AddString(command, "@WarehouseName", query.WarehouseName, 200, true);
+                AddString(command, "@WarehouseCode", query.WarehouseCode, 20);
+                AddString(command, "@WarehouseName", query.WarehouseName, 100, true);
                 AddNullableBit(command, "@IsActive", query.IsActive);
                 connection.Open();
                 using (SqlDataReader reader = command.ExecuteReader()) while (reader.Read()) result.Add(ReadWarehouse(reader));
@@ -55,13 +55,13 @@ ORDER BY w.WarehouseCode, wp.PlantCode;";
 
         public bool WarehouseExists(string warehouseCode)
         {
-            return ScalarCount("SELECT COUNT(1) FROM dbo.WMS_Warehouse WHERE WarehouseCode = @Value;", warehouseCode) > 0;
+            return ScalarCount("SELECT COUNT(1) FROM dbo.WMS_FG_Warehouse WHERE WarehouseCode = @Value;", warehouseCode) > 0;
         }
 
         public long InsertWarehouse(WarehouseCreateRequest request)
         {
-            const string sql = @"INSERT INTO dbo.WMS_Warehouse
-(WarehouseCode, WarehouseName, WarehouseType, IsActive, Remark, CreateUser)
+            const string sql = @"INSERT INTO dbo.WMS_FG_Warehouse
+(WarehouseCode, WarehouseName, WarehouseType, IsActive, Remark, CreateBy)
 VALUES (@WarehouseCode, @WarehouseName, @WarehouseType, 1, @Remark, @Operator);
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
             using (SqlConnection connection = DbConnectionFactory.Create())
@@ -75,8 +75,8 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
         public bool UpdateWarehouse(string warehouseCode, WarehouseUpdateRequest request)
         {
-            const string sql = @"UPDATE dbo.WMS_Warehouse SET WarehouseName=@WarehouseName, WarehouseType=@WarehouseType,
-Remark=@Remark, ModifyUser=@Operator, ModifyTime=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
+            const string sql = @"UPDATE dbo.WMS_FG_Warehouse SET WarehouseName=@WarehouseName, WarehouseType=@WarehouseType,
+Remark=@Remark, LastEditBy=@Operator, LastEditDt=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
@@ -88,12 +88,12 @@ Remark=@Remark, ModifyUser=@Operator, ModifyTime=SYSDATETIME() WHERE WarehouseCo
 
         public bool SetWarehouseActive(string warehouseCode, bool isActive, string operatorName)
         {
-            const string sql = @"UPDATE dbo.WMS_Warehouse SET IsActive=@IsActive, ModifyUser=@Operator,
-ModifyTime=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
+            const string sql = @"UPDATE dbo.WMS_FG_Warehouse SET IsActive=@IsActive, LastEditBy=@Operator,
+LastEditDt=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                AddString(command, "@WarehouseCode", warehouseCode, 30);
+                AddString(command, "@WarehouseCode", warehouseCode, 20);
                 command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = isActive;
                 AddString(command, "@Operator", operatorName, 50);
                 connection.Open();
@@ -101,9 +101,9 @@ ModifyTime=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
             }
         }
 
-        public bool HasActiveLocations(string warehouseCode) { return RelatedCount("dbo.WMS_Location l", "l.MasterStatus='ACTIVE'", warehouseCode) > 0; }
-        public bool HasCurrentHus(string warehouseCode) { return RelatedCount("dbo.WMS_Location l INNER JOIN dbo.WMS_HU_CurrentLocation c ON c.LocationId=l.Id", "1=1", warehouseCode) > 0; }
-        public bool HasActiveMappings(string warehouseCode) { return RelatedCount("dbo.WMS_WarehousePlant l", "l.IsActive=1", warehouseCode) > 0; }
+        public bool HasActiveLocations(string warehouseCode) { return RelatedCount("dbo.WMS_FG_Location l", "l.IsActive=1", warehouseCode) > 0; }
+        public bool HasCurrentHus(string warehouseCode) { return RelatedCount("dbo.WMS_FG_Location l INNER JOIN dbo.WMS_FG_HU_CurrentLocation c ON c.LocationId=l.Id", "1=1", warehouseCode) > 0; }
+        public bool HasActiveMappings(string warehouseCode) { return RelatedCount("dbo.WMS_FG_WarehousePlant l", "l.IsActive=1", warehouseCode) > 0; }
 
         public List<WarehousePlantDto> QueryWarehousePlants(WarehousePlantQuery query)
         {
@@ -111,7 +111,7 @@ ModifyTime=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(WarehousePlantQuerySql, connection))
             {
-                AddString(command, "@WarehouseCode", query.WarehouseCode, 30);
+                AddString(command, "@WarehouseCode", query.WarehouseCode, 20);
                 AddString(command, "@PlantCode", query.PlantCode, 20);
                 AddNullableBit(command, "@IsActive", query.IsActive);
                 connection.Open();
@@ -128,12 +128,12 @@ ModifyTime=SYSDATETIME() WHERE WarehouseCode=@WarehouseCode;";
 
         public bool WarehousePlantExists(string warehouseCode, string plantCode)
         {
-            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId
+            const string sql = @"SELECT COUNT(1) FROM dbo.WMS_FG_WarehousePlant wp INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId
 WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode;";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                AddString(command, "@WarehouseCode", warehouseCode, 30);
+                AddString(command, "@WarehouseCode", warehouseCode, 20);
                 AddString(command, "@PlantCode", plantCode, 20);
                 connection.Open();
                 return Convert.ToInt32(command.ExecuteScalar()) > 0;
@@ -142,13 +142,13 @@ WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode;";
 
         public long InsertWarehousePlant(WarehousePlantCreateRequest request)
         {
-            const string sql = @"INSERT INTO dbo.WMS_WarehousePlant (WarehouseId, PlantCode, SAPStorageLocation, IsActive, Remark)
-SELECT Id, @PlantCode, @SapStorageLocation, 1, @Remark FROM dbo.WMS_Warehouse WHERE WarehouseCode=@WarehouseCode;
+            const string sql = @"INSERT INTO dbo.WMS_FG_WarehousePlant (WarehouseId, PlantCode, SAPStorageLocation, IsActive, Remark, CreateBy)
+SELECT Id, @PlantCode, @SapStorageLocation, 1, @Remark, @Operator FROM dbo.WMS_FG_Warehouse WHERE WarehouseCode=@WarehouseCode;
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                AddPlantParameters(command, request.WarehouseCode, request.PlantCode, request.SapStorageLocation, request.Remark);
+                AddPlantParameters(command, request.WarehouseCode, request.PlantCode, request.SapStorageLocation, request.Remark, request.Operator);
                 connection.Open();
                 return Convert.ToInt64(command.ExecuteScalar());
             }
@@ -156,34 +156,34 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
 
         public bool UpdateWarehousePlant(string warehouseCode, string plantCode, WarehousePlantUpdateRequest request)
         {
-            const string sql = @"UPDATE wp SET SAPStorageLocation=@SapStorageLocation, Remark=@Remark
-FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId
+            const string sql = @"UPDATE wp SET SAPStorageLocation=@SapStorageLocation, Remark=@Remark, LastEditBy=@Operator, LastEditDt=SYSDATETIME()
+FROM dbo.WMS_FG_WarehousePlant wp INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId
 WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode;";
-            return ExecutePlantUpdate(sql, warehouseCode, plantCode, request.SapStorageLocation, request.Remark, null);
+            return ExecutePlantUpdate(sql, warehouseCode, plantCode, request.SapStorageLocation, request.Remark, request.Operator, null);
         }
 
-        public bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive)
+        public bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive, string operatorName)
         {
-            const string sql = @"UPDATE wp SET IsActive=@IsActive FROM dbo.WMS_WarehousePlant wp
-INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode;";
-            return ExecutePlantUpdate(sql, warehouseCode, plantCode, null, null, isActive);
+            const string sql = @"UPDATE wp SET IsActive=@IsActive, LastEditBy=@Operator, LastEditDt=SYSDATETIME() FROM dbo.WMS_FG_WarehousePlant wp
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode;";
+            return ExecutePlantUpdate(sql, warehouseCode, plantCode, null, null, operatorName, isActive);
         }
 
         public List<MasterDataOptionDto> GetWarehouseOptions()
         {
-            return ReadOptions(@"SELECT WarehouseCode AS Code, WarehouseName AS Name, IsActive FROM dbo.WMS_Warehouse ORDER BY WarehouseCode;", null);
+            return ReadOptions(@"SELECT WarehouseCode AS Code, WarehouseName AS Name, IsActive FROM dbo.WMS_FG_Warehouse ORDER BY WarehouseCode;", null);
         }
 
         public List<MasterDataOptionDto> GetZoneOptions(string warehouseCode)
         {
-            const string sql = @"SELECT z.ZoneCode AS Code, z.ZoneName AS Name, z.IsActive FROM dbo.WMS_Zone z
-INNER JOIN dbo.WMS_Warehouse w ON w.Id=z.WarehouseId WHERE w.WarehouseCode=@WarehouseCode ORDER BY z.SortNo,z.ZoneCode;";
+            const string sql = @"SELECT z.ZoneCode AS Code, z.ZoneName AS Name, z.IsActive FROM dbo.WMS_FG_Zone z
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=z.WarehouseId WHERE w.WarehouseCode=@WarehouseCode ORDER BY z.SortNo,z.ZoneCode;";
             return ReadOptions(sql, warehouseCode);
         }
 
         private static int RelatedCount(string fromSql, string condition, string warehouseCode)
         {
-            string sql = "SELECT COUNT(1) FROM " + fromSql + " INNER JOIN dbo.WMS_Warehouse w ON w.Id=l.WarehouseId WHERE w.WarehouseCode=@Value AND " + condition + ";";
+            string sql = "SELECT COUNT(1) FROM " + fromSql + " INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=l.WarehouseId WHERE w.WarehouseCode=@Value AND " + condition + ";";
             return ScalarCount(sql, warehouseCode);
         }
 
@@ -192,18 +192,18 @@ INNER JOIN dbo.WMS_Warehouse w ON w.Id=z.WarehouseId WHERE w.WarehouseCode=@Ware
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                AddString(command, "@Value", value, 30);
+                AddString(command, "@Value", value, 20);
                 connection.Open();
                 return Convert.ToInt32(command.ExecuteScalar());
             }
         }
 
-        private static bool ExecutePlantUpdate(string sql, string warehouseCode, string plantCode, string sapStorageLocation, string remark, bool? isActive)
+        private static bool ExecutePlantUpdate(string sql, string warehouseCode, string plantCode, string sapStorageLocation, string remark, string operatorName, bool? isActive)
         {
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                AddPlantParameters(command, warehouseCode, plantCode, sapStorageLocation, remark);
+                AddPlantParameters(command, warehouseCode, plantCode, sapStorageLocation, remark, operatorName);
                 if (isActive.HasValue) command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = isActive.Value;
                 connection.Open();
                 return command.ExecuteNonQuery() > 0;
@@ -216,7 +216,7 @@ INNER JOIN dbo.WMS_Warehouse w ON w.Id=z.WarehouseId WHERE w.WarehouseCode=@Ware
             using (SqlConnection connection = DbConnectionFactory.Create())
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
-                if (warehouseCode != null) AddString(command, "@WarehouseCode", warehouseCode, 30);
+                if (warehouseCode != null) AddString(command, "@WarehouseCode", warehouseCode, 20);
                 connection.Open();
                 using (SqlDataReader reader = command.ExecuteReader()) while (reader.Read()) result.Add(new MasterDataOptionDto
                 {
@@ -250,14 +250,15 @@ INNER JOIN dbo.WMS_Warehouse w ON w.Id=z.WarehouseId WHERE w.WarehouseCode=@Ware
 
         private static void AddWarehouseParameters(SqlCommand command, string code, string name, string type, string remark, string operatorName)
         {
-            AddString(command, "@WarehouseCode", code, 30); AddString(command, "@WarehouseName", name, 200, true);
-            AddString(command, "@WarehouseType", type, 30); AddString(command, "@Remark", remark, 1000, true); AddString(command, "@Operator", operatorName, 50);
+            AddString(command, "@WarehouseCode", code, 20); AddString(command, "@WarehouseName", name, 100, true);
+            AddString(command, "@WarehouseType", type, 30); AddString(command, "@Remark", remark, 500, true); AddString(command, "@Operator", operatorName, 50);
         }
 
-        private static void AddPlantParameters(SqlCommand command, string warehouseCode, string plantCode, string sapStorageLocation, string remark)
+        private static void AddPlantParameters(SqlCommand command, string warehouseCode, string plantCode, string sapStorageLocation, string remark, string operatorName)
         {
-            AddString(command, "@WarehouseCode", warehouseCode, 30); AddString(command, "@PlantCode", plantCode, 20);
-            AddString(command, "@SapStorageLocation", sapStorageLocation, 20); AddString(command, "@Remark", remark, 1000, true);
+            AddString(command, "@WarehouseCode", warehouseCode, 20); AddString(command, "@PlantCode", plantCode, 20);
+            AddString(command, "@SapStorageLocation", sapStorageLocation, 20); AddString(command, "@Remark", remark, 500, true);
+            AddString(command, "@Operator", operatorName, 50);
         }
 
         private static void AddNullableBit(SqlCommand command, string name, bool? value)

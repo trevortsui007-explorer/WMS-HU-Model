@@ -20,12 +20,12 @@ SELECT
     h.PlantCode,
     l.LocationCode,
     z.ZoneCode
-FROM dbo.WMS_HU h
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl
+FROM dbo.WMS_FG_HU h
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl
     ON cl.HUId = h.Id
-LEFT JOIN dbo.WMS_Location l
+LEFT JOIN dbo.WMS_FG_Location l
     ON l.Id = cl.LocationId
-LEFT JOIN dbo.WMS_Zone z
+LEFT JOIN dbo.WMS_FG_Zone z
     ON z.Id = l.ZoneId
 WHERE h.Id = @PalletHUId;
 ";
@@ -33,8 +33,8 @@ WHERE h.Id = @PalletHUId;
             const string boxSql = @"
 SELECT
     child.HUCode
-FROM dbo.WMS_HU_Relation r
-INNER JOIN dbo.WMS_HU child
+FROM dbo.WMS_FG_HU_Relation r
+INNER JOIN dbo.WMS_FG_HU child
     ON child.Id = r.ChildHUId
 WHERE r.ParentHUId = @PalletHUId
 AND r.IsActive = 1
@@ -83,7 +83,7 @@ ORDER BY child.HUCode;
                         //------------------------------------------------
                         const string lockHuSql = @"
 SELECT Id
-FROM dbo.WMS_HU
+FROM dbo.WMS_FG_HU
 WITH (UPDLOCK, HOLDLOCK)
 WHERE Id IN (@PalletHUId, @BoxHUId);";
 
@@ -116,7 +116,7 @@ WHERE Id IN (@PalletHUId, @BoxHUId);";
 
                         const string relationSql = @"
 SELECT Id
-FROM dbo.WMS_HU_Relation
+FROM dbo.WMS_FG_HU_Relation
 WITH (UPDLOCK, HOLDLOCK)
 WHERE ParentHUId = @PalletHUId
 AND ChildHUId = @BoxHUId
@@ -149,11 +149,11 @@ SELECT
     cl.LocationId,
     l.LocationCode,
     z.ZoneCode
-FROM dbo.WMS_HU_CurrentLocation cl
+FROM dbo.WMS_FG_HU_CurrentLocation cl
 WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_Location l
+INNER JOIN dbo.WMS_FG_Location l
     ON l.Id = cl.LocationId
-INNER JOIN dbo.WMS_Zone z
+INNER JOIN dbo.WMS_FG_Zone z
     ON z.Id = l.ZoneId
 WHERE cl.HUId = @PalletHUId;";
 
@@ -193,7 +193,7 @@ WHERE cl.HUId = @PalletHUId;";
                         //------------------------------------------------
                         const string boxLocationSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_CurrentLocation
+FROM dbo.WMS_FG_HU_CurrentLocation
 WITH (UPDLOCK, HOLDLOCK)
 WHERE HUId = @BoxHUId;";
 
@@ -218,17 +218,17 @@ WHERE HUId = @BoxHUId;";
 
                         const string targetSql = @"
 SELECT
-    l.MasterStatus,
+    l.IsActive,
     l.IsVirtual,
     l.PlantPolicy,
     l.DedicatedPlantCode,
     z.ZoneCode,
     w.WarehouseCode
-FROM dbo.WMS_Location l
+FROM dbo.WMS_FG_Location l
 WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_Zone z
+INNER JOIN dbo.WMS_FG_Zone z
     ON z.Id = l.ZoneId
-INNER JOIN dbo.WMS_Warehouse w
+INNER JOIN dbo.WMS_FG_Warehouse w
     ON w.Id = l.WarehouseId
 WHERE l.Id = @LocationId;";
 
@@ -244,7 +244,7 @@ WHERE l.Id = @LocationId;";
                                     return PutawayPersistenceResult.Fail("目标货位不存在。");
                                 }
 
-                                string masterStatus = Convert.ToString(reader["MasterStatus"]);
+                                bool isActive = Convert.ToBoolean(reader["IsActive"]);
                                 bool isVirtual = Convert.ToBoolean(reader["IsVirtual"]);
                                 string zoneCode = Convert.ToString(reader["ZoneCode"]);
                                 string warehouseCode = Convert.ToString(reader["WarehouseCode"]);
@@ -252,7 +252,7 @@ WHERE l.Id = @LocationId;";
                                 targetPlantPolicy = Convert.ToString(reader["PlantPolicy"]);
                                 dedicatedPlantCode = DbParameterValue.StringOrNull(reader["DedicatedPlantCode"]);
 
-                                if (masterStatus != "ACTIVE")
+                                if (!isActive)
                                 {
                                     tran.Rollback();
                                     return PutawayPersistenceResult.Fail("目标货位不可用。");
@@ -283,8 +283,8 @@ WHERE l.Id = @LocationId;";
                         //------------------------------------------------
                         const string plantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_WarehousePlant wp
-INNER JOIN dbo.WMS_Warehouse w
+FROM dbo.WMS_FG_WarehousePlant wp
+INNER JOIN dbo.WMS_FG_Warehouse w
     ON w.Id = wp.WarehouseId
 WHERE w.WarehouseCode = @WarehouseCode
 AND wp.PlantCode = @PlantCode
@@ -321,8 +321,8 @@ AND wp.IsActive = 1;";
                         {
                             const string samePlantSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_CurrentLocation cl
-INNER JOIN dbo.WMS_HU h
+FROM dbo.WMS_FG_HU_CurrentLocation cl
+INNER JOIN dbo.WMS_FG_HU h
     ON h.Id = cl.HUId
 WHERE cl.LocationId = @LocationId
 AND h.PlantCode <> @PlantCode
@@ -356,7 +356,7 @@ AND h.LifecycleStatus = 'ACTIVE';";
                         // 10. 关闭托盘 → 外箱Relation
                         //------------------------------------------------
                         const string closeRelationSql = @"
-UPDATE dbo.WMS_HU_Relation
+UPDATE dbo.WMS_FG_HU_Relation
 SET
     EffectiveTo = @Now,
     IsActive = 0,
@@ -386,18 +386,17 @@ AND IsActive = 1;";
                         long moveLogId;
 
                         const string moveSql = @"
-INSERT INTO dbo.WMS_HU_MoveLog
+INSERT INTO dbo.WMS_FG_HU_MoveLog
 (
     MoveNo,
     HUId,
     FromLocationId,
     ToLocationId,
     MoveType,
-    ScannedLocationCode,
     BusinessNo,
     RequestId,
-    Operator,
-    MoveTime,
+    MoveBy,
+    MoveDt,
     Remark
 )
 OUTPUT INSERTED.Id
@@ -408,7 +407,6 @@ VALUES
     @FromLocationId,
     @ToLocationId,
     'PUTAWAY',
-    @ScannedLocationCode,
     @BusinessNo,
     @RequestId,
     @Operator,
@@ -436,15 +434,13 @@ VALUES
                         // 12. 建立Box CurrentLocation
                         //------------------------------------------------
                         const string currentSql = @"
-INSERT INTO dbo.WMS_HU_CurrentLocation
+INSERT INTO dbo.WMS_FG_HU_CurrentLocation
 (
     HUId,
     LocationId,
     LocationSince,
     LastMoveLogId,
-    LastMoveNo,
-    LastMoveType,
-    LastOperator
+    CreateBy
 )
 VALUES
 (
@@ -452,9 +448,7 @@ VALUES
     @LocationId,
     @LocationSince,
     @LastMoveLogId,
-    @LastMoveNo,
-    'PUTAWAY',
-    @LastOperator
+    @CreateBy
 );";
 
                         using (SqlCommand cmd = new SqlCommand(currentSql, conn, tran))
@@ -463,8 +457,7 @@ VALUES
                             cmd.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = command.ToLocationId;
                             cmd.Parameters.Add("@LocationSince", SqlDbType.DateTime2).Value = now;
                             cmd.Parameters.Add("@LastMoveLogId", SqlDbType.BigInt).Value = moveLogId;
-                            cmd.Parameters.Add("@LastMoveNo", SqlDbType.VarChar, 50).Value = command.OperationNo;
-                            cmd.Parameters.Add("@LastOperator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
+                            cmd.Parameters.Add("@CreateBy", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
 
                             cmd.ExecuteNonQuery();
                         }
@@ -508,8 +501,8 @@ VALUES
 
                         const string remainingSql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_HU_Relation r
-INNER JOIN dbo.WMS_HU child
+FROM dbo.WMS_FG_HU_Relation r
+INNER JOIN dbo.WMS_FG_HU child
     ON child.Id = r.ChildHUId
 WHERE r.ParentHUId = @PalletHUId
 AND r.IsActive = 1
@@ -530,11 +523,11 @@ AND child.LifecycleStatus = 'ACTIVE';";
                         if (remainingBoxCount == 0)
                         {
                             const string closePalletSql = @"
-UPDATE dbo.WMS_HU
+UPDATE dbo.WMS_FG_HU
 SET
     LifecycleStatus = 'CLOSED',
-    ModifyUser = @Operator,
-    ModifyTime = @Now
+    LastEditBy = @Operator,
+    LastEditDt = @Now
 WHERE Id = @PalletHUId
 AND HUType = 'PALLET'
 AND LifecycleStatus = 'ACTIVE';";
@@ -558,7 +551,7 @@ AND LifecycleStatus = 'ACTIVE';";
                             // 17. 一次性运输托关闭后不再保留CurrentLocation
                             //------------------------------------------------
                             const string deletePalletLocationSql = @"
-DELETE FROM dbo.WMS_HU_CurrentLocation
+DELETE FROM dbo.WMS_FG_HU_CurrentLocation
 WHERE HUId = @PalletHUId;";
 
                             using (SqlCommand cmd = new SqlCommand(deletePalletLocationSql, conn, tran))
@@ -626,19 +619,19 @@ WHERE HUId = @PalletHUId;";
         {
             if (string.IsNullOrWhiteSpace(requestId)) return null;
             const string headerSql = @"
-SELECT TOP 1 op.OperationNo, pallet.HUCode AS PalletHuCode, op.OperationTime AS PutawayTime
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU pallet ON pallet.Id = op.HUId
+SELECT TOP 1 op.OperationNo, pallet.HUCode AS PalletHuCode, op.OperationDt AS PutawayTime
+FROM dbo.WMS_FG_HU_OperationLog op
+INNER JOIN dbo.WMS_FG_HU pallet ON pallet.Id = op.HUId
 WHERE op.OperationType = 'PUTAWAY_PALLET' AND op.RequestId = @RequestId;";
             WholePalletHeaderRow header = DbExecutor.QueryFirstOrDefault<WholePalletHeaderRow>(headerSql, new { RequestId = requestId });
             if (header == null) return null;
             const string itemSql = @"
 SELECT box.HUCode AS BoxCode, fromLoc.LocationCode AS FromLocationCode, toLoc.LocationCode AS ToLocationCode
-FROM dbo.WMS_HU_OperationLog op
-INNER JOIN dbo.WMS_HU box ON box.Id = op.HUId
-INNER JOIN dbo.WMS_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = box.Id
-LEFT JOIN dbo.WMS_Location fromLoc ON fromLoc.Id = moveLog.FromLocationId
-INNER JOIN dbo.WMS_Location toLoc ON toLoc.Id = moveLog.ToLocationId
+FROM dbo.WMS_FG_HU_OperationLog op
+INNER JOIN dbo.WMS_FG_HU box ON box.Id = op.HUId
+INNER JOIN dbo.WMS_FG_HU_MoveLog moveLog ON moveLog.MoveNo = op.OperationNo AND moveLog.HUId = box.Id
+LEFT JOIN dbo.WMS_FG_Location fromLoc ON fromLoc.Id = moveLog.FromLocationId
+INNER JOIN dbo.WMS_FG_Location toLoc ON toLoc.Id = moveLog.ToLocationId
 WHERE op.OperationType = 'PUTAWAY' AND op.RequestId = @RequestId
 ORDER BY box.HUCode;";
             List<WholePalletItemRow> items = DbExecutor.Query<WholePalletItemRow>(itemSql, new { RequestId = requestId });
@@ -666,7 +659,7 @@ ORDER BY box.HUCode;";
                     try
                     {
                         DateTime now = DateTime.Now;
-                        const string duplicateSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_OperationLog WITH (UPDLOCK, HOLDLOCK) WHERE RequestId = @RequestId;";
+                        const string duplicateSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_OperationLog WITH (UPDLOCK, HOLDLOCK) WHERE RequestId = @RequestId;";
                         using (SqlCommand duplicateCommand = new SqlCommand(duplicateSql, conn, tran))
                         {
                             duplicateCommand.Parameters.Add("@RequestId", SqlDbType.VarChar, 100).Value = command.RequestId;
@@ -681,11 +674,11 @@ ORDER BY box.HUCode;";
                         const string palletSql = @"
 SELECT h.Id, h.HUCode, h.HUType, h.PlantCode, h.LifecycleStatus, h.IsHold,
        cl.LocationId, loc.LocationCode, z.ZoneCode, w.WarehouseCode
-FROM dbo.WMS_HU h WITH (UPDLOCK, HOLDLOCK)
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = h.Id
-LEFT JOIN dbo.WMS_Location loc ON loc.Id = cl.LocationId
-LEFT JOIN dbo.WMS_Zone z ON z.Id = loc.ZoneId
-LEFT JOIN dbo.WMS_Warehouse w ON w.Id = loc.WarehouseId
+FROM dbo.WMS_FG_HU h WITH (UPDLOCK, HOLDLOCK)
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = h.Id
+LEFT JOIN dbo.WMS_FG_Location loc ON loc.Id = cl.LocationId
+LEFT JOIN dbo.WMS_FG_Zone z ON z.Id = loc.ZoneId
+LEFT JOIN dbo.WMS_FG_Warehouse w ON w.Id = loc.WarehouseId
 WHERE h.HUCode = @PalletHuCode;";
                         using (SqlCommand palletCommand = new SqlCommand(palletSql, conn, tran))
                         {
@@ -716,10 +709,10 @@ WHERE h.HUCode = @PalletHuCode;";
 
                         WholePalletTargetRow target;
                         const string targetSql = @"
-SELECT l.Id, l.LocationCode, l.MasterStatus, l.IsVirtual, l.PlantPolicy, l.DedicatedPlantCode, z.ZoneCode, w.WarehouseCode
-FROM dbo.WMS_Location l WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_Zone z ON z.Id = l.ZoneId
-INNER JOIN dbo.WMS_Warehouse w ON w.Id = l.WarehouseId
+SELECT l.Id, l.LocationCode, l.IsActive, l.IsVirtual, l.PlantPolicy, l.DedicatedPlantCode, z.ZoneCode, w.WarehouseCode
+FROM dbo.WMS_FG_Location l WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_Zone z ON z.Id = l.ZoneId
+INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id = l.WarehouseId
 WHERE w.WarehouseCode = @WarehouseCode AND l.LocationCode = @LocationCode;";
                         using (SqlCommand targetCommand = new SqlCommand(targetSql, conn, tran))
                         {
@@ -730,22 +723,22 @@ WHERE w.WarehouseCode = @WarehouseCode AND l.LocationCode = @LocationCode;";
                                 if (!reader.Read()) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位不存在。"); }
                                 target = new WholePalletTargetRow
                                 {
-                                    Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), MasterStatus = Convert.ToString(reader["MasterStatus"]),
+                                    Id = Convert.ToInt64(reader["Id"]), LocationCode = Convert.ToString(reader["LocationCode"]), IsActive = Convert.ToBoolean(reader["IsActive"]),
                                     IsVirtual = Convert.ToBoolean(reader["IsVirtual"]), PlantPolicy = Convert.ToString(reader["PlantPolicy"]),
                                     DedicatedPlantCode = reader["DedicatedPlantCode"] == DBNull.Value ? null : Convert.ToString(reader["DedicatedPlantCode"]), ZoneCode = Convert.ToString(reader["ZoneCode"])
                                 };
                             }
                         }
-                        if (target.MasterStatus != "ACTIVE" || target.IsVirtual || target.ZoneCode != "STORAGE") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位必须是当前仓库可用的实体STORAGE货位。"); }
+                        if (!target.IsActive || target.IsVirtual || target.ZoneCode != "STORAGE") { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位必须是当前仓库可用的实体STORAGE货位。"); }
                         if (target.Id == pallet.LocationId.Value) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位不能与托盘收货货位相同。"); }
 
                         List<WholePalletBoxRow> boxes = new List<WholePalletBoxRow>();
                         const string boxesSql = @"
 SELECT r.Id AS RelationId, box.Id, box.HUCode, box.PlantCode, box.LifecycleStatus, box.IsHold,
        CAST(CASE WHEN cl.HUId IS NULL THEN 0 ELSE 1 END AS bit) AS HasDirectLocation
-FROM dbo.WMS_HU_Relation r WITH (UPDLOCK, HOLDLOCK)
-INNER JOIN dbo.WMS_HU box WITH (UPDLOCK, HOLDLOCK) ON box.Id = r.ChildHUId
-LEFT JOIN dbo.WMS_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = box.Id
+FROM dbo.WMS_FG_HU_Relation r WITH (UPDLOCK, HOLDLOCK)
+INNER JOIN dbo.WMS_FG_HU box WITH (UPDLOCK, HOLDLOCK) ON box.Id = r.ChildHUId
+LEFT JOIN dbo.WMS_FG_HU_CurrentLocation cl WITH (UPDLOCK, HOLDLOCK) ON cl.HUId = box.Id
 WHERE r.ParentHUId = @PalletHuId AND r.IsActive = 1 AND box.HUType = 'OUTER_BOX'
 ORDER BY box.HUCode;";
                         using (SqlCommand boxesCommand = new SqlCommand(boxesSql, conn, tran))
@@ -767,7 +760,7 @@ ORDER BY box.HUCode;";
                         if (boxes.Any(x => x.HasDirectLocation)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘存在已有直接货位的外箱，整托上架已取消。"); }
                         if (boxes.Any(x => !string.Equals(x.PlantCode, pallet.PlantCode, StringComparison.OrdinalIgnoreCase))) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("托盘与外箱厂别不一致。"); }
 
-                        const string warehousePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_WarehousePlant wp INNER JOIN dbo.WMS_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
+                        const string warehousePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_WarehousePlant wp INNER JOIN dbo.WMS_FG_Warehouse w ON w.Id=wp.WarehouseId WHERE w.WarehouseCode=@WarehouseCode AND wp.PlantCode=@PlantCode AND wp.IsActive=1 AND w.IsActive=1;";
                         using (SqlCommand plantCommand = new SqlCommand(warehousePlantSql, conn, tran))
                         {
                             plantCommand.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = command.WarehouseCode;
@@ -777,7 +770,7 @@ ORDER BY box.HUCode;";
                         if (target.PlantPolicy == "DEDICATED" && !string.Equals(target.DedicatedPlantCode, pallet.PlantCode, StringComparison.OrdinalIgnoreCase)) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("目标货位为其他厂别专用货位。"); }
                         if (target.PlantPolicy == "SAME_PLANT")
                         {
-                            const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_HU_CurrentLocation cl INNER JOIN dbo.WMS_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
+                            const string samePlantSql = @"SELECT COUNT(1) FROM dbo.WMS_FG_HU_CurrentLocation cl INNER JOIN dbo.WMS_FG_HU h ON h.Id=cl.HUId WHERE cl.LocationId=@LocationId AND h.PlantCode<>@PlantCode AND h.LifecycleStatus='ACTIVE';";
                             using (SqlCommand samePlantCommand = new SqlCommand(samePlantSql, conn, tran))
                             {
                                 samePlantCommand.Parameters.Add("@LocationId", SqlDbType.BigInt).Value = target.Id;
@@ -793,7 +786,7 @@ ORDER BY box.HUCode;";
                             WholePalletBoxRow box = boxes[index];
                             string itemOperationNo = command.OperationNo + "-" + (index + 1).ToString("000");
                             string itemRequestId = command.RequestId + ":" + (index + 1).ToString("000");
-                            const string closeSql = @"UPDATE dbo.WMS_HU_Relation SET EffectiveTo=@Now,IsActive=0,CloseOperationNo=@OperationNo,CloseUser=@Operator,CloseReason=N'PUTAWAY' WHERE Id=@RelationId AND IsActive=1;";
+                            const string closeSql = @"UPDATE dbo.WMS_FG_HU_Relation SET EffectiveTo=@Now,IsActive=0,CloseOperationNo=@OperationNo,CloseUser=@Operator,CloseReason=N'PUTAWAY' WHERE Id=@RelationId AND IsActive=1;";
                             using (SqlCommand closeCommand = new SqlCommand(closeSql, conn, tran))
                             {
                                 closeCommand.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
@@ -803,7 +796,7 @@ ORDER BY box.HUCode;";
                                 if (closeCommand.ExecuteNonQuery() != 1) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("外箱关系已变化，整托上架已取消。"); }
                             }
                             long moveLogId;
-                            const string moveSql = @"INSERT INTO dbo.WMS_HU_MoveLog(MoveNo,HUId,FromLocationId,ToLocationId,MoveType,ScannedLocationCode,BusinessNo,RequestId,Operator,MoveTime,Remark) OUTPUT INSERTED.Id VALUES(@MoveNo,@HUId,@From,@To,'PUTAWAY',@Scan,@BusinessNo,@RequestId,@Operator,@Now,@Remark);";
+                            const string moveSql = @"INSERT INTO dbo.WMS_FG_HU_MoveLog(MoveNo,HUId,FromLocationId,ToLocationId,MoveType,BusinessNo,RequestId,MoveBy,MoveDt,Remark) OUTPUT INSERTED.Id VALUES(@MoveNo,@HUId,@From,@To,'PUTAWAY',@BusinessNo,@RequestId,@Operator,@Now,@Remark);";
                             using (SqlCommand moveCommand = new SqlCommand(moveSql, conn, tran))
                             {
                                 moveCommand.Parameters.Add("@MoveNo", SqlDbType.VarChar, 50).Value = itemOperationNo;
@@ -818,7 +811,7 @@ ORDER BY box.HUCode;";
                                 moveCommand.Parameters.Add("@Remark", SqlDbType.NVarChar, 500).Value = DbParameterValue.StringOrDbNull(command.Remark);
                                 moveLogId = Convert.ToInt64(moveCommand.ExecuteScalar());
                             }
-                            const string currentSql = @"INSERT INTO dbo.WMS_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,LastMoveNo,LastMoveType,LastOperator) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@MoveNo,'PUTAWAY',@Operator);";
+                            const string currentSql = @"INSERT INTO dbo.WMS_FG_HU_CurrentLocation(HUId,LocationId,LocationSince,LastMoveLogId,CreateBy) VALUES(@HUId,@LocationId,@Now,@MoveLogId,@Operator);";
                             using (SqlCommand currentCommand = new SqlCommand(currentSql, conn, tran))
                             {
                                 currentCommand.Parameters.Add("@HUId", SqlDbType.BigInt).Value = box.Id;
@@ -833,7 +826,7 @@ ORDER BY box.HUCode;";
                             InsertOperationLog(conn, tran, itemOperationNo, "PUTAWAY", box.Id, pallet.Id, command.RequestId, command.BusinessNo, command.Operator, command.Remark, now);
                             movedCodes.Add(box.HuCode);
                         }
-                        const string closePalletSql = @"UPDATE dbo.WMS_HU SET LifecycleStatus='CLOSED',ModifyUser=@Operator,ModifyTime=@Now WHERE Id=@PalletHuId AND HUType='PALLET' AND LifecycleStatus='ACTIVE';";
+                        const string closePalletSql = @"UPDATE dbo.WMS_FG_HU SET LifecycleStatus='CLOSED',LastEditBy=@Operator,LastEditDt=@Now WHERE Id=@PalletHuId AND HUType='PALLET' AND LifecycleStatus='ACTIVE';";
                         using (SqlCommand closePalletCommand = new SqlCommand(closePalletSql, conn, tran))
                         {
                             closePalletCommand.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(command.Operator);
@@ -841,7 +834,7 @@ ORDER BY box.HUCode;";
                             closePalletCommand.Parameters.Add("@PalletHuId", SqlDbType.BigInt).Value = pallet.Id;
                             if (closePalletCommand.ExecuteNonQuery() != 1) { tran.Rollback(); return WholePalletPutawayPersistenceResult.Fail("运输托HU关闭失败。"); }
                         }
-                        const string deletePalletLocationSql = @"DELETE FROM dbo.WMS_HU_CurrentLocation WHERE HUId=@PalletHuId;";
+                        const string deletePalletLocationSql = @"DELETE FROM dbo.WMS_FG_HU_CurrentLocation WHERE HUId=@PalletHuId;";
                         using (SqlCommand deletePalletLocationCommand = new SqlCommand(deletePalletLocationSql, conn, tran))
                         {
                             deletePalletLocationCommand.Parameters.Add("@PalletHuId", SqlDbType.BigInt).Value = pallet.Id;
@@ -925,7 +918,7 @@ ORDER BY box.HUCode;";
         {
             public long Id { get; set; }
             public string LocationCode { get; set; }
-            public string MasterStatus { get; set; }
+            public bool IsActive { get; set; }
             public bool IsVirtual { get; set; }
             public string PlantPolicy { get; set; }
             public string DedicatedPlantCode { get; set; }

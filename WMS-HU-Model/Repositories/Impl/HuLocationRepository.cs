@@ -1,10 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
-using System.Text;
-using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.HU;
 
@@ -20,271 +17,20 @@ SELECT TOP (@Top)
     fromLoc.LocationCode AS FromLocationCode,
     toLoc.LocationCode AS ToLocationCode,
     m.MoveType,
-    m.ScannedLocationCode,
+    toLoc.LocationCode AS ScannedLocationCode,
     m.BusinessNo,
-    m.TaskNo,
+    CAST(NULL AS VARCHAR(100)) AS TaskNo,
     m.RequestId,
     m.ReasonCode,
-    m.Operator,
-    m.MoveTime,
+    m.MoveBy AS Operator,
+    m.MoveDt AS MoveTime,
     m.Remark
-FROM dbo.WMS_HU_MoveLog m
-INNER JOIN dbo.WMS_HU h ON h.Id = m.HUId
-LEFT JOIN dbo.WMS_Location fromLoc ON fromLoc.Id = m.FromLocationId
-INNER JOIN dbo.WMS_Location toLoc ON toLoc.Id = m.ToLocationId
+FROM dbo.WMS_FG_HU_MoveLog m
+INNER JOIN dbo.WMS_FG_HU h ON h.Id = m.HUId
+LEFT JOIN dbo.WMS_FG_Location fromLoc ON fromLoc.Id = m.FromLocationId
+INNER JOIN dbo.WMS_FG_Location toLoc ON toLoc.Id = m.ToLocationId
 WHERE m.HUId = @HUId
-ORDER BY m.MoveTime DESC, m.Id DESC;";
-
-        public HuLocationDto GetLocation(
-            long huId)
-        {
-            const string sql = @"
-;WITH Ancestors AS
-(
-    SELECT
-        h.Id AS HUId,
-        h.HUCode,
-        CAST(0 AS INT) AS LevelNo
-
-    FROM dbo.WMS_HU h
-
-    WHERE h.Id = @HUId
-
-    UNION ALL
-
-    SELECT
-        parent.Id AS HUId,
-        parent.HUCode,
-        a.LevelNo + 1
-
-    FROM Ancestors a
-
-    INNER JOIN dbo.WMS_HU_Relation r
-        ON r.ChildHUId = a.HUId
-       AND r.IsActive = 1
-
-    INNER JOIN dbo.WMS_HU parent
-        ON parent.Id = r.ParentHUId
-)
-
-SELECT
-    h.Id AS HuId,
-    h.HUCode,
-    h.HUType,
-    h.PlantCode,
-
-    directLoc.Id AS DirectLocationId,
-    directLoc.LocationCode AS DirectLocationCode,
-    directLoc.LocationName AS DirectLocationName,
-    directWarehouse.WarehouseCode
-        AS DirectWarehouseCode,
-    directZone.ZoneCode
-        AS DirectZoneCode,
-    directLoc.LocationTypeCode
-        AS DirectLocationTypeCode,
-
-    directCurrent.LocationSince
-        AS DirectLocationSince,
-
-    directCurrent.LastMoveLogId,
-    directCurrent.LastMoveNo,
-    directCurrent.LastMoveType,
-
-    effectiveInfo.LocationId
-        AS EffectiveLocationId,
-
-    effectiveInfo.LocationCode
-        AS EffectiveLocationCode,
-
-    effectiveInfo.LocationName
-        AS EffectiveLocationName,
-
-    effectiveInfo.WarehouseCode
-        AS EffectiveWarehouseCode,
-
-    effectiveInfo.ZoneCode
-        AS EffectiveZoneCode,
-
-    effectiveInfo.LocationTypeCode
-        AS EffectiveLocationTypeCode,
-
-    effectiveInfo.SourceHUId
-        AS LocationSourceHuId,
-
-    effectiveInfo.SourceHUCode
-        AS LocationSourceHuCode,
-
-    CASE
-        WHEN effectiveInfo.SourceHUId IS NULL THEN 0
-        WHEN effectiveInfo.SourceHUId = h.Id THEN 0
-        ELSE 1
-    END AS IsInherited
-
-FROM dbo.WMS_HU h
-
-LEFT JOIN dbo.WMS_HU_CurrentLocation directCurrent
-    ON directCurrent.HUId = h.Id
-
-LEFT JOIN dbo.WMS_Location directLoc
-    ON directLoc.Id =
-       directCurrent.LocationId
-
-LEFT JOIN dbo.WMS_Warehouse directWarehouse
-    ON directWarehouse.Id =
-       directLoc.WarehouseId
-
-LEFT JOIN dbo.WMS_Zone directZone
-    ON directZone.Id =
-       directLoc.ZoneId
-
-OUTER APPLY
-(
-    SELECT TOP 1
-
-        loc.Id AS LocationId,
-        loc.LocationCode,
-        loc.LocationName,
-        loc.LocationTypeCode,
-
-        wh.WarehouseCode,
-        z.ZoneCode,
-
-        a.HUId AS SourceHUId,
-        a.HUCode AS SourceHUCode
-
-    FROM Ancestors a
-
-    INNER JOIN dbo.WMS_HU_CurrentLocation cl
-        ON cl.HUId = a.HUId
-
-    INNER JOIN dbo.WMS_Location loc
-        ON loc.Id = cl.LocationId
-
-    INNER JOIN dbo.WMS_Warehouse wh
-        ON wh.Id = loc.WarehouseId
-
-    INNER JOIN dbo.WMS_Zone z
-        ON z.Id = loc.ZoneId
-
-    ORDER BY
-        a.LevelNo ASC
-
-) effectiveInfo
-
-WHERE h.Id = @HUId
-
-OPTION (MAXRECURSION 20);
-";
-
-            return DbExecutor.QueryFirstOrDefault<HuLocationDto>(
-                sql,
-                new { HUId = huId });
-        }
-
-        public List<HuLocationDto> GetLocations(IList<long> huIds)
-        {
-            List<long> ids = (huIds ?? new List<long>()).Distinct().ToList();
-            List<HuLocationDto> results = new List<HuLocationDto>();
-            if (ids.Count == 0) return results;
-            StringBuilder parameters = new StringBuilder();
-            for (int index = 0; index < ids.Count; index++)
-            {
-                if (index > 0) parameters.Append(",");
-                parameters.Append("@HUId").Append(index);
-            }
-            string sql = @"
-;WITH Roots AS
-(
-    SELECT h.Id AS RootHUId, h.Id AS HUId, h.HUCode, CAST(0 AS INT) AS LevelNo
-    FROM dbo.WMS_HU h
-    WHERE h.Id IN (" + parameters + @")
-),
-Ancestors AS
-(
-    SELECT RootHUId, HUId, HUCode, LevelNo FROM Roots
-    UNION ALL
-    SELECT a.RootHUId, parent.Id, parent.HUCode, a.LevelNo + 1
-    FROM Ancestors a
-    INNER JOIN dbo.WMS_HU_Relation relation ON relation.ChildHUId = a.HUId AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU parent ON parent.Id = relation.ParentHUId
-)
-SELECT
-    h.Id AS HuId, h.HUCode, h.HUType, h.PlantCode,
-    directLoc.Id AS DirectLocationId, directLoc.LocationCode AS DirectLocationCode,
-    directLoc.LocationName AS DirectLocationName,
-    directWarehouse.WarehouseCode AS DirectWarehouseCode, directZone.ZoneCode AS DirectZoneCode,
-    directLoc.LocationTypeCode AS DirectLocationTypeCode, directCurrent.LocationSince AS DirectLocationSince,
-    directCurrent.LastMoveLogId, directCurrent.LastMoveNo, directCurrent.LastMoveType,
-    effectiveInfo.LocationId AS EffectiveLocationId, effectiveInfo.LocationCode AS EffectiveLocationCode,
-    effectiveInfo.LocationName AS EffectiveLocationName,
-    effectiveInfo.WarehouseCode AS EffectiveWarehouseCode, effectiveInfo.ZoneCode AS EffectiveZoneCode,
-    effectiveInfo.LocationTypeCode AS EffectiveLocationTypeCode,
-    effectiveInfo.SourceHUId AS LocationSourceHuId, effectiveInfo.SourceHUCode AS LocationSourceHuCode,
-    CAST(CASE WHEN effectiveInfo.SourceHUId IS NULL OR effectiveInfo.SourceHUId = h.Id THEN 0 ELSE 1 END AS BIT) AS IsInherited
-FROM dbo.WMS_HU h
-LEFT JOIN dbo.WMS_HU_CurrentLocation directCurrent ON directCurrent.HUId = h.Id
-LEFT JOIN dbo.WMS_Location directLoc ON directLoc.Id = directCurrent.LocationId
-LEFT JOIN dbo.WMS_Warehouse directWarehouse ON directWarehouse.Id = directLoc.WarehouseId
-LEFT JOIN dbo.WMS_Zone directZone ON directZone.Id = directLoc.ZoneId
-OUTER APPLY
-(
-    SELECT TOP 1 loc.Id AS LocationId, loc.LocationCode, loc.LocationName, loc.LocationTypeCode,
-        warehouse.WarehouseCode, zone.ZoneCode, ancestor.HUId AS SourceHUId, ancestor.HUCode AS SourceHUCode
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
-    INNER JOIN dbo.WMS_Location loc ON loc.Id = currentLocation.LocationId
-    INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = loc.WarehouseId
-    INNER JOIN dbo.WMS_Zone zone ON zone.Id = loc.ZoneId
-    WHERE ancestor.RootHUId = h.Id
-    ORDER BY ancestor.LevelNo
-) effectiveInfo
-WHERE h.Id IN (" + parameters + @")
-OPTION (MAXRECURSION 20);";
-
-            using (SqlConnection connection = DbConnectionFactory.Create())
-            using (SqlCommand command = new SqlCommand(sql, connection))
-            {
-                for (int index = 0; index < ids.Count; index++) command.Parameters.Add("@HUId" + index, SqlDbType.BigInt).Value = ids[index];
-                connection.Open();
-                using (SqlDataReader reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        results.Add(new HuLocationDto
-                        {
-                            HuId = Convert.ToInt64(reader["HuId"]),
-                            HuCode = DbString(reader, "HUCode"),
-                            HuType = DbString(reader, "HUType"),
-                            PlantCode = DbString(reader, "PlantCode"),
-                            DirectLocationId = DbInt64(reader, "DirectLocationId"),
-                            DirectLocationCode = DbString(reader, "DirectLocationCode"),
-                            DirectLocationName = DbString(reader, "DirectLocationName"),
-                            DirectWarehouseCode = DbString(reader, "DirectWarehouseCode"),
-                            DirectZoneCode = DbString(reader, "DirectZoneCode"),
-                            DirectLocationTypeCode = DbString(reader, "DirectLocationTypeCode"),
-                            DirectLocationSince = DbDateTime(reader, "DirectLocationSince"),
-                            EffectiveLocationId = DbInt64(reader, "EffectiveLocationId"),
-                            EffectiveLocationCode = DbString(reader, "EffectiveLocationCode"),
-                            EffectiveLocationName = DbString(reader, "EffectiveLocationName"),
-                            EffectiveWarehouseCode = DbString(reader, "EffectiveWarehouseCode"),
-                            EffectiveZoneCode = DbString(reader, "EffectiveZoneCode"),
-                            EffectiveLocationTypeCode = DbString(reader, "EffectiveLocationTypeCode"),
-                            LocationSourceHuId = DbInt64(reader, "LocationSourceHuId"),
-                            LocationSourceHuCode = DbString(reader, "LocationSourceHuCode"),
-                            IsInherited = Convert.ToBoolean(reader["IsInherited"]),
-                            LastMoveLogId = DbInt64(reader, "LastMoveLogId"),
-                            LastMoveNo = DbString(reader, "LastMoveNo"),
-                            LastMoveType = DbString(reader, "LastMoveType")
-                        });
-                    }
-                }
-            }
-            return results;
-        }
-
-        private static string DbString(SqlDataReader reader, string name) { int index = reader.GetOrdinal(name); return reader.IsDBNull(index) ? null : Convert.ToString(reader.GetValue(index)); }
-        private static long? DbInt64(SqlDataReader reader, string name) { int index = reader.GetOrdinal(name); return reader.IsDBNull(index) ? (long?)null : Convert.ToInt64(reader.GetValue(index)); }
-        private static DateTime? DbDateTime(SqlDataReader reader, string name) { int index = reader.GetOrdinal(name); return reader.IsDBNull(index) ? (DateTime?)null : Convert.ToDateTime(reader.GetValue(index)); }
+ORDER BY m.MoveDt DESC, m.Id DESC;";
 
         public bool WarehouseAllowsPlant(
     string warehouseCode,
@@ -293,9 +39,9 @@ OPTION (MAXRECURSION 20);";
             const string sql = @"
 SELECT COUNT(1)
 
-FROM dbo.WMS_WarehousePlant wp
+FROM dbo.WMS_FG_WarehousePlant wp
 
-INNER JOIN dbo.WMS_Warehouse w
+INNER JOIN dbo.WMS_FG_Warehouse w
     ON w.Id = wp.WarehouseId
 
 WHERE
@@ -321,9 +67,9 @@ AND w.IsActive = 1;
             const string sql = @"
 SELECT COUNT(1)
 
-FROM dbo.WMS_HU_CurrentLocation cl
+FROM dbo.WMS_FG_HU_CurrentLocation cl
 
-INNER JOIN dbo.WMS_HU h
+INNER JOIN dbo.WMS_FG_HU h
     ON h.Id = cl.HUId
 
 WHERE
@@ -358,24 +104,24 @@ SELECT TOP 1
     toLoc.LocationCode
         AS ToLocationCode,
     m.MoveType,
-    m.ScannedLocationCode,
+    toLoc.LocationCode AS ScannedLocationCode,
     m.BusinessNo,
-    m.TaskNo,
+    CAST(NULL AS VARCHAR(100)) AS TaskNo,
     m.RequestId,
     m.ReasonCode,
-    m.Operator,
-    m.MoveTime,
+    m.MoveBy AS Operator,
+    m.MoveDt AS MoveTime,
     m.Remark
 
-FROM dbo.WMS_HU_MoveLog m
+FROM dbo.WMS_FG_HU_MoveLog m
 
-INNER JOIN dbo.WMS_HU h
+INNER JOIN dbo.WMS_FG_HU h
     ON h.Id = m.HUId
 
-LEFT JOIN dbo.WMS_Location fromLoc
+LEFT JOIN dbo.WMS_FG_Location fromLoc
     ON fromLoc.Id = m.FromLocationId
 
-INNER JOIN dbo.WMS_Location toLoc
+INNER JOIN dbo.WMS_FG_Location toLoc
     ON toLoc.Id = m.ToLocationId
 
 WHERE m.RequestId = @RequestId;
@@ -405,7 +151,7 @@ WHERE m.RequestId = @RequestId;
                         // ------------------------------------------------
                         const string lockHuSql = @"
 SELECT Id
-FROM dbo.WMS_HU WITH (UPDLOCK, HOLDLOCK)
+FROM dbo.WMS_FG_HU WITH (UPDLOCK, HOLDLOCK)
 WHERE Id = @HUId;
 ";
 
@@ -469,10 +215,10 @@ SELECT
     cl.LocationId,
     l.LocationCode
 
-FROM dbo.WMS_HU_CurrentLocation cl
+FROM dbo.WMS_FG_HU_CurrentLocation cl
     WITH (UPDLOCK, HOLDLOCK)
 
-INNER JOIN dbo.WMS_Location l
+INNER JOIN dbo.WMS_FG_Location l
     ON l.Id = cl.LocationId
 
 WHERE cl.HUId = @HUId;
@@ -552,31 +298,27 @@ WHERE cl.HUId = @HUId;
                         // 7. UPSERT CurrentLocation
                         // ------------------------------------------------
                         const string upsertSql = @"
-UPDATE dbo.WMS_HU_CurrentLocation
+UPDATE dbo.WMS_FG_HU_CurrentLocation
 
 SET
     LocationId      = @LocationId,
     LocationSince   = @LocationSince,
     LastMoveLogId   = @LastMoveLogId,
-    LastMoveNo      = @LastMoveNo,
-    LastMoveType    = @LastMoveType,
-    LastOperator    = @LastOperator,
-    ModifyTime      = SYSDATETIME()
+    LastEditBy      = @LastEditBy,
+    LastEditDt      = SYSDATETIME()
 
 WHERE HUId = @HUId;
 
 IF @@ROWCOUNT = 0
 BEGIN
 
-    INSERT INTO dbo.WMS_HU_CurrentLocation
+    INSERT INTO dbo.WMS_FG_HU_CurrentLocation
     (
         HUId,
         LocationId,
         LocationSince,
         LastMoveLogId,
-        LastMoveNo,
-        LastMoveType,
-        LastOperator
+        CreateBy
     )
     VALUES
     (
@@ -584,9 +326,7 @@ BEGIN
         @LocationId,
         @LocationSince,
         @LastMoveLogId,
-        @LastMoveNo,
-        @LastMoveType,
-        @LastOperator
+        @LastEditBy
     );
 
 END;
@@ -602,9 +342,7 @@ END;
                                 LocationId = command.ToLocationId,
                                 LocationSince = moveTime,
                                 LastMoveLogId = moveLogId,
-                                LastMoveNo = command.MoveNo,
-                                LastMoveType = command.MoveType,
-                                LastOperator = DbParameterValue.StringOrNull(command.Operator)
+                                LastEditBy = DbParameterValue.StringOrNull(command.Operator)
                             });
 
                         // ------------------------------------------------
@@ -693,18 +431,18 @@ SELECT TOP 1
     fromLoc.LocationCode AS FromLocationCode,
     toLoc.LocationCode AS ToLocationCode,
     m.MoveType,
-    m.MoveTime,
-    m.Operator
+    m.MoveDt AS MoveTime,
+    m.MoveBy AS Operator
 
-FROM dbo.WMS_HU_MoveLog m
+FROM dbo.WMS_FG_HU_MoveLog m
 
-INNER JOIN dbo.WMS_HU h
+INNER JOIN dbo.WMS_FG_HU h
     ON h.Id = m.HUId
 
-LEFT JOIN dbo.WMS_Location fromLoc
+LEFT JOIN dbo.WMS_FG_Location fromLoc
     ON fromLoc.Id = m.FromLocationId
 
-INNER JOIN dbo.WMS_Location toLoc
+INNER JOIN dbo.WMS_FG_Location toLoc
     ON toLoc.Id = m.ToLocationId
 
 WHERE m.RequestId = @RequestId;

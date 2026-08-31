@@ -14,12 +14,23 @@ namespace WMS_HU_Model.Services
         private readonly IHuLocationRepository _huLocationRepository;
         private readonly IRepackRepository _repackRepository;
         private readonly ILocationRepository _locationRepository;
+        private readonly IEffectiveLocationResolver _effectiveLocationResolver;
 
         public RepackService(
             IHuRepository huRepository,
             ILocationRepository locationRepository,
             IHuLocationRepository huLocationRepository,
             IRepackRepository repackRepository)
+            : this(huRepository, locationRepository, huLocationRepository, repackRepository, new EffectiveLocationResolver())
+        {
+        }
+
+        public RepackService(
+            IHuRepository huRepository,
+            ILocationRepository locationRepository,
+            IHuLocationRepository huLocationRepository,
+            IRepackRepository repackRepository,
+            IEffectiveLocationResolver effectiveLocationResolver)
         {
             _huRepository = huRepository;
 
@@ -28,6 +39,8 @@ namespace WMS_HU_Model.Services
             _huLocationRepository = huLocationRepository;
 
             _repackRepository = repackRepository;
+
+            _effectiveLocationResolver = effectiveLocationResolver ?? throw new ArgumentNullException(nameof(effectiveLocationResolver));
         }
 
         public OperationResult<BoxRepackStatusDto> GetBoxStatus(string boxHuCode)
@@ -177,9 +190,9 @@ namespace WMS_HU_Model.Services
             //----------------------------------------------------
             // 两个Box必须有直接位置
             //----------------------------------------------------
-            HuLocationDto sourceLocation = _huLocationRepository.GetLocation(source.Id);
-            HuLocationDto targetLocation = _huLocationRepository.GetLocation(target.Id);
-            HuLocationDto innerLocation = _huLocationRepository.GetLocation(inner.Id);
+            HuLocationDto sourceLocation = _effectiveLocationResolver.Resolve(source.Id);
+            HuLocationDto targetLocation = _effectiveLocationResolver.Resolve(target.Id);
+            HuLocationDto innerLocation = _effectiveLocationResolver.Resolve(inner.Id);
 
             if (sourceLocation == null || !sourceLocation.DirectLocationId.HasValue)
             {
@@ -306,8 +319,8 @@ namespace WMS_HU_Model.Services
             }
 
             // 5. 货位与库位策略校验
-            HuLocationDto sourceLocation = _huLocationRepository.GetLocation(source.Id);
-            HuLocationDto innerLocation = _huLocationRepository.GetLocation(inner.Id);
+            HuLocationDto sourceLocation = _effectiveLocationResolver.Resolve(source.Id);
+            HuLocationDto innerLocation = _effectiveLocationResolver.Resolve(inner.Id);
 
             if (sourceLocation == null || !sourceLocation.DirectLocationId.HasValue)
                 return OperationResult<UnpackInnerResultDto>.Fail("源外箱没有直接货位。");
@@ -319,7 +332,7 @@ namespace WMS_HU_Model.Services
             if (target == null)
                 return OperationResult<UnpackInnerResultDto>.Fail("目标货位不存在。");
 
-            if (target.MasterStatus != "ACTIVE")
+            if (!target.IsActive)
                 return OperationResult<UnpackInnerResultDto>.Fail("目标货位不可用。");
 
             if (target.IsVirtual)
@@ -446,8 +459,8 @@ namespace WMS_HU_Model.Services
             if (_huRepository.HasActiveParent(inner.Id))
                 return OperationResult<PackInnerResultDto>.Fail("内包当前已属于其他HU，不能直接装箱。");
 
-            HuLocationDto innerLocation = _huLocationRepository.GetLocation(inner.Id);
-            HuLocationDto targetLocation = _huLocationRepository.GetLocation(target.Id);
+            HuLocationDto innerLocation = _effectiveLocationResolver.Resolve(inner.Id);
+            HuLocationDto targetLocation = _effectiveLocationResolver.Resolve(target.Id);
 
             if (innerLocation == null || !innerLocation.DirectLocationId.HasValue)
                 return OperationResult<PackInnerResultDto>.Fail("内包当前不是独立存放状态。");

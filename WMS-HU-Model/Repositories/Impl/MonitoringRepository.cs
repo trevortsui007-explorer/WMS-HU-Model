@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Data;
 using System.Data.SqlClient;
 using WMS_HU_Model.Infrastructure.Database;
@@ -16,55 +15,55 @@ namespace WMS_HU_Model.Repositories
 ;WITH TodayReceipts AS
 (
     SELECT Id
-    FROM dbo.WMS_FinishedGoodsInboundReceipt
-    WHERE ReceiveTime >= @FromTime AND ReceiveTime < @ToTimeExclusive
+    FROM dbo.WMS_FG_FinishedGoodsInboundReceipt
+    WHERE ReceiveDt >= @FromTime AND ReceiveDt < @ToTimeExclusive
 )
 SELECT
     TodayReceiptCount = (SELECT COUNT(1) FROM TodayReceipts),
-    TodayBoxCount = (SELECT COUNT(1) FROM TodayReceipts receipt INNER JOIN dbo.WMS_HU hu ON hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND hu.HUType = 'OUTER_BOX'),
-    TodayPackCount = (SELECT COUNT(1) FROM TodayReceipts receipt INNER JOIN dbo.WMS_HU hu ON hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND hu.HUType = 'INNER_PACK'),
-    TodayQty = (SELECT ISNULL(SUM(item.Qty), 0) FROM TodayReceipts receipt INNER JOIN dbo.WMS_HU pack ON pack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND pack.HUType = 'INNER_PACK' INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id),
-    ActiveHoldBoxCount = (SELECT COUNT(1) FROM dbo.WMS_HU box WHERE box.HUType = 'OUTER_BOX' AND box.LifecycleStatus = 'ACTIVE' AND box.IsHold = 1),
+    TodayBoxCount = (SELECT COUNT(1) FROM TodayReceipts receipt INNER JOIN dbo.WMS_FG_HU hu ON hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND hu.HUType = 'OUTER_BOX'),
+    TodayPackCount = (SELECT COUNT(1) FROM TodayReceipts receipt INNER JOIN dbo.WMS_FG_HU hu ON hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND hu.HUType = 'INNER_PACK'),
+    TodayQty = (SELECT ISNULL(SUM(item.Qty), 0) FROM TodayReceipts receipt INNER JOIN dbo.WMS_FG_HU pack ON pack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND pack.HUType = 'INNER_PACK' INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id),
+    ActiveHoldBoxCount = (SELECT COUNT(1) FROM dbo.WMS_FG_HU box WHERE box.HUType = 'OUTER_BOX' AND box.LifecycleStatus = 'ACTIVE' AND box.IsHold = 1),
     InboundExceptionReceiptCount =
     (
         SELECT COUNT(1)
-        FROM dbo.WMS_FinishedGoodsInboundReceipt receipt
+        FROM dbo.WMS_FG_FinishedGoodsInboundReceipt receipt
         WHERE EXISTS
         (
             SELECT 1
-            FROM dbo.WMS_HU box
+            FROM dbo.WMS_FG_HU box
             WHERE box.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20))
               AND box.HUType = 'OUTER_BOX'
               AND (box.IsHold = 1 OR EXISTS
-                  (SELECT 1 FROM dbo.WMS_HU_HoldLog hold WHERE hold.HUId = box.Id AND hold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND hold.IsActive = 1))
+                  (SELECT 1 FROM dbo.WMS_FG_HU_HoldLog hold WHERE hold.HUId = box.Id AND hold.HoldReasonCode = 'WEEKCODE_UNRESOLVED' AND hold.IsActive = 1))
         )
     );";
 
         public const string TrendSql = @"
 SELECT
-    [Date] = CAST(receipt.ReceiveTime AS DATE),
+    [Date] = CAST(receipt.ReceiveDt AS DATE),
     ReceiptCount = COUNT(1),
     BoxCount = SUM(ISNULL(huStats.BoxCount, 0)),
     PackCount = SUM(ISNULL(huStats.PackCount, 0)),
     Qty = SUM(ISNULL(itemStats.Qty, 0))
-FROM dbo.WMS_FinishedGoodsInboundReceipt receipt
+FROM dbo.WMS_FG_FinishedGoodsInboundReceipt receipt
 OUTER APPLY
 (
     SELECT
         BoxCount = SUM(CASE WHEN hu.HUType = 'OUTER_BOX' THEN 1 ELSE 0 END),
         PackCount = SUM(CASE WHEN hu.HUType = 'INNER_PACK' THEN 1 ELSE 0 END)
-    FROM dbo.WMS_HU hu
+    FROM dbo.WMS_FG_HU hu
     WHERE hu.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20))
 ) huStats
 OUTER APPLY
 (
     SELECT Qty = SUM(item.Qty)
-    FROM dbo.WMS_HU pack
-    INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id
+    FROM dbo.WMS_FG_HU pack
+    INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id
     WHERE pack.SourceBusinessNo = 'FGI-' + CAST(receipt.Id AS VARCHAR(20)) AND pack.HUType = 'INNER_PACK'
 ) itemStats
-WHERE receipt.ReceiveTime >= @FromTime AND receipt.ReceiveTime < @ToTimeExclusive
-GROUP BY CAST(receipt.ReceiveTime AS DATE)
+WHERE receipt.ReceiveDt >= @FromTime AND receipt.ReceiveDt < @ToTimeExclusive
+GROUP BY CAST(receipt.ReceiveDt AS DATE)
 ORDER BY [Date];";
 
         public void ProbeWmsDb()
@@ -75,9 +74,8 @@ ORDER BY [Date];";
 
         public void ProbeMesDb()
         {
-            ConnectionStringSettings settings = ConfigurationManager.ConnectionStrings["MesDb"];
-            if (settings == null || string.IsNullOrWhiteSpace(settings.ConnectionString)) throw new InvalidOperationException("MES health configuration unavailable.");
-            using (SqlConnection connection = CreateHealthConnection(settings.ConnectionString)) Probe(connection);
+            using (SqlConnection configured = DbConnectionFactory.Create())
+            using (SqlConnection connection = CreateHealthConnection(configured.ConnectionString)) Probe(connection);
         }
 
         public MonitoringBusinessSummaryDto GetBusinessSummary(DateTime fromTime, DateTime toTimeExclusive)

@@ -9,25 +9,15 @@ namespace WMS_HU_Model.Repositories
     public class PutawayRecommendationRepository : IPutawayRecommendationRepository
     {
         private const string BoxSqlPrefix = @"
-;WITH Ancestors AS
+;WITH Roots AS
 (
-    SELECT box.Id AS HUId, box.HUCode, box.HUType, CAST(0 AS INT) AS LevelNo
-    FROM dbo.WMS_HU box
+    SELECT box.Id AS RootHUId, box.Id AS HUId, box.HUCode, box.HUType, CAST(0 AS INT) AS LevelNo
+    FROM dbo.WMS_FG_HU box
     WHERE box.HUCode = @BoxHUCode
-
-    UNION ALL
-
-    SELECT parent.Id, parent.HUCode, parent.HUType, ancestor.LevelNo + 1
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_Relation relation
-        ON relation.ChildHUId = ancestor.HUId
-       AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU parent
-        ON parent.Id = relation.ParentHUId
-       AND ";
+)
+";
 
         private const string BoxSqlSuffix = @"
-)
 SELECT
     box.Id AS HuId,
     box.HUCode,
@@ -41,7 +31,7 @@ SELECT
     effective.ZoneCode AS EffectiveZoneCode,
     effective.SourceHUId,
     effective.SourceHUType
-FROM dbo.WMS_HU box
+FROM dbo.WMS_FG_HU box
 OUTER APPLY
 (
     SELECT TOP 1
@@ -52,23 +42,23 @@ OUTER APPLY
         ancestor.HUId AS SourceHUId,
         ancestor.HUType AS SourceHUType
     FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
-    INNER JOIN dbo.WMS_Location location ON location.Id = currentLocation.LocationId
-    INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-    INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
+    INNER JOIN dbo.WMS_FG_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
+    INNER JOIN dbo.WMS_FG_Location location ON location.Id = currentLocation.LocationId
+    INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+    INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
     ORDER BY ancestor.LevelNo, ancestor.HUId
 ) effective
 WHERE box.HUCode = @BoxHUCode
 OPTION (MAXRECURSION 20);";
 
         private const string IncomingItemsSql = @"
-SELECT item.MaterialCode, item.MaterialRevision, item.WeekYear, item.WeekNo, item.WeekSortKey
-FROM dbo.WMS_HU_Relation relation
-INNER JOIN dbo.WMS_HU pack
+SELECT item.ProdNo AS MaterialCode, item.ProdRev AS MaterialRevision, item.WeekYear, item.WeekNo, item.WeekSortKey
+FROM dbo.WMS_FG_HU_Relation relation
+INNER JOIN dbo.WMS_FG_HU pack
     ON pack.Id = relation.ChildHUId
    AND pack.HUType = 'INNER_PACK'
    AND pack.LifecycleStatus = 'ACTIVE'
-INNER JOIN dbo.WMS_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
+INNER JOIN dbo.WMS_FG_HU_Item item ON item.HUId = pack.Id AND item.IsActive = 1
 WHERE relation.ParentHUId = @BoxHUId
   AND relation.IsActive = 1
 ORDER BY pack.HUCode, item.Id;";
@@ -84,79 +74,50 @@ SELECT
     location.PhysicalRackGroupCode,
     location.PhysicalRowCode,
     location.PositionSequence
-FROM dbo.WMS_Location location
-INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
+FROM dbo.WMS_FG_Location location
+INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
 WHERE warehouse.WarehouseCode = @WarehouseCode
   AND warehouse.IsActive = 1
   AND zone.ZoneCode = 'STORAGE'
-  AND location.MasterStatus = 'ACTIVE'
+  AND location.IsActive = 1
   AND location.IsVirtual = 0
-  AND location.IsScannable = 1
 ORDER BY location.PutawayPriority, location.LocationCode;";
 
         private const string InventorySqlPrefix = @"
 ;WITH Roots AS
 (
     SELECT hu.Id AS RootHUId, hu.Id AS HUId, hu.HUCode, hu.HUType, CAST(0 AS INT) AS LevelNo
-    FROM dbo.WMS_HU hu
+    FROM dbo.WMS_FG_HU hu
     WHERE hu.HUType = 'OUTER_BOX'
       AND hu.LifecycleStatus = 'ACTIVE'
-),
-Ancestors AS
-(
-    SELECT RootHUId, HUId, HUCode, HUType, LevelNo
-    FROM Roots
-
-    UNION ALL
-
-    SELECT ancestor.RootHUId, parent.Id, parent.HUCode, parent.HUType, ancestor.LevelNo + 1
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_Relation relation
-        ON relation.ChildHUId = ancestor.HUId
-       AND relation.IsActive = 1
-    INNER JOIN dbo.WMS_HU parent
-        ON parent.Id = relation.ParentHUId
-       AND ";
+)
+";
 
         private const string InventorySqlSuffix = @"
-),
-RankedLocations AS
-(
-    SELECT
-        ancestor.RootHUId,
-        currentLocation.LocationId,
-        ROW_NUMBER() OVER
-        (
-            PARTITION BY ancestor.RootHUId
-            ORDER BY ancestor.LevelNo, ancestor.HUId
-        ) AS LocationRank
-    FROM Ancestors ancestor
-    INNER JOIN dbo.WMS_HU_CurrentLocation currentLocation ON currentLocation.HUId = ancestor.HUId
-)
 SELECT
     box.Id AS BoxHuId,
     box.HUCode AS BoxHuCode,
     box.PlantCode,
     resolved.LocationId,
-    item.MaterialCode,
-    item.MaterialRevision,
+    item.ProdNo AS MaterialCode,
+    item.ProdRev AS MaterialRevision,
     item.WeekYear,
     item.WeekNo,
     item.WeekSortKey
-FROM RankedLocations resolved
-INNER JOIN dbo.WMS_HU box ON box.Id = resolved.RootHUId
-INNER JOIN dbo.WMS_Location location ON location.Id = resolved.LocationId
-INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = location.WarehouseId
-INNER JOIN dbo.WMS_Zone zone ON zone.Id = location.ZoneId
-LEFT JOIN dbo.WMS_HU_Relation relation
+FROM RankedEffectiveLocations resolved
+INNER JOIN dbo.WMS_FG_HU box ON box.Id = resolved.RootHUId
+INNER JOIN dbo.WMS_FG_Location location ON location.Id = resolved.LocationId
+INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = location.WarehouseId
+INNER JOIN dbo.WMS_FG_Zone zone ON zone.Id = location.ZoneId
+LEFT JOIN dbo.WMS_FG_HU_Relation relation
     ON relation.ParentHUId = box.Id
    AND relation.IsActive = 1
-LEFT JOIN dbo.WMS_HU pack
+LEFT JOIN dbo.WMS_FG_HU pack
     ON pack.Id = relation.ChildHUId
    AND pack.HUType = 'INNER_PACK'
    AND pack.LifecycleStatus = 'ACTIVE'
-LEFT JOIN dbo.WMS_HU_Item item
+LEFT JOIN dbo.WMS_FG_HU_Item item
     ON item.HUId = pack.Id
    AND item.IsActive = 1
 WHERE resolved.LocationRank = 1
@@ -184,7 +145,7 @@ OPTION (MAXRECURSION 20);";
 
         private static PutawayRecommendationBoxSnapshot ReadBox(SqlConnection connection, string boxHuCode)
         {
-            string sql = BoxSqlPrefix + EffectiveLocationResolver.ActiveParentPredicateSql + BoxSqlSuffix;
+            string sql = BoxSqlPrefix + EffectiveLocationResolver.AncestorAndRankedLocationCteSql + BoxSqlSuffix;
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
                 command.Parameters.Add("@BoxHUCode", SqlDbType.VarChar, 100).Value = boxHuCode;
@@ -238,8 +199,8 @@ OPTION (MAXRECURSION 20);";
         {
             const string sql = @"
 SELECT COUNT(1)
-FROM dbo.WMS_WarehousePlant warehousePlant
-INNER JOIN dbo.WMS_Warehouse warehouse ON warehouse.Id = warehousePlant.WarehouseId
+FROM dbo.WMS_FG_WarehousePlant warehousePlant
+INNER JOIN dbo.WMS_FG_Warehouse warehouse ON warehouse.Id = warehousePlant.WarehouseId
 WHERE warehouse.WarehouseCode = @WarehouseCode
   AND warehouse.IsActive = 1
   AND warehousePlant.PlantCode = @PlantCode
@@ -280,7 +241,7 @@ WHERE warehouse.WarehouseCode = @WarehouseCode
 
         private static void ReadInventory(SqlConnection connection, string warehouseCode, PutawayRecommendationSnapshot snapshot)
         {
-            string sql = InventorySqlPrefix + EffectiveLocationResolver.ActiveParentPredicateSql + InventorySqlSuffix;
+            string sql = InventorySqlPrefix + EffectiveLocationResolver.AncestorAndRankedLocationCteSql + InventorySqlSuffix;
             using (SqlCommand command = new SqlCommand(sql, connection))
             {
                 command.Parameters.Add("@WarehouseCode", SqlDbType.VarChar, 30).Value = warehouseCode;

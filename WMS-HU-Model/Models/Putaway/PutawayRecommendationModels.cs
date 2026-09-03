@@ -9,6 +9,7 @@ namespace WMS_HU_Model.Models.Putaway
         public string MaterialCode { get; set; }
         public string MaterialRevision { get; set; }
         public string RecommendationVersion { get; set; }
+        public bool ITMode { get; set; }
         public string RecommendedLocationCode { get; set; }
         public List<PutawayLocationRecommendationDto> Recommendations { get; set; }
 
@@ -24,10 +25,13 @@ namespace WMS_HU_Model.Models.Putaway
         public string LocationCode { get; set; }
         public string RecommendationLevel { get; set; }
         public string Reason { get; set; }
+        public string ITReason { get; set; }
         public int CurrentBoxCount { get; set; }
         public int? ClusterMinBoxCount { get; set; }
         public int? ClusterMaxBoxCount { get; set; }
         public int? ClusterFillGap { get; set; }
+        public int? ClusterLocationCount { get; set; }
+        public string ClusterInferenceStatus { get; set; }
         public string PhysicalRackGroupCode { get; set; }
         public string PhysicalRowCode { get; set; }
         public int? PositionSequence { get; set; }

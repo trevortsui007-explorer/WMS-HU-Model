@@ -39,9 +39,13 @@ namespace WMS.Modules
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 object rawBoxHuCode = Request.Query.boxHuCode;
+                object rawItMode = Request.Query.itMode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
                 string boxHuCode = Convert.ToString(rawBoxHuCode);
-                OperationResult<PutawayRecommendationResultDto> result = _recommendationService.GetRecommendations(warehouseCode, boxHuCode);
+                string itModeText = Convert.ToString(rawItMode);
+                bool itMode = string.Equals((itModeText ?? string.Empty).Trim(), "true", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals((itModeText ?? string.Empty).Trim(), "1", StringComparison.OrdinalIgnoreCase);
+                OperationResult<PutawayRecommendationResultDto> result = _recommendationService.GetRecommendations(warehouseCode, boxHuCode, itMode);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));

@@ -5,6 +5,6 @@ namespace WMS_HU_Model.Services
 {
     public interface IPutawayRecommendationService
     {
-        OperationResult<PutawayRecommendationResultDto> GetRecommendations(string warehouseCode, string boxHuCode);
+        OperationResult<PutawayRecommendationResultDto> GetRecommendations(string warehouseCode, string boxHuCode, bool itMode);
     }
 }

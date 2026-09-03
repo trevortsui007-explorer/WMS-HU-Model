@@ -49,6 +49,8 @@ namespace WMS_HU_Model.Services
                         SourceEntityId = pack.PK_Packmaster_Id.Trim(),
                         PackId = pack.PackID.Trim(),
                         PackCode = pack.CustPackID.Trim(),
+                        LotNo = pack.LotNo.Trim(),
+                        HasAuthoritativeMesLotNo = true,
                         IsSpecialSapCharg = pack.IsSpecialSapCharg,
                         Qty = pack.PCSQty,
                         DateCode = pack.DateCode,
@@ -86,6 +88,8 @@ namespace WMS_HU_Model.Services
                 foreach (MesPackmasterReadModel pack in packs)
                 {
                     if (Empty(pack.PK_Packmaster_Id) || Empty(pack.PackID) || Empty(pack.CustPackID) || pack.PCSQty <= 0) return "MES Box[" + box.BoxBarCode + "]存在无效InnerPack。";
+                    if (pack.LotNoCount < 1 || Empty(pack.LotNo)) return "MES_LOTNO_INVALID: Packmaster[" + pack.PK_Packmaster_Id + "]至少需要一个有效LotNo。";
+                    if (pack.LotNo.Trim().Length > 500) return "MES_LOTNO_TOO_LONG: Packmaster[" + pack.PK_Packmaster_Id + "]拼接后的LotNo长度不能超过500。";
                     if (!Same(pack.PlantCode, plan.PlantCode)) return "MES Pack[" + pack.CustPackID + "]与PlanStock厂别不一致。";
                     if (!Same(pack.ProdNo, box.ProdNo) || !Same(pack.ProdRev, box.ProdRev)) return "MES Box[" + box.BoxBarCode + "]与Pack[" + pack.CustPackID + "]料号版本不一致。";
                     qty += pack.PCSQty;

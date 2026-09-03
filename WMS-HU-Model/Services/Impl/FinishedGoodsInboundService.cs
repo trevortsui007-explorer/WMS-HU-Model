@@ -32,7 +32,9 @@ namespace WMS_HU_Model.Services
                 || !ValidateRequired(request.Operator, 50, "Operator", out requestError)
                 || !ValidateOptional(request.Remark, 500, "Remark", out requestError))
                 return OperationResult<FinishedGoodsInboundResultDto>.Fail(requestError);
-            string error = FinishedGoodsInboundSnapshotValidator.ValidateStructural(request.Snapshot);
+            string error = PrepareAuthoritativeLotNumbers(request.Snapshot);
+            if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);
+            error = FinishedGoodsInboundSnapshotValidator.ValidateStructural(request.Snapshot);
             if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);
             error = ResolveSapBatchNumbers(request.Snapshot);
             if (error != null) return OperationResult<FinishedGoodsInboundResultDto>.Fail(error);
@@ -92,6 +94,30 @@ namespace WMS_HU_Model.Services
                 catch (ArgumentException ex)
                 {
                     return "SAP_CHARG_INVALID: InnerPack[" + pack.PackCode + "]" + ex.Message;
+                }
+            }
+            return null;
+        }
+
+        private static string PrepareAuthoritativeLotNumbers(FinishedGoodsInboundSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Boxes == null) return null;
+            foreach (FinishedGoodsInboundBoxSnapshot box in snapshot.Boxes)
+            {
+                if (box == null || box.InnerPacks == null) continue;
+                foreach (FinishedGoodsInboundPackSnapshot pack in box.InnerPacks)
+                {
+                    if (pack == null) continue;
+                    if (!pack.HasAuthoritativeMesLotNo)
+                    {
+                        pack.LotNo = null;
+                        continue;
+                    }
+                    if (string.IsNullOrWhiteSpace(pack.LotNo))
+                        return "MES_LOTNO_INVALID: InnerPack[" + pack.PackCode + "]缺少有效LotNo。";
+                    if (pack.LotNo.Trim().Length > 500)
+                        return "MES_LOTNO_TOO_LONG: InnerPack[" + pack.PackCode + "]拼接后的LotNo长度不能超过500。";
+                    pack.LotNo = pack.LotNo.Trim();
                 }
             }
             return null;

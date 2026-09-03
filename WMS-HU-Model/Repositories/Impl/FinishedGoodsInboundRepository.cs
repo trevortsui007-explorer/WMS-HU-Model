@@ -198,13 +198,13 @@ VALUES (@ParentId, @ChildId, SYSDATETIME(), 1, @OperationNo, @Operator);",
             conn.Execute(@"
 INSERT INTO dbo.WMS_FG_HU_Item
 (
-    HUId, ProdNo, ProdRev, DateCode, SAPBatchNo, Qty, Uom, StockStatus, IsActive,
+    HUId, ProdNo, ProdRev, DateCode, LotNo, SAPBatchNo, Qty, Uom, StockStatus, IsActive,
     WeekFormatCode, WeekYear, WeekNo, WeekSortKey, WeekRuleSource, WeekRuleValue, WeekResolvedTime,
     CreateBy, CreateDt
 )
 VALUES
 (
-    @HuId, @ProdNo, @ProdRev, @DateCode, @SAPBatchNo, @Qty, @Uom, 'AVAILABLE', 1,
+    @HuId, @ProdNo, @ProdRev, @DateCode, @LotNo, @SAPBatchNo, @Qty, @Uom, 'AVAILABLE', 1,
     @WeekFormatCode, @WeekYear, @WeekNo, @WeekSortKey, @WeekRuleSource, @WeekRuleValue, @WeekResolvedTime,
     @Operator, @ReceiveTime
 );", new
@@ -213,6 +213,7 @@ VALUES
                 ProdNo = box.MaterialCode.Trim(),
                 ProdRev = string.IsNullOrWhiteSpace(box.MaterialRevision) ? null : box.MaterialRevision.Trim(),
                 DateCode = pack.DateCode,
+                LotNo = pack.LotNo,
                 SAPBatchNo = pack.SapBatchNo,
                 pack.Qty,
                 Uom = box.Uom.Trim(),

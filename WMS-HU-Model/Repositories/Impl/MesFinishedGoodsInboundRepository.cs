@@ -25,7 +25,7 @@ namespace WMS_HU_Model.Repositories
                 graph.Packs = conn.Query<MesPackmasterReadModel>(@"
 SELECT pm.PK_Packmaster_Id,CAST(pm.PackID AS VARCHAR(50)) AS PackID,pm.boxID AS BoxID,pm.CustPackID,
        pm.PCSQty,pm.datecode AS DateCode,pm.createdt AS Createdt,pm.prodno AS ProdNo,pm.prodrev AS ProdRev,
-       pm.plantCode AS PlantCode,
+       pm.plantCode AS PlantCode,lotFact.LotNo,lotFact.LotNoCount,
        CAST(CASE WHEN EXISTS
        (
            SELECT 1
@@ -35,6 +35,29 @@ SELECT pm.PK_Packmaster_Id,CAST(pm.PackID AS VARCHAR(50)) AS PackID,pm.boxID AS 
              AND LTRIM(RTRIM(lotCard.OrderType)) IN ('ZP02','ZP05','ZP06','ZP08')
        ) THEN 1 ELSE 0 END AS BIT) AS IsSpecialSapCharg
 FROM dbo.PK_Packmaster pm WITH (NOLOCK)
+OUTER APPLY
+(
+    SELECT
+        STUFF((
+            SELECT ',' + orderedLot.LotNo
+            FROM
+            (
+                SELECT LTRIM(RTRIM(sourceLot.LotNo)) AS LotNo,
+                       MIN(sourceLot.LotSeq) AS FirstLotSeq
+                FROM dbo.PK_PackLot sourceLot WITH (NOLOCK)
+                WHERE sourceLot.PK_Packmaster_Id=pm.PK_Packmaster_Id
+                  AND NULLIF(LTRIM(RTRIM(sourceLot.LotNo)), '') IS NOT NULL
+                GROUP BY LTRIM(RTRIM(sourceLot.LotNo))
+            ) orderedLot
+            ORDER BY orderedLot.FirstLotSeq,orderedLot.LotNo
+            FOR XML PATH(''),TYPE
+        ).value('.', 'VARCHAR(MAX)'),1,1,'') AS LotNo,
+        (
+            SELECT COUNT(DISTINCT NULLIF(LTRIM(RTRIM(sourceLot.LotNo)), ''))
+            FROM dbo.PK_PackLot sourceLot WITH (NOLOCK)
+            WHERE sourceLot.PK_Packmaster_Id=pm.PK_Packmaster_Id
+        ) AS LotNoCount
+) lotFact
 WHERE pm.boxID IN (SELECT boxID FROM dbo.PK_Box WITH (NOLOCK) WHERE PK_PlanStock_Id=@PlanStockId);",
                     new { PlanStockId = planStockSourceId.Trim() }).AsList();
                 return graph;

@@ -38,6 +38,8 @@ namespace WMS_HU_Model.Models.Inbound
         public string ProdNo { get; set; }
         public string ProdRev { get; set; }
         public string PlantCode { get; set; }
+        public string LotNo { get; set; }
+        public int LotNoCount { get; set; }
         public bool IsSpecialSapCharg { get; set; }
     }
 

@@ -1,4 +1,31 @@
-﻿# WMS 成品仓正式出库后端交接
+# WMS 成品仓正式出库后端交接
+
+## 2026-09-01 Putaway Recommendation V1.1.1
+
+- 版本：`V1.1.1_DYNAMIC_CLUSTER`。保留 `MinClusterObservationCount=3`、第三真实簇位前不推断容量、先补齐后扩展等 V1.1 硬约束。
+- Top3：Observation/Fill 模式先返回真实主簇位置；候选不足时按同排相邻、同货架组近邻、普通空位补充 `OPERATION_BACKUP`。Backup 不计入 `ClusterLocationCount`，不改变推断状态，不表示簇满；LocationCode 仍由字典去重。
+- Contract：GET recommendation 新增可选 `itMode`（默认 false）；Result 新增 `ITMode`，item 新增 `ITReason`。`Reason` 简化为操作文案；ITReason 仅在 itMode=true 返回，IT mode 不参与候选与排序。
+- CurrentBoxCount：改为候选 Location 内精确匹配当前 PlantCode+MaterialCode+MaterialRevision 的 OUTER_BOX 数量，不再使用该 Location 全部箱数。
+- PDA：默认显示首选/次选/备选及简短 Reason，不显示簇元数据；URL `?itMode=1/true` 时请求 API `itMode=true` 并显示簇信息与 ITReason。
+- Runtime sync：DTO、Service interface、Service、Module 已同步 Learun WebApi WMS_FG 编译副本；PDA 修改位于 Learun 正式代码树。
+- Verification：Model/Test/WMS Host/Learun Web build PASS；排除一个既有且无关的出货页面文本断言后，V1.1.1 与可执行回归 `136/136 PASS`。未改 harness 会在最后的 `ShipmentManagementFrontendKeepsBusinessBoundary` 因当前页面缺少 `查看接口日志` 而失败。WebApi 编译到最终输出后因运行进程/权限拒绝写入 `obj/Debug/Learun.Application.WebApi.dll` 停止，未出现 V1.1.1 源码错误。
+- Database：无 Schema、Migration、DML 或 DDL 变化/执行。Git 未提交或暂存。
+
+## 2026-09-01 Putaway Recommendation V1.1
+
+- Root cause：V1 在任意非空 MainCluster 上都会继续生成相邻空位、配对排及通用 fallback；未要求最少真实簇位数，导致两个位置箱数相等时把 `FillGap=0` 误当作扩展依据。
+- Implemented：版本升级为 `V1.1_DYNAMIC_CLUSTER`，`MinClusterObservationCount=3`。少于 3 个连续已占用同厂别/同料/同版簇位时只返回现有簇位；达到 3 个后仍先补不平衡位置，仅 3 个以上且当前平衡时允许 `POSSIBLY_FULL -> CLUSTER_EXPANSION`。TOP 3 是上限。
+- DTO：`PutawayLocationRecommendationDto` 新增 nullable `ClusterLocationCount` 与 `ClusterInferenceStatus`；状态限定 `NONE/INSUFFICIENT_SAMPLE/FILL_REQUIRED/POSSIBLY_FULL`。无数据库字段或迁移。
+- Runtime sync：核心 Service/DTO 与 Learun WebApi WMS_FG 编译副本同步；未修改 PDA、Repository SQL 或其他业务模块。
+- Verification：Model/Test/WMS Host build PASS；V1.1 推荐场景及除一个既有出货页面静态断言外的 134 tests PASS。完整未改 harness 被既有 `ShipmentManagementFrontendKeepsBusinessBoundary` 阻断，因为当前前端文件不含 `查看接口日志`；本任务未修改该前端。Learun WebApi 编译到最终输出阶段后因运行环境拒绝写入 `obj/Debug/Learun.Application.WebApi.dll` 而停止，未出现 V1.1 源码编译错误。真实数据库 Runtime GET 未执行。
+- Report：`WMS_FG_PUTAWAY_RECOMMENDATION_V1_1_REPORT.md`。Database schema/migration/DML 均未变更或执行；Git 未提交/暂存。
+
+## 2026-09-01 Finished Goods Inventory Inbound-State Filter
+
+- Root cause：前端已发送 `inboundState`，但 `FinishedGoodsInventoryQuery` 无该属性，Module 未读取，Service/Repository/SQL 均未消费，因此 INBOUND 与 INBOUND-PENDING 混合返回。
+- Fix：仅扩展成品库存查询链路。Module 按两步转换读取 `inboundState`；Service Trim+Upper，只接受 `INBOUND/PENDING`，空值表示全部；Repository 在共享 effective-location `FROM/WHERE` 中以最终 `dl.LocationCode` 过滤，并向 COUNT 与 Rows 绑定 typed `@InboundState`。过滤发生在 GROUP/OFFSET 之前，COUNT 与 Items 条件一致。
+- Runtime sync：主仓实现与实际 `Learun.Application.WebApi/Modules/WMS_FG` 编译副本同步；前端 UI、FinishedGoodsInventoryApi.js、Grid、位置/库存/Hold 语义及其他 API 未改。
+- Verification：WMS-HU-Model.Tests 与 WMS Host build PASS；console regression `134/134` PASS；实际 Learun WebApi build PASS，仅有既有依赖/代码警告。未连接 BaseDb、未执行 Runtime GET、DML、DDL 或 migration；需由 Human 在真实环境核对 INBOUND/PENDING 结果及分页总数。
 
 ## 2026-08-30 WMS Target Environment Acceptance
 
@@ -118,7 +145,8 @@
 - Rule：`SAP_CHARG_RULE_SOURCE=Legacy PK_BoxTOSAP_API semantics`。新增纯 `ISapChargResolver/SapChargResolver`，输入 PlantCode+PackID+IsSpecialOrderType，严格复刻 SQL RIGHT：1010 普通 A、其他厂 B；特殊 AY/BY；示例 472425→A000472425/B000472425/AY00472425/BY00472425。`SPECIAL_ORDER_TYPES=ZP02,ZP05,ZP06,ZP08`，ZP01 等走普通规则。
 - Current persistence diagnosis：MES `PK_Packmaster.PackID` 此前未投影到 WMS。INNER_PACK 的 `WMS_HU.SourceEntityId=PK_Packmaster_Id`，HUCode/PackCode=`CustPackID`，均不是 PackID。`PACKID_CURRENT_SOURCE=adms705.dbo.PK_Packmaster.PackID`；新 ingress persistence 使用现有 `WMS_HU_Identifier` 的 `MES_PACK_ID` 类型，Item 级 SAP CHARG 写现有 `WMS_HU_Item.SAPBatchNo`。`SCHEMA_CHANGE_REQUIRED=False`、`NEW_MIGRATION_FILE=NONE`。
 - Special source：MES provider 在读取 PlanStock source graph 时同批投影 PackID，并用 `EXISTS(PK_PackLot INNER JOIN PP_LotCard ON LotNo)` 判断任一源 Lot 的 OrderType 是否特殊；不读取 outbound LFART/PSTYV，不调用 PK_BoxTOSAP_API，无 N+1、无 JavaScript/MES 查询。
-- Snapshot chain：FinishedGoodsInboundService 忽略客户端 SapBatchNo 并由 resolver 服务端生成；含 CHARG 源事实的新 snapshot 使用 `FGI_V2` hash，未含 PackID 的旧/通用 snapshot 保持 FGI_V1 hash 兼容。PackID→MES_PACK_ID，SAP CHARG→WMS_HU_Item.SAPBatchNo；Formal Pick 已原样复制到 WMS_OutboundPickDetailItem.SAPBatchNo；S0089 继续只读 PickDetailItem.SAPBatchNo、无 BatchNo fallback、缺失仍报 SAP_POSTING_CHARG_MISSING、Retry 复用冻结 PayloadJson。
+- Snapshot chain：FinishedGoodsInboundService 忽略客户端 SapBatchNo 并由 resolver 服务端生成；MES canonical ingress 在同一批量查询中读取每个 `PK_Packmaster_Id` 的全部有效 `PK_PackLot.LotNo`，Trim、去重后按该 LotNo 的最小 `LotSeq ASC`、再按 `LotNo ASC` 稳定排序，以英文逗号无空格拼接。零个有效值返回 `MES_LOTNO_INVALID:`；拼接后超过 500 字符返回 `MES_LOTNO_TOO_LONG:`，不截断、不选择第一条。组合 LotNo 写 `WMS_FG_HU_Item.LotNo`，PackID 写 `MES_PACK_ID` identifier，SAP CHARG 写独立 `WMS_FG_HU_Item.SAPBatchNo`。开发期所有新入库 snapshot 统一使用 `FGI_V3` 固定 9 字段 inner hash 结构，不保留 FGI_V1/FGI_V2 运行时选择。通用 inbound 客户端 LotNo 会被清空，不作为权威事实。Formal Pick 原样复制完整 LotNo/SAPBatchNo 到 PickDetailItem；S0089 继续只读 PickDetailItem.SAPBatchNo、无 BatchNo fallback。
+- MES LotNo verification：`WMS_FG_HU_Item.LotNo` 与 `WMS_FG_OutboundPickDetailItem.LotNo` 的 500 字符物理长度由 Human 已完成，本轮不生成/执行 migration。standalone 与 Learun WebApi WMS_FG 的 5 个本轮相关源码文件 SHA-256 一致；Model、Test、WMS Host、Learun WebApi build PASS，控制台完整回归 `142/142` PASS（仅既有编译 warning）。未连接 BaseDb，未执行 DML/DDL/migration，未调用 SAP；开发期 Hash 直接以最新 FGI_V3 为准，不实现旧版本兼容分支。
 - Quantity/contract：`LFIMG_BOX_RULE=ROW_BATCH_QTY` 保持不变；UMCHA 未加入 S0089；Endpoint-only/no Basic Authorization 保持不变。MergeBox 只移动既有 INNER_PACK relation，不重建 HU Item，因此 SAPBatchNo 快照保留。
 - Historical null strategy：历史 WMS_HU_Item.SAPBatchNo 不自动写 BatchNo、不从 HUCode 推导。可通过 INNER_PACK SourceEntityId=PK_Packmaster_Id 回查 MES PackID+Lot OrderType；后续如需 backfill，应单独生成“只读审计结果→Human Review→受控写入”的工具。本轮未生成/执行 backfill，不修改 WMS_DEV。
 - PDA：当前 `WMS_OutboundPicking.cshtml` 已存在专用 SAP confirm dialog 样式并核对符合要求：左侧稍后处理为灰色次按钮、右侧确认出货并过账SAP为蓝色主按钮、5px 圆角，无“是否装车”，SAP V1 行为未改变。本轮不覆盖该既有页面改动。
@@ -841,3 +869,120 @@
 - 范围：未修改 Pager、jfGrid、Wms.Api、backend、Proxy、Database、schema 或 Recalculate API；未实现 Phase 1C Result Modal。
 - 文档：`docs/frontend/15_WMS_Drawer_Lifecycle_Contract.md`。
 - Git commits：本次未创建提交。
+
+## 2026-08-31 Learun BaseApi Controller 对齐
+
+- Learun 宿主 `D:\com.delton.gz\Learun.Application.WebApi\Modules\WMS_FG\WMS\Modules` 的 23 个 WMS-FG 模块均已由 `NancyModule` 改为继承 `BaseApi`，并引入 `Learun.Application.WebApi`。
+- 85 个路由注册均已由旧式 `Get/Post/Put("...", handler)` 改为 Nancy 1.4 索引器写法；原 `LocationModule` 的 `Put` 编译错误已消除。
+- 所有 WMS-FG API 根路径已从 `/api/wms` 统一为 `/api/wms-fg`；健康检查为 `/api/wms-fg/health` 与 `/api/wms-fg/health/db`。未保留旧路径别名。
+- 保留现有 `ApiResult` 响应体、HTTP 状态和 DTO 绑定；未改动 `BaseApi.cs`、鉴权白名单、业务服务、仓储、SQL、迁移或数据库数据。Learun 鉴权配置由宿主维护者负责。
+- `WeekCodeRecalculateModule.cs` 已从压缩单行格式规范化为与其余 Controller 一致的格式。
+- 验证：静态扫描确认 `NancyModule` 继承、旧式 `Get/Post/Put(` 注册和旧 `/api/wms` 前缀均为 0；`BaseApi` 模块 23 个、索引器路由 85 个。宿主编译结果见本次任务最终验证记录。
+- 宿主完整 `MSBuild /t:Build` 未能完成：缺少旧版 WebApplication targets；使用 VS2022 targets 重试后，宿主既有 Redis 依赖和 Windows SDK `AxImp.exe` 缺失而失败。`CoreCompile` 也被现有 MSBuild 4.0 C# 编译器对宿主既有 C# 6+ 语法的 990 个错误阻断；未发现本次 23 个 Module 的编译错误。
+- 后续修正：索引器转换后发现路由注册尾部残留旧方法调用右括号；已将块处理器闭合由 `});` 更正为 `};`，并移除表达式处理器末尾多余 `)`。复核：所有 23 个模块花括号平衡，且不存在该两类旧闭合语法。
+- 最终语法修复验证：已从原始模块重新生成迁移结果，按块式与表达式 lambda 分别处理闭合符；23 个模块花括号平衡，路由注册 85 个，旧语法及错误闭合符扫描为 0。
+- 最终 Roslyn 语法检查：`Microsoft.Net.Compilers 2.1.0` 对 23 个 WMS-FG Module 源文件的 `CS1002/CS1513` 等语法错误为 0；块式路由残留 `});` 为 0。
+
+## 2026-08-31 WMS-FG Learun Frontend API Mapping Alignment
+
+- 仅更新 Learun 前端 `Areas/WMS` 中 15 个已确认的 WMS-FG 映射文件，将活动运行时前缀从 `/api/wms/` 改为 `/api/wms-fg/`；未改 DTO、HTTP 方法、查询参数、`ApiResult`、错误处理或后端代码。
+- PDA 覆盖 Inventory Lookup、Recommended/Pallet Putaway、Relocation、Outbound Picking、Unpack/Merge；当前没有引用 WMS-FG Runtime 的 Inbound PDA 调用。后台覆盖 Master Data/Location、Inbound Records、Finished Goods Inventory、WeekCode、SAP Posting、Audit、Monitoring、HU Detail。
+- 交叉核对：前端引用 57 个不同后端路由模板，均在当前 85 个 BaseApi 路由内；`FRONTEND_ROUTE_MISMATCH_COUNT=0`。WMS 前端区域旧 `/api/wms/`、`/api/health`、双前缀和独立 WMS 宿主引用均为 0。
+- 验证：8 个 API JavaScript 文件及 7 个 PDA 内联脚本通过 Node syntax check。`Learun.Application.Web.csproj` 构建在编译前因既有 `..\\..\\..\\.nuget\\NuGet.targets` 缺失停止；未执行数据库操作。
+- 报告：`WMS_FG_LEARUN_FRONTEND_API_MAPPING_REPORT.md`。结果：`WMS_FG_FRONTEND_API_MAPPING_COMPLETE=TRUE`；下一步建议 `WMS_FG_MASTER_DATA_BASELINE`，本任务未启动导入或业务写测试。- 部署路由确认：测试浏览器入口 `http://localhost:20471` 反向转发至 `http://localhost:31175`；正式浏览器入口 `http://10.9.10.135` 转发至 `http://10.9.10.135:1001`。WMS-FG 浏览器调用继续保持 `/api/wms-fg/...` 相对路径，禁止在前端硬编码后端端口。
+
+## 2026-08-31 WMS-FG 本机反向代理核验
+
+- 结论：当前 `localhost:20471` 的 WMS-FG 反向代理未配置，不能视为端到端可用。直接访问 `http://localhost:31175/api/wms-fg/health` 返回 HTTP 200 和 WMS 健康 `ApiResult`；访问 `http://localhost:20471/api/wms-fg/health` 返回 HTTP 404。
+- 对用户提供的 Finished Goods Inventory URL 的浏览器实测显示 IIS `StaticFile` 处理器尝试读取 `D:\com.delton.gz\Learun.Application.Web\api\wms-fg\inventory\finished-goods\`，所以请求没有到达 `31175`。
+- `Learun.Application.Web\Web.config` 未发现 WMS-FG URL Rewrite/ARR 转发规则。应在实际承载 20471 的 IIS 站点加规则：`^api/wms-fg/(.*)` -> `http://localhost:31175/api/wms-fg/{R:1}`，保留 query string；生产目标相应为 `http://10.9.10.135:1001/api/wms-fg/{R:1}`。依赖 IIS URL Rewrite 与 ARR proxy 已安装并启用。
+- 本次仅核验，未修改 IIS、ARR、Web.config、后端或数据库。
+
+## 2026-08-31 WMS-FG MVC 反向代理源码修复
+
+- 已修改 Learun Web 的既有 MVC 代理链，而非引入 IIS ARR：`RouteConfig` 的代理入口由 `api/wms/{*path}` 改为 `api/wms-fg/{*path}`；`WmsProxyClient` 下游地址同步为 `/api/wms-fg/`。
+- 代理允许方法由 GET/POST 扩展到 GET/POST/PUT；POST 与 PUT 均原样读取并转发请求体及 Content-Type。查询字符串、响应状态码、Content-Type 与响应体保持原有透传行为；不保留旧 `/api/wms` 别名。
+- 配置：测试 `WmsServiceBaseUrl=http://localhost:31175`；生产配置文件新增 `WmsServiceBaseUrl=http://10.9.10.135:1001`。生产发布时必须以 `system-production.config` 替换运行时 `system.config`。
+- 验证：后端 `31175/api/wms-fg/health` 返回 HTTP 200；代理三处源文件 Roslyn 语法检查无 C# 语法错误；旧代理前缀静态计数为 0。正常 Web Build 仍被既有缺失 `D:\.nuget\NuGet.targets` 在编译前阻断。
+- 风险/待办：当前 `20471` 是完整 IIS，运行程序集未包含旧或新 MVC 代理路由，`/api/wms/health` 和 `/api/wms-fg/health` 均未进入 Controller。恢复 NuGet 构建入口后，需编译部署并回收该站点应用程序池，再复测 health 和 Finished Goods Inventory GET；未执行任何业务写请求、IIS 重启或数据库操作。
+
+## 2026-08-31 WMS-FG MVC 代理部署验证
+
+- 后续确认项目正确解决方案根为 `D:\com.delton.gz`；带该 `SolutionDir` 的 Learun Web Build 成功完成，`bin\Learun.Application.Web.dll` 已更新。
+- `localhost:20471/api/wms-fg/health` 与用户提供的库存查询 URL 已不再被 IIS StaticFile 返回 404；未带 Learun 登录 Cookie 的请求均返回 HTTP 302 至 `/Login/Index`。这证明 `api/wms-fg/{*path}` 已由 Learun MVC 路由接管。
+- 302 为既有宿主鉴权行为，未变更鉴权或白名单。已登录的 WMS 页面请求会进入 MVC 代理并转发到测试后端 `localhost:31175`；本次未使用认证会话及未执行任何业务写请求。
+
+## 2026-08-31 Finished Goods Inventory SQL 语法修复
+
+- 根因：`FinishedGoodsInventoryRepository` 将含 `;WITH` 的 CTE 与 `FROM/WHERE` 片段拼接在 `SELECT COUNT` 和分页子查询之后，生成了 CTE 前已有 SELECT、CTE 后直接 FROM 的非法 SQL；直接请求 `31175/api/wms-fg/inventory/finished-goods` 已复现同一 SQL Server `FROM`/`)` 错误，故非前端或 MVC 代理问题。
+- 修复：将库存查询拆分为 `CurrentInventoryCteSql` 与 `CurrentInventoryFromWhereSql`。Count 以 CTE 后的完整 SELECT 起始；Rows 将 `InventoryRows` 追加到同一 CTE 链，保留原过滤、分组、分页与 DTO 映射。
+- 同步文件：`D:\Code\WMS-HU-Model\WMS-HU-Model\Repositories\Impl\FinishedGoodsInventoryRepository.cs` 与运行时编译副本 `D:\com.delton.gz\Learun.Application.WebApi\Modules\WMS_FG\WMS-HU-Model\Repositories\Impl\FinishedGoodsInventoryRepository.cs`；更新源仓库静态 SQL 测试以覆盖 CTE 与 From/Where 的组合。
+- 验证：`WMS-HU-Model.Tests` Build 成功，执行结果 `Passed 124 tests`。Learun WebApi Debug Build 成功（仅既有依赖版本/锁定文件警告），并生成 `Learun.Application.WebApi.dll`。
+- 未完成的运行时验收：编译后 `localhost:31175` 由完整 IIS 承载，health 与库存 GET 当前无响应；IIS 站点/应用池映射读取和定向回收需要管理员授权，本次未获批准，故未重启服务、未执行任何业务写请求或数据库操作。管理员回收承载 31175 的应用池后，应先 GET `/api/wms-fg/health`，再以 `page=1&pageSize=1` 复测库存接口。
+
+## 2026-08-31 Page04 入库记录箱明细子表
+
+- 实现范围：Page04 Grid 左侧新增 Learun 原生 `+ / -` 子表入口；展开后复用既有 Receipt Detail GET 显示箱码、物流状态、物料/版本、数量/单位、内包数、生产周、异常摘要和有效货位。普通父行点击继续打开既有只读 Drawer。
+- 前端 Foundation：`Wms.Grid` 增加 `subGrid`、`subGridHeight` 与 `onSubGridExpand(subId, row, grid)` 映射；展开图标不计入用户行点击意图。未修改 `jfgrid.js`、Pager 或 Drawer Foundation。
+- 数据边界：仍只展示服务端 Detail 合同返回的前 50 箱；`hasMoreBoxes` 为真时页面明确提示截断。加载、空数据、请求失败和折叠/重绘后的失效异步响应均在行内处理。箱码跳转 Page03，并停止事件冒泡。
+- Schema/API/后端/数据库：无变更；未执行数据库操作。
+- 已执行验证：新增 `wms-page04-inbound-subgrid-harness.js` PASS；Page04 与 Foundation JS syntax PASS；Pager Foundation Harness PASS；Drawer Lifecycle D01–D12 与 Page Integration Harness PASS；Page04 受影响前端文件 UTF-8 BOM、CRLF、mojibake 静态检查 PASS；`git diff --check` 未报告空白错误。
+- 未通过/环境限制：Pager Integration Harness 与 Visual Static Audit 均因当前 Page02 缺少其既有的 absolute-fill 高度匹配而失败，非本次 Page04 子表改动；Learun Web Debug Build 在 RestorePackages 阶段因 `D:\com.delton.gz\packages\Microsoft.AspNet.Razor.3.2.7\lib\net45\zh-Hans\System.Web.Razor.resources.dll` 访问被拒绝而未进入编译。
+- Human Runtime 待验：`+ / -` 展开/折叠、30 箱显示、父行 Drawer 共存、箱码 Page03 跳转、超过 50 箱的截断提示、失败后的重新展开，以及查询/重置/Tab/翻页后的失效响应清理。
+
+## 2026-08-31 Page04 子表运行态显示修复
+
+- 根因证据：正式后端 `GET /api/wms-fg/inbound/finished-goods/receipts/1` 返回 HTTP 200、`code=200`、30 个 `boxes`，因此数据读取合同可用。旧实现将第二个 jfGrid 嵌入原生子表，而原 jfGrid CSS 对 `.jfgrid_chlidgird` 固定 `height:300px`，与 Page04 的 `subGridHeight:235px` 冲突。
+- 修复：保留父 Grid 原生 `+ / -` 与 Detail GET；展开区改为 DOM 安全写入的受控 HTML 表格，并只在 Page04 将旧子表容器高度覆盖为 `100% !important`。表格有独立滚动区，保留 8 个箱事实列、前 50 箱提示、Page03 跳转、错误/空数据/失效响应保护和 Drawer 共存。
+- 范围：未修改 `jfgrid.js`、API、DTO、后端、Proxy、数据库、Pager 或 Drawer Foundation；Human Runtime 仍需重新加载页面后验收。
+- 已执行验证：Page04 子表 Harness PASS（受控表格、8 列、安全箱码、滚动区、高度覆盖、Drawer 共存）；Page04 JS syntax PASS；真实 GET Probe PASS（`ReceiptId=1`、HTTP 200、30 箱）；Pager Foundation P01–P10、Drawer D01–D12 与 Page Integration Harness 均 PASS；Page04 文件 BOM/CRLF/mojibake 检查 PASS。
+
+## 2026-08-31 Page04 子表可见宿主修复
+
+- Human Runtime 新证据：点击后 `+` 正常变为 `-`，235px 子行已插入，但主数据区域空白。jfGrid 源码确认真实回调内容位于左侧 `.jfgrid-subgird-cell`，同时在 `.jfgrid-scrollarea-content` 插入独立的空白占位单元格；后者覆盖了左侧内容层。
+- 修复：Page04 通过左侧子行前一个 `.jfgrid-data-cell-last[rownum]` 定位主滚动区同一行末尾后的可见占位单元格，将加载、空数据、错误和箱表全部渲染到主区；左侧被覆盖的原生内容层隐藏。折叠或重绘后同时校验原生与可见宿主，禁止过期响应回写。
+- 范围：仅 Page04 页面内部 DOM 适配与样式；未修改公共接口、`jfgrid.js`、API、后端、数据库、Pager 或 Drawer。
+- 验证：可见宿主 Harness PASS；Page04 JS syntax PASS；正式后端 Receipt Detail Probe PASS（`ReceiptId=1`、30 箱）；Pager P01–P10、Drawer D01–D12 和 Page Integration 均 PASS；UTF-8 BOM、CRLF、mojibake 与 `git diff --check` PASS。浏览器控制插件初始化失败，未宣称视觉 Runtime 已通过。
+
+## 2026-09-01 出货管理页面 V1
+
+- 实现范围：将既有 SAP 过账队列壳子升级为 Learun PC 业务页；包含组合查询、六类业务状态筛选、服务端分页主 Grid，以及交货单行/拣货明细/SAP过账三个底部页签。首行响应后自动读取明细。
+- 后端：新增 typed `ShipmentManagementQuery`、列表与明细 DTO；新增 `GET /api/wms-fg/outbound/shipment-management/orders` 和 `GET /api/wms-fg/outbound/orders/{vbeln}/shipment-detail`。Repository 使用 typed `SqlParameter` 和只读 ADO.NET 查询；未引入 dynamic/AddWithValue。
+- 冻结事实：拣货箱的 INNER_PACK/周期码/内部批次/CHARG 来自 `WMS_FG_OutboundPickDetailItem`，其中 CHARG 明确取 `SAPBatchNo`，不查询当前可变库存。
+- 写动作：PICKED+READY 的“确认出货”仍调用原 `confirm-shipment` 服务；FAILED/UNKNOWN 仅跳转按 VBELN 过滤的 SAP 日志，本页没有 Retry/人工确认；SUCCESS/SHIPPED 只读。
+- Schema/API 兼容：无数据库 Schema、migration 或现有写 API 变更；未执行数据库写入、migration 或真实 SAP 调用。运行时镜像已同步至 Learun WebApi WMS_FG 模块。
+- 自动验证：新增 10 个 Shipment Management contract tests，完整测试结果 `Passed 134 tests`；WMS-HU-Model、WMS Host Debug build 通过；新页面/API JavaScript syntax 通过。Learun WebApi 与 Web 完整构建结果见最终任务记录。
+- Human Runtime 待验：真实列表/日期过滤、首行选择视觉、箱子展开、日志 Tab 跳转、PICKED+READY 确认弹窗及成功后的列表/明细刷新。严禁用本次验收触发真实 SAP，除非 Human 明确授权并准备测试单。
+- 文档：`docs/frontend/pages/08_Shipment_Management_Page.md`。Git commit：本次未创建提交。
+
+## 2026-09-01 WMS_FG BoxCodeSequence Final Schema 对齐
+
+- 根因：`POST /api/wms-fg/repack/merge-box` 的唯一生产序列分配器仍把 `BusinessDate/PlantCode/CurrentNo` 当作 `dbo.WMS_FG_BoxCodeSequence` 物理列，和已冻结的 `SequenceKey/CurrentValue` Final Schema 不一致。
+- 修复：保持原“自然日 + InnerPack PlantCode”scope 与既有 `B+yyMMdd+四位流水+厂别后缀` 箱码格式；新增确定性 key `OUTER_BOX|{PLANT}|{yyyyMMdd}`，SQL 改为 `SequenceKey/CurrentValue`，并补齐 `CreateBy/LastEditBy`。
+- 并发/幂等：仍使用同一个 Serializable 合箱事务与 `UPDLOCK,HOLDLOCK`；RequestId 的事务内复查发生在序列申请之前。序列更新与 HU/关系/MoveLog/OperationLog 同事务，后续失败一并回滚。
+- 同步：standalone Model 和 Learun WebApi WMS_FG 编译副本的规则/Repository 文件哈希一致；未发现第二个 Runtime OUTER_BOX generator。
+- 静态结果：序列表 SQL 中 `BusinessDate/PlantCode/CurrentNo` 物理引用均为 0；无 `dynamic`、`AddWithValue`、`MAX(HUCode)`，未修改 migration 或 Final Schema。
+- 验证：Model、Tests、WMS Host Debug build PASS；完整 138 项执行为 137 PASS、1 个既有无关前端断言失败。临时排除该断言后 `Passed 137 tests`，随后已恢复测试源。Learun WebApi 到 C# 编译阶段无源码错误，最终因 `obj/Debug/Learun.Application.WebApi.dll` 访问被拒绝报 CS2012。
+- 未执行：真实 merge POST、WMS_DEV DML/DDL、migration、DB-backed 并发测试、Git stage/commit。目标环境需验证连续两个 RequestId 取得 N/N+1，重放 RequestId 不再次消费序列。
+- 报告：`WMS_FG_BOX_CODE_SEQUENCE_FINAL_ALIGNMENT_REPORT.md`。
+
+## 2026-09-02 出货管理 V1 接口审计与完整对接
+
+- 审计结论：`shipping-orders` 后端存在但 Repository 仍为空分页 stub；既有 `shipment-management/orders` 与组合 `shipment-detail` Route 可复用，因此未新增 Route。PDA `picking-state`、`shipping-state`、confirm-shipment、SAP logs/recovery 均保持原 contract/状态机。
+- Contract：Shipment Management 页面 DTO 独立使用 `SapDeliveryNo/SapPostingStatus/SapItemNo/SapBatchNo`，JSON 为 `sapDeliveryNo/sapPostingStatus/sapItemNo/sapBatchNo`；未全局重命名 legacy DTO。
+- 列表：customer/material/date/SAP/business 等条件、COUNT、全过滤范围 summary、OFFSET/FETCH 均在 SQL Server；PickedQty 来自 frozen PickDetailItem.AllocatedQty，PickedBoxCount 为 distinct frozen BoxHUId。
+- 明细：一次请求返回 lines/boxes/posting；一物理箱一父 DTO，冻结 item 为 children；CHARG 来自 PickDetailItem.SAPBatchNo，来源库位来自 Pick MoveLog.FromLocation，日期字段明确为 DateCode。MaterialRevision 未持久化时返回 null，不从当前库存推断。
+- 页面：Tab 顺序/默认值为 LINES,PICKING,POSTING / lines；summary 改为服务端；FAILED/UNKNOWN 仍仅跳 SAP 日志，confirm 继续复用现有接口。
+- 验证：基线 138，完成后 141/141 PASS；Model、Test、WMS Host、Learun Web build PASS。Learun WebApi 完成 CoreCompile 且本轮源码无错误，但运行中宿主占用 `obj/Debug/Learun.Application.WebApi.dll`，最终 CS2012，未部署新 DLL。
+- Read-only runtime：旧宿主 list GET 返回 200 但无 summary/目标单 total=0，detail GET 返回 404，证明仍加载旧 DLL；部署/重启后必须只读复验 8300999010（若仍存在）的 2 box / 6 frozen item。
+- 安全：无 schema/migration、无 DML/DDL、无真实 SAP、未执行 confirm-shipment、未 stage/commit。
+- 报告：`WMS_FG_SHIPMENT_MANAGEMENT_V1_AUDIT_REPORT.md`。
+
+## 2026-09-02 正式出库扫码 PickBatch Final Schema 修复
+
+- Runtime 故障：`POST /api/wms-fg/outbound/pick-batches/{pickBatchNo}/scan` 在进入扫码写事务前，由 `GetPickBatchCustomerCode` 报 `列名 'OutboundOrderId' 无效`。
+- 根因：旧 SQL 读取不存在的 `WMS_FG_OutboundPickBatch.OutboundOrderId`。Final Schema 权威关联为 `PickBatch.AllocationId → Allocation.OutboundOrderId → OutboundOrder.Id`；OrderLine/Allocation 等表的合法 `OutboundOrderId` 不受影响。
+- 修复：standalone 与 Learun WebApi WMS_FG Repository 均改为经 Allocation 读取 CustomerCode；API、Service、DTO、Schema 和状态机未改变。
+- 回归守卫：新增专项 SQL topology 测试，并扩展 Runtime Final Schema guard 禁止 `b.OutboundOrderId`；生产 Runtime 扫描计数为 0。
+- 验证：完整 `142/142` PASS；Model、Test、WMS Host build PASS。Learun WebApi 本轮源码无编译错误，最终仍因运行中宿主占用 `obj/Debug/Learun.Application.WebApi.dll` 报 CS2012。
+- Runtime：未执行扫码 POST、DML/DDL、migration 或 SAP。原失败发生在任何扫码业务写入前，部署新 DLL 后可由 Human 使用原 RequestId 重试并核对 PickDetail/Item、Reservation、位置与日志。

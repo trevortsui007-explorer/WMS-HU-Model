@@ -133,6 +133,126 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string RequestId { get; set; }
     }
 
+    public class ShipmentManagementQuery
+    {
+        public string SapDeliveryNo { get; set; }
+        public string CustomerCode { get; set; }
+        public string MaterialCode { get; set; }
+        public string PlantCode { get; set; }
+        public string WarehouseCode { get; set; }
+        public string BusinessStatus { get; set; }
+        public string SapPostingStatus { get; set; }
+        public DateTime? DateFrom { get; set; }
+        public DateTime? DateTo { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+    }
+
+    public class ShipmentManagementSummaryDto
+    {
+        public int All { get; set; }
+        public int WaitPick { get; set; }
+        public int Picking { get; set; }
+        public int WaitConfirm { get; set; }
+        public int SapException { get; set; }
+        public int Shipped { get; set; }
+    }
+
+    public class ShipmentManagementResultDto : PagedResult<ShipmentManagementRowDto>
+    {
+        public ShipmentManagementSummaryDto Summary { get; set; } = new ShipmentManagementSummaryDto();
+    }
+
+    public class ShipmentManagementRowDto
+    {
+        public long OutboundOrderId { get; set; }
+        public string SapDeliveryNo { get; set; }
+        public string PlantCode { get; set; }
+        public string WarehouseCode { get; set; }
+        public string CustomerCode { get; set; }
+        public int LineCount { get; set; }
+        public decimal RequiredQty { get; set; }
+        public decimal PickedQty { get; set; }
+        public int PickedBoxCount { get; set; }
+        public string OutboundStatus { get; set; }
+        public string PickingStatusText { get; set; }
+        public string SapPostingStatus { get; set; }
+        public string PostingStatusText { get; set; }
+        public string BusinessStatusCode { get; set; }
+        public string BusinessStatusText { get; set; }
+        public bool CanConfirmShipment { get; set; }
+        public bool RequiresITReview { get; set; }
+        public string LastSapCode { get; set; }
+        public string LastSapMessage { get; set; }
+        public DateTime? LastOperationTime { get; set; }
+    }
+
+    public class ShipmentManagementDetailDto
+    {
+        public string SapDeliveryNo { get; set; }
+        public List<ShipmentDeliveryLineDto> DeliveryLines { get; set; } = new List<ShipmentDeliveryLineDto>();
+        public List<ShipmentPickedBoxDto> PickedBoxes { get; set; } = new List<ShipmentPickedBoxDto>();
+        public ShipmentPostingBusinessDto Posting { get; set; }
+    }
+
+    public class ShipmentDeliveryLineDto
+    {
+        public string SapItemNo { get; set; }
+        public string MaterialCode { get; set; }
+        public string MaterialRevision { get; set; }
+        public decimal RequiredQty { get; set; }
+        public decimal GiftQty { get; set; }
+        public decimal EffectiveRequiredQty { get; set; }
+        public decimal AllocatedQty { get; set; }
+        public decimal PickedQty { get; set; }
+        public string Uom { get; set; }
+        public string LineStatus { get; set; }
+    }
+
+    public class ShipmentPickedBoxDto
+    {
+        public long PickDetailId { get; set; }
+        public string PickBatchNo { get; set; }
+        public string BoxCode { get; set; }
+        public string SourceLocationCode { get; set; }
+        public decimal BoxQty { get; set; }
+        public decimal EffectiveQty { get; set; }
+        public string Uom { get; set; }
+        public string DetailStatus { get; set; }
+        public string OperationNo { get; set; }
+        public DateTime? PickTime { get; set; }
+        public List<ShipmentPickedItemDto> Items { get; set; } = new List<ShipmentPickedItemDto>();
+    }
+
+    public class ShipmentPickedItemDto
+    {
+        public long Id { get; set; }
+        public string InnerPackCode { get; set; }
+        public string SapItemNo { get; set; }
+        public string MaterialCode { get; set; }
+        public string MaterialRevision { get; set; }
+        public string DateCode { get; set; }
+        public int? WeekSortKey { get; set; }
+        public string BatchNo { get; set; }
+        public string SapBatchNo { get; set; }
+        public decimal AllocatedQty { get; set; }
+        public string Uom { get; set; }
+    }
+
+    public class ShipmentPostingBusinessDto
+    {
+        public string PostingStatus { get; set; }
+        public string PostingStatusText { get; set; }
+        public string ResultCode { get; set; }
+        public string ResultMessage { get; set; }
+        public int AttemptCount { get; set; }
+        public DateTime? LastAttemptTime { get; set; }
+        public DateTime? SuccessTime { get; set; }
+        public bool CanConfirmShipment { get; set; }
+        public bool RequiresITReview { get; set; }
+        public bool RetryAllowedOnShipmentPage { get; set; }
+    }
+
     public class SapPostingSnapshotBuildResult
     {
         public bool IsSuccess { get; set; }

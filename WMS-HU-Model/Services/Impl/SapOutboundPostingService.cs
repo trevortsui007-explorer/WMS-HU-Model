@@ -112,6 +112,90 @@ namespace WMS_HU_Model.Services
                 _repository.QueryShippingOrders(Normalize(sapDeliveryNo), NormalizeUpper(outboundStatus), NormalizeUpper(postingStatus), page, pageSize));
         }
 
+        public OperationResult<ShipmentManagementResultDto> QueryShipmentManagement(ShipmentManagementQuery query)
+        {
+            query = query ?? new ShipmentManagementQuery();
+            query.SapDeliveryNo = Normalize(query.SapDeliveryNo);
+            query.CustomerCode = Normalize(query.CustomerCode);
+            query.MaterialCode = Normalize(query.MaterialCode);
+            query.PlantCode = NormalizeUpper(query.PlantCode);
+            query.WarehouseCode = NormalizeUpper(query.WarehouseCode);
+            query.BusinessStatus = NormalizeUpper(query.BusinessStatus);
+            query.SapPostingStatus = NormalizeUpper(query.SapPostingStatus);
+            query.Page = query.Page <= 0 ? 1 : query.Page;
+            query.PageSize = query.PageSize <= 0 ? 20 : Math.Min(query.PageSize, 100);
+            ShipmentManagementResultDto result = _repository.QueryShipmentManagement(query);
+            foreach (ShipmentManagementRowDto row in result.Items)
+                ApplyBusinessPresentation(row);
+            return OperationResult<ShipmentManagementResultDto>.Success(result);
+        }
+
+        public OperationResult<ShipmentManagementDetailDto> GetShipmentManagementDetail(string sapDeliveryNo)
+        {
+            string deliveryNo = Normalize(sapDeliveryNo);
+            if (deliveryNo == null)
+                return OperationResult<ShipmentManagementDetailDto>.Fail("VBELN不能为空。");
+            ShipmentManagementDetailDto detail = _repository.GetShipmentManagementDetail(deliveryNo);
+            if (detail == null)
+                return OperationResult<ShipmentManagementDetailDto>.Fail("出库订单不存在。");
+            detail.Posting = detail.Posting ?? new ShipmentPostingBusinessDto();
+            detail.Posting.PostingStatusText = PostingStatusText(detail.Posting.PostingStatus);
+            detail.Posting.RetryAllowedOnShipmentPage = false;
+            return OperationResult<ShipmentManagementDetailDto>.Success(detail);
+        }
+
+        private static void ApplyBusinessPresentation(ShipmentManagementRowDto row)
+        {
+            row.PickingStatusText = PickingStatusText(row.OutboundStatus);
+            row.PostingStatusText = PostingStatusText(row.SapPostingStatus);
+            if (row.OutboundStatus == "SHIPPED" || row.SapPostingStatus == SapOutboundPostingStatuses.Success)
+            {
+                row.BusinessStatusCode = "SHIPPED"; row.BusinessStatusText = "已出货";
+            }
+            else if (row.SapPostingStatus == SapOutboundPostingStatuses.Failed || row.SapPostingStatus == SapOutboundPostingStatuses.Unknown)
+            {
+                row.BusinessStatusCode = "SAP_EXCEPTION"; row.BusinessStatusText = "SAP异常";
+            }
+            else if (row.OutboundStatus == "PICKED" && row.SapPostingStatus == SapOutboundPostingStatuses.Sending)
+            {
+                row.BusinessStatusCode = "SAP_PROCESSING"; row.BusinessStatusText = "SAP过账中";
+            }
+            else if (row.OutboundStatus == "PICKED")
+            {
+                row.BusinessStatusCode = "WAIT_CONFIRM"; row.BusinessStatusText = "待确认出货";
+            }
+            else if (row.OutboundStatus == "WAIT_PICK")
+            {
+                row.BusinessStatusCode = "WAIT_PICK"; row.BusinessStatusText = "待拣货";
+            }
+            else
+            {
+                row.BusinessStatusCode = "PICKING"; row.BusinessStatusText = row.OutboundStatus == "EXCEPTION" ? "拣货异常" : "拣货中";
+            }
+            row.CanConfirmShipment = row.OutboundStatus == "PICKED"
+                && (string.IsNullOrEmpty(row.SapPostingStatus) || row.SapPostingStatus == SapOutboundPostingStatuses.Ready);
+            row.RequiresITReview = row.SapPostingStatus == SapOutboundPostingStatuses.Failed || row.SapPostingStatus == SapOutboundPostingStatuses.Unknown;
+        }
+
+        private static string PickingStatusText(string status)
+        {
+            switch (status)
+            {
+                case "WAIT_PICK": return "待拣货"; case "ALLOCATED": return "已分配"; case "PICKING": return "拣货中";
+                case "PICKED": return "已拣货"; case "EXCEPTION": return "拣货异常"; case "SHIPPED": return "已出货"; case "VOID": return "已作废";
+                default: return status ?? "—";
+            }
+        }
+
+        private static string PostingStatusText(string status)
+        {
+            switch (status)
+            {
+                case "READY": return "待SAP过账"; case "SENDING": return "SAP过账中"; case "SUCCESS": return "已完成SAP过账";
+                case "FAILED": return "SAP过账失败"; case "UNKNOWN": return "SAP状态待确认"; default: return status ?? "待提交";
+            }
+        }
+
         public OperationResult<PagedResult<SapIntegrationLogDto>> QueryLogs(SapIntegrationLogQuery query)
         {
             query = query ?? new SapIntegrationLogQuery();

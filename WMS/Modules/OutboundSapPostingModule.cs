@@ -92,6 +92,61 @@ namespace WMS.Modules
                     Convert.ToString(rawDelivery), Convert.ToString(rawOutboundStatus), Convert.ToString(rawPostingStatus), page, pageSize);
                 return Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK);
             });
+
+            Get("/shipment-management/orders", _ =>
+            {
+                ShipmentManagementQuery query = ReadShipmentQuery();
+                OperationResult<ShipmentManagementResultDto> result = _sapPostingService.QueryShipmentManagement(query);
+                return Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK);
+            });
+
+            Get("/orders/{vbeln}/shipment-detail", args =>
+            {
+                object rawVbeln = args.vbeln;
+                string vbeln = Convert.ToString(rawVbeln);
+                OperationResult<ShipmentManagementDetailDto> result = _sapPostingService.GetShipmentManagementDetail(vbeln);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
+            });
+        }
+
+        private ShipmentManagementQuery ReadShipmentQuery()
+        {
+            object rawDelivery = Request.Query.sapDeliveryNo;
+            object rawCustomer = Request.Query.customerCode;
+            object rawMaterial = Request.Query.materialCode;
+            object rawPlant = Request.Query.plantCode;
+            object rawWarehouse = Request.Query.warehouseCode;
+            object rawBusiness = Request.Query.businessStatus;
+            object rawPosting = Request.Query.sapPostingStatus;
+            object rawFrom = Request.Query.dateFrom;
+            object rawTo = Request.Query.dateTo;
+            object rawPage = Request.Query.page;
+            object rawPageSize = Request.Query.pageSize;
+            int page;
+            int pageSize;
+            DateTime parsed;
+            DateTime? from = null;
+            DateTime? to = null;
+            int.TryParse(Convert.ToString(rawPage), out page);
+            int.TryParse(Convert.ToString(rawPageSize), out pageSize);
+            if (DateTime.TryParse(Convert.ToString(rawFrom), out parsed)) from = parsed;
+            if (DateTime.TryParse(Convert.ToString(rawTo), out parsed)) to = parsed;
+            return new ShipmentManagementQuery
+            {
+                SapDeliveryNo = Convert.ToString(rawDelivery),
+                CustomerCode = Convert.ToString(rawCustomer),
+                MaterialCode = Convert.ToString(rawMaterial),
+                PlantCode = Convert.ToString(rawPlant),
+                WarehouseCode = Convert.ToString(rawWarehouse),
+                BusinessStatus = Convert.ToString(rawBusiness),
+                SapPostingStatus = Convert.ToString(rawPosting),
+                DateFrom = from,
+                DateTo = to,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
         private object PostingFailure(string message)

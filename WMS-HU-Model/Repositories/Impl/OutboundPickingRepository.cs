@@ -516,7 +516,8 @@ WHERE Id = @AllocationId;",
             const string sql = @"
 SELECT TOP 1 ISNULL(o.CustomerCode, '')
 FROM dbo.WMS_FG_OutboundPickBatch b
-INNER JOIN dbo.WMS_FG_OutboundOrder o ON o.Id = b.OutboundOrderId
+INNER JOIN dbo.WMS_FG_OutboundAllocation a ON a.Id = b.AllocationId
+INNER JOIN dbo.WMS_FG_OutboundOrder o ON o.Id = a.OutboundOrderId
 WHERE b.PickBatchNo = @PickBatchNo;";
             string value = DbExecutor.QueryFirstOrDefault<string>(sql, new { PickBatchNo = pickBatchNo });
             return value == null ? null : value;

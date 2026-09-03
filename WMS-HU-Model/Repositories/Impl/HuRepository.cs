@@ -536,7 +536,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
                         parameters.Add("@HUId", huId, DbType.Int64);
                         parameters.Add("@MaterialCode", request.MaterialCode, DbType.AnsiString, size: 50);
                         parameters.Add("@MaterialRevision", DbParameterValue.StringOrNull(request.MaterialRevision), DbType.AnsiString, size: 20);
-                        parameters.Add("@BatchNo", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 50);
+                        parameters.Add("@BatchNo", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 500);
                         parameters.Add("@SAPBatchNo", DbParameterValue.StringOrNull(request.SapBatchNo), DbType.AnsiString, size: 50);
                         parameters.Add("@ProductionOrderNo", DbParameterValue.StringOrNull(request.ProductionOrderNo), DbType.AnsiString, size: 50);
                         parameters.Add("@DateCode", DbParameterValue.StringOrNull(request.DateCode), DbType.AnsiString, size: 50);

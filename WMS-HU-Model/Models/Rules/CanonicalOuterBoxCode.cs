@@ -5,6 +5,13 @@ namespace WMS_HU_Model.Rules
 {
     public static class CanonicalOuterBoxCode
     {
+        public static string BuildSequenceKey(DateTime businessDate, string plantCode)
+        {
+            GetPlantSuffix(plantCode);
+            string normalizedPlantCode = plantCode.Trim().ToUpperInvariant();
+            return "OUTER_BOX|" + normalizedPlantCode + "|" + businessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        }
+
         public static string Build(DateTime businessDate, string plantCode, int sequenceNo)
         {
             if (sequenceNo < 1 || sequenceNo > 9999)

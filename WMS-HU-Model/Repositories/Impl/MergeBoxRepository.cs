@@ -63,7 +63,7 @@ ORDER BY Id;", connection))
 
                         DateTime now = DateTime.Now;
                         string allocationError;
-                        int? sequenceNo = AllocateSequence(connection, transaction, now.Date, first.PlantCode, out allocationError);
+                        int? sequenceNo = AllocateSequence(connection, transaction, now.Date, first.PlantCode, command.Operator, now, out allocationError);
                         if (!sequenceNo.HasValue) return Rollback(transaction, allocationError);
 
                         string newBoxCode = CanonicalOuterBoxCode.Build(now.Date, first.PlantCode, sequenceNo.Value);
@@ -301,26 +301,26 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
             return null;
         }
 
-        private static int? AllocateSequence(SqlConnection connection, SqlTransaction transaction, DateTime businessDate, string plantCode, out string error)
+        private static int? AllocateSequence(SqlConnection connection, SqlTransaction transaction, DateTime businessDate, string plantCode, string operatorCode, DateTime now, out string error)
         {
             error = null;
-            const string selectSql = @"SELECT CurrentNo FROM dbo.WMS_FG_BoxCodeSequence WITH (UPDLOCK,HOLDLOCK) WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode;";
+            string sequenceKey = CanonicalOuterBoxCode.BuildSequenceKey(businessDate, plantCode);
+            const string selectSql = @"SELECT CurrentValue FROM dbo.WMS_FG_BoxCodeSequence WITH (UPDLOCK,HOLDLOCK) WHERE SequenceKey=@SequenceKey;";
             int? current;
             using (SqlCommand command = new SqlCommand(selectSql, connection, transaction))
             {
-                command.Parameters.Add("@BusinessDate", SqlDbType.Date).Value = businessDate;
-                command.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20).Value = plantCode;
+                command.Parameters.Add("@SequenceKey", SqlDbType.VarChar, 100).Value = sequenceKey;
                 object value = command.ExecuteScalar();
                 current = value == null || value == DBNull.Value ? (int?)null : Convert.ToInt32(value);
             }
             if (!current.HasValue)
             {
-                const string insertSql = @"INSERT INTO dbo.WMS_FG_BoxCodeSequence(BusinessDate,PlantCode,CurrentNo,CreateDt) VALUES(@BusinessDate,@PlantCode,1,@Now);";
+                const string insertSql = @"INSERT INTO dbo.WMS_FG_BoxCodeSequence(SequenceKey,CurrentValue,CreateDt,CreateBy) VALUES(@SequenceKey,1,@Now,@Operator);";
                 using (SqlCommand command = new SqlCommand(insertSql, connection, transaction))
                 {
-                    command.Parameters.Add("@BusinessDate", SqlDbType.Date).Value = businessDate;
-                    command.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20).Value = plantCode;
-                    command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = DateTime.Now;
+                    command.Parameters.Add("@SequenceKey", SqlDbType.VarChar, 100).Value = sequenceKey;
+                    command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                    command.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(operatorCode);
                     command.ExecuteNonQuery();
                 }
                 return 1;
@@ -330,13 +330,13 @@ WHERE cl.LocationId=@LocationId AND h.LifecycleStatus='ACTIVE' AND h.PlantCode<>
                 error = "BOX_CODE_DAILY_SEQUENCE_EXHAUSTED: 当前厂别当日OUTER_BOX标准箱码已用尽。";
                 return null;
             }
-            const string updateSql = @"UPDATE dbo.WMS_FG_BoxCodeSequence SET CurrentNo=CurrentNo+1,LastEditDt=@Now WHERE BusinessDate=@BusinessDate AND PlantCode=@PlantCode AND CurrentNo=@CurrentNo;";
+            const string updateSql = @"UPDATE dbo.WMS_FG_BoxCodeSequence SET CurrentValue=CurrentValue+1,LastEditDt=@Now,LastEditBy=@Operator WHERE SequenceKey=@SequenceKey AND CurrentValue=@CurrentValue;";
             using (SqlCommand command = new SqlCommand(updateSql, connection, transaction))
             {
-                command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = DateTime.Now;
-                command.Parameters.Add("@BusinessDate", SqlDbType.Date).Value = businessDate;
-                command.Parameters.Add("@PlantCode", SqlDbType.VarChar, 20).Value = plantCode;
-                command.Parameters.Add("@CurrentNo", SqlDbType.Int).Value = current.Value;
+                command.Parameters.Add("@Now", SqlDbType.DateTime2).Value = now;
+                command.Parameters.Add("@Operator", SqlDbType.VarChar, 50).Value = DbParameterValue.StringOrDbNull(operatorCode);
+                command.Parameters.Add("@SequenceKey", SqlDbType.VarChar, 100).Value = sequenceKey;
+                command.Parameters.Add("@CurrentValue", SqlDbType.Int).Value = current.Value;
                 if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("OUTER_BOX标准箱码序列并发更新失败。");
             }
             return current.Value + 1;

@@ -33,6 +33,7 @@ namespace WMS_HU_Model.Tests
             try
             {
                 RuntimeFinalSchemaStaticGuard();
+                OutboundPickingCustomerLookupUsesFinalSchemaTopology();
                 ExactWholeBoxMaySkipUnusableEarliestBox();
                 ExactWholeBoxUsesStableHuOrder();
                 RepackRequiredUsesWholeInnerPacks();
@@ -94,6 +95,9 @@ namespace WMS_HU_Model.Tests
                 PutawayRecommendationKeepsSingleLocationCluster();
                 PutawayRecommendationKeepsExistingClusterInMixedLegacyLocation();
                 PutawayRecommendationDynamicallyFillsAndExpands();
+                PutawayRecommendationV11EnforcesObservationAndFillModes();
+                PutawayRecommendationItModeDoesNotChangeRecommendations();
+                RecommendedPutawayPdaSeparatesOperatorAndItModes();
                 PutawayRecommendationRanksMultiLocationAndTop3();
                 PutawayRecommendationPrefersForwardExpansion();
                 PutawayRecommendationUsesPairedRowsWithoutInventingLocations();
@@ -108,6 +112,7 @@ namespace WMS_HU_Model.Tests
                 PdaClosureRepositoriesAreAtomicAndTyped();
                 CanonicalBoxCodeFormatsPlants();
                 CanonicalBoxCodeScopesAndResetsSequence();
+                CanonicalBoxCodeBuildsFinalSequenceKeys();
                 CanonicalBoxCodeRejectsInvalidInputs();
                 MergeBoxRulesAllowCrossLocationInventory();
                 MergeBoxRulesRejectInvalidInventory();
@@ -156,6 +161,19 @@ namespace WMS_HU_Model.Tests
                 SapPostingHasSingleShipmentAuthority();
                 SapDeliveryReceiveAddsGenericAudit();
                 SapPostingMigrationAndRepositoryContractsAreSafe();
+                ShipmentManagementNormalizesPagedQuery();
+                ShipmentManagementMapsWaitPick();
+                ShipmentManagementMapsPicking();
+                ShipmentManagementMapsReadyToShip();
+                ShipmentManagementBlocksFailedRetry();
+                ShipmentManagementBlocksUnknownRetry();
+                ShipmentManagementMapsCompleted();
+                ShipmentManagementDetailKeepsFrozenCharg();
+                ShipmentManagementDetailHidesRetry();
+                ShipmentManagementUsesPageSpecificAcronymContract();
+                ShipmentManagementRepositoryUsesFrozenFactsAndFullSummary();
+                ShipmentManagementKeepsOneBoxWithChildItems();
+                ShipmentManagementFrontendKeepsBusinessBoundary();
                 Console.WriteLine("Passed " + _passed + " tests.");
                 return 0;
             }
@@ -484,8 +502,24 @@ namespace WMS_HU_Model.Tests
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(nullDateCode) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(nullTextDateCode), "inbound null and NULL text differ");
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(emptyDateCode) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(whitespaceDateCode), "inbound empty and whitespace datecode differ");
             Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(stringZero) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(numericZero), "inbound string and decimal zero differ");
-            Equal("FGI_V1", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.GetHashVersion(first), "legacy inbound hash version preserved without CHARG facts");
-            Equal("FGI_V2", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.HashVersion, "SAP CHARG inbound hash version");
+            Equal("FGI_V3", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.GetHashVersion(first), "all inbound snapshots use current V3 hash");
+            FinishedGoodsInboundSnapshot chargOnly = InboundSnapshot();
+            chargOnly.Boxes[0].InnerPacks[0].PackId = "472425";
+            chargOnly.Boxes[0].InnerPacks[0].SapBatchNo = "A000472425";
+            Equal("FGI_V3", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.GetHashVersion(chargOnly), "SAP CHARG facts use current V3 hash");
+            FinishedGoodsInboundSnapshot firstLot = InboundSnapshot();
+            firstLot.Boxes[0].InnerPacks[0].PackId = "472425";
+            firstLot.Boxes[0].InnerPacks[0].SapBatchNo = "A000472425";
+            firstLot.Boxes[0].InnerPacks[0].LotNo = "LOT-001";
+            firstLot.Boxes[0].InnerPacks[0].HasAuthoritativeMesLotNo = true;
+            FinishedGoodsInboundSnapshot secondLot = InboundSnapshot();
+            secondLot.Boxes[0].InnerPacks[0].PackId = "472425";
+            secondLot.Boxes[0].InnerPacks[0].SapBatchNo = "A000472425";
+            secondLot.Boxes[0].InnerPacks[0].LotNo = "LOT-002";
+            secondLot.Boxes[0].InnerPacks[0].HasAuthoritativeMesLotNo = true;
+            Equal("FGI_V3", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.HashVersion, "current inbound hash version");
+            Equal("FGI_V3", WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.GetHashVersion(firstLot), "authoritative LotNo uses current V3 hash");
+            Equal(false, WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(firstLot) == WMS_HU_Model.Infrastructure.Inbound.FinishedGoodsInboundSnapshotHasher.CreateHash(secondLot), "LotNo changes V3 hash");
             Pass();
         }
 
@@ -495,7 +529,7 @@ namespace WMS_HU_Model.Tests
             FinishedGoodsInboundService service = new FinishedGoodsInboundService(repository, new WeekCodeResolver(new UnavailableWeekCodeRuleProvider()));
             OperationResult<FinishedGoodsInboundResultDto> success = service.Receive(InboundRequest(InboundSnapshot(), "REQ1"));
             Equal(true, success.IsSuccess, "inbound service success");
-            Equal("FGI_V1", repository.Command.HashVersion, "inbound command hash version");
+            Equal("FGI_V3", repository.Command.HashVersion, "inbound command uses current hash version");
             repository.Next = new FinishedGoodsInboundPersistenceResult { IsConflict = true, Message = "CONFLICT" };
             OperationResult<FinishedGoodsInboundResultDto> conflict = service.Receive(InboundRequest(InboundSnapshot(), null));
             Equal(false, conflict.IsSuccess, "inbound service conflict");
@@ -743,6 +777,8 @@ namespace WMS_HU_Model.Tests
             Equal("PLT-99214", result.Data.Snapshot.Pallet.PalletCode, "MES pallet code");
             Equal("CUST-A", result.Data.Snapshot.Boxes[0].AlternateBoxCode, "MES alternate code");
             Equal("2632", result.Data.Snapshot.Boxes[0].InnerPacks[0].DateCode, "MES raw datecode");
+            Equal("LOT-0", result.Data.Snapshot.Boxes[0].InnerPacks[0].LotNo, "MES source LotNo mapped");
+            Equal(true, result.Data.Snapshot.Boxes[0].InnerPacks[0].HasAuthoritativeMesLotNo, "MES LotNo marked authoritative");
 
             MesFinishedGoodsInboundSourceGraph sameCode = MesGraph(12m, new[] { 12m }, "BOX-A", " box-a ", "3226");
             Equal(null, builder.Build(sameCode).Data.Snapshot.Boxes[0].AlternateBoxCode, "MES duplicate alternate omitted");
@@ -756,8 +792,25 @@ namespace WMS_HU_Model.Tests
             MesFinishedGoodsInboundSourceGraph multiBox = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
             MesBoxReadModel second = new MesBoxReadModel { PK_Box_Id = "BOX-GUID-B", PK_PlanStock_Id = "730C7071-1EC9-42F2-8464-81EA6EC2D95B", BoxID = "BOXID-B", BoxBarCode = "BOX-B", ProdNo = "MAT-B", ProdRev = "R2", UnitQty = 8m, PlantCode = "1010" };
             multiBox.Boxes.Add(second);
-            multiBox.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-B", PackID = "572425", BoxID = "BOXID-B", CustPackID = "PACK-B", PCSQty = 8m, DateCode = "3226", Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-B", ProdRev = "R2", PlantCode = "1010" });
+            multiBox.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-B", PackID = "572425", BoxID = "BOXID-B", CustPackID = "PACK-B", PCSQty = 8m, DateCode = "3226", Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-B", ProdRev = "R2", PlantCode = "1010", LotNo = "LOT-B", LotNoCount = 1 });
             Equal(true, builder.Build(multiBox).IsSuccess, "MES mixed material pallet valid");
+            MesFinishedGoodsInboundSourceGraph missingLot = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
+            missingLot.Packs[0].LotNo = null;
+            missingLot.Packs[0].LotNoCount = 0;
+            OperationResult<FinishedGoodsInboundReceiveRequest> missingLotResult = builder.Build(missingLot);
+            Equal(false, missingLotResult.IsSuccess, "MES missing LotNo rejected");
+            Equal(true, missingLotResult.Message.StartsWith("MES_LOTNO_INVALID:"), "MES missing LotNo stable error");
+            MesFinishedGoodsInboundSourceGraph multipleLots = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
+            multipleLots.Packs[0].LotNo = "1000430209-6179A5-6,1000430214-6683A5-1";
+            multipleLots.Packs[0].LotNoCount = 2;
+            OperationResult<FinishedGoodsInboundReceiveRequest> multipleLotsResult = builder.Build(multipleLots);
+            Equal(true, multipleLotsResult.IsSuccess, "MES multiple distinct LotNo accepted");
+            Equal("1000430209-6179A5-6,1000430214-6683A5-1", multipleLotsResult.Data.Snapshot.Boxes[0].InnerPacks[0].LotNo, "MES multiple LotNo aggregate mapped without spaces");
+            MesFinishedGoodsInboundSourceGraph longLot = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
+            longLot.Packs[0].LotNo = new string('L', 501);
+            OperationResult<FinishedGoodsInboundReceiveRequest> longLotResult = builder.Build(longLot);
+            Equal(false, longLotResult.IsSuccess, "MES aggregate LotNo over 500 rejected");
+            Equal(true, longLotResult.Message.StartsWith("MES_LOTNO_TOO_LONG:"), "MES aggregate LotNo length stable error");
             Pass();
         }
 
@@ -823,6 +876,9 @@ namespace WMS_HU_Model.Tests
                         GuardInsertColumns(errors, file, sql, "WMS_FG_OutboundExceptionReplacement", "CreateDt|CreateBy|LastEditDt|LastEditBy|RowVersion");
                         if (Regex.IsMatch(sql, @"\b(?:ex|exception)\.(?:OutboundOrderId|PickBatchId|ReservationId|HUId|ExceptionType|RequiresHold|ReturnedLocationId|RaisedTime|RaisedUser|ReturnConfirmedTime|ReturnConfirmedUser|ReplacementReservationId|ReplacementPickDetailId|ResolutionCode|ResolvedTime|ResolvedUser|CreateTime|RowVersion)\b", RegexOptions.IgnoreCase))
                             errors.Add(file + ": removed OutboundPickException physical column");
+                        if (file.EndsWith("OutboundPickingRepository.cs", StringComparison.OrdinalIgnoreCase)
+                            && Regex.IsMatch(sql, @"\bb\.OutboundOrderId\b", RegexOptions.IgnoreCase))
+                            errors.Add(file + ": WMS_FG_OutboundPickBatch has no OutboundOrderId; join through AllocationId");
                     }
                     if (Regex.IsMatch(sql, @"UPDATE\s+dbo\.WMS_FG_HU_CurrentLocation\s+SET[\s\S]*?\b(?:LastMoveNo|LastMoveType|LastOperator)\b", RegexOptions.IgnoreCase))
                         errors.Add(file + ": removed CurrentLocation update column");
@@ -830,6 +886,20 @@ namespace WMS_HU_Model.Tests
             }
 
             if (errors.Count > 0) throw new InvalidOperationException("Runtime Final Schema guard failed: " + string.Join("; ", errors.Distinct().Take(20)));
+            Pass();
+        }
+
+        private static void OutboundPickingCustomerLookupUsesFinalSchemaTopology()
+        {
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundPickingRepository.cs"));
+            int start = repository.IndexOf("public string GetPickBatchCustomerCode", StringComparison.Ordinal);
+            int end = repository.IndexOf("public OutboundScanResultDto GetScanByRequestId", start, StringComparison.Ordinal);
+            string method = repository.Substring(start, end - start);
+            Equal(true, method.Contains("INNER JOIN dbo.WMS_FG_OutboundAllocation a ON a.Id = b.AllocationId"), "pick batch resolves allocation by final-schema key");
+            Equal(true, method.Contains("INNER JOIN dbo.WMS_FG_OutboundOrder o ON o.Id = a.OutboundOrderId"), "allocation resolves outbound order");
+            Equal(false, method.Contains("b.OutboundOrderId"), "pick batch does not read removed OutboundOrderId column");
+            Equal(true, method.Contains("WHERE b.PickBatchNo = @PickBatchNo"), "customer lookup remains typed by pick batch number");
+            Equal(false, method.Contains("dynamic") || method.Contains("AddWithValue"), "customer lookup remains typed and non-dynamic");
             Pass();
         }
 
@@ -869,8 +939,19 @@ namespace WMS_HU_Model.Tests
             FinishedGoodsInboundPackSnapshot normalPack = normalRepository.Command.Snapshot.Boxes[0].InnerPacks[0];
             Equal("472425", normalPack.PackId, "authoritative PackID snapshot");
             Equal("A000472425", normalPack.SapBatchNo, "normal SAPBatchNo snapshot");
+            Equal("LOT-0", normalPack.LotNo, "authoritative MES LotNo snapshot");
             Equal(false, normalPack.SapBatchNo == "CLIENT-FABRICATED", "client SAPBatchNo is not authoritative");
-            Equal("FGI_V2", normalRepository.Command.HashVersion, "CHARG facts use V2 hash");
+            Equal("FGI_V3", normalRepository.Command.HashVersion, "MES LotNo facts use V3 hash");
+
+            FinishedGoodsInboundReceiveRequest genericRequest = InboundRequest(InboundSnapshot(), "GENERIC-LOT");
+            genericRequest.Snapshot.SourceSystem = "MES";
+            genericRequest.Snapshot.Boxes[0].InnerPacks[0].LotNo = "CLIENT-FABRICATED";
+            FakeFinishedGoodsInboundRepository genericRepository = new FakeFinishedGoodsInboundRepository();
+            new FinishedGoodsInboundService(genericRepository, new WeekCodeResolver(new UnavailableWeekCodeRuleProvider())).Receive(genericRequest);
+            Equal(null, genericRepository.Command.Snapshot.Boxes[0].InnerPacks[0].LotNo, "generic inbound cannot inject authoritative LotNo");
+            FinishedGoodsInboundPackSnapshot boundPack = Newtonsoft.Json.JsonConvert.DeserializeObject<FinishedGoodsInboundPackSnapshot>("{\"LotNo\":\"CLIENT-FABRICATED\",\"HasAuthoritativeMesLotNo\":true}");
+            Equal(null, boundPack.LotNo, "HTTP JSON cannot bind MES LotNo");
+            Equal(false, boundPack.HasAuthoritativeMesLotNo, "HTTP JSON cannot bind MES LotNo authority marker");
 
             MesFinishedGoodsInboundSourceGraph specialSource = MesGraph(12m, new[] { 12m }, "BOX-A", null, "2632");
             specialSource.Packs[0].PackID = "472425";
@@ -888,11 +969,19 @@ namespace WMS_HU_Model.Tests
             string pick = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundPickingRepository.cs"));
             string posting = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
             Equal(true, inbound.Contains("'MES_PACK_ID'") && inbound.Contains("SAPBatchNo") && inbound.Contains("pack.SapBatchNo"), "PackID identifier and HU Item SAPBatchNo persisted");
+            Equal(true, inbound.Contains("DateCode, LotNo, SAPBatchNo") && inbound.Contains("LotNo = pack.LotNo"), "MES LotNo persisted separately from SAPBatchNo");
             Equal(true, pick.Contains("item.SAPBatchNo") && pick.Contains("allocation.Item.SAPBatchNo"), "formal pick snapshots exact SAPBatchNo");
             Equal(true, posting.Contains("pdi.SAPBatchNo") && posting.Contains("CHARG = g.Key.SapBatchNo"), "S0089 uses pick snapshot SAPBatchNo");
             Equal(false, posting.Contains("pdi.BatchNo,pdi.AllocatedQty"), "no internal BatchNo fallback");
             Equal(true, posting.Contains("SAP_POSTING_CHARG_MISSING"), "unresolved SAPBatchNo remains blocked");
             Equal(true, posting.Contains("LFIMG_BOX = g.Sum(x => x.Qty)"), "LFIMG_BOX remains row batch quantity");
+            string mes = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "MesFinishedGoodsInboundRepository.cs"));
+            Equal(true, mes.Contains("OUTER APPLY") && mes.Contains("COUNT(DISTINCT") && mes.Contains("lotFact.LotNoCount"), "MES LotNo cardinality is read without N+1");
+            Equal(true, mes.Contains("GROUP BY LTRIM(RTRIM(sourceLot.LotNo))") && mes.Contains("MIN(sourceLot.LotSeq) AS FirstLotSeq"), "MES LotNo is distinct with minimum LotSeq ordering fact");
+            Equal(true, mes.Contains("ORDER BY orderedLot.FirstLotSeq,orderedLot.LotNo") && mes.Contains("FOR XML PATH(''),TYPE"), "MES LotNo aggregate order and delimiter are deterministic");
+            Equal(false, mes.Contains("TOP 1") && mes.Contains("packLot.LotNo"), "MES LotNo does not choose the first source row");
+            string huRepository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "HuRepository.cs"));
+            Equal(true, huRepository.Contains("parameters.Add(\"@BatchNo\", DbParameterValue.StringOrNull(request.BatchNo), DbType.AnsiString, size: 500)"), "generic HU Item LotNo parameter supports 500 characters");
             Pass();
         }
 
@@ -1053,7 +1142,7 @@ namespace WMS_HU_Model.Tests
                 Boxes = new List<MesBoxReadModel> { new MesBoxReadModel { PK_Box_Id = "BOX-GUID-A", PK_PlanStock_Id = "730C7071-1EC9-42F2-8464-81EA6EC2D95B", BoxID = "BOXID-A", BoxBarCode = boxCode, CustboxID = customerCode, ProdNo = "MAT-A", ProdRev = "R1", UnitQty = unitQty, PlantCode = "1010" } }
             };
             for (int index = 0; index < quantities.Length; index++)
-                source.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-" + index, PackID = (472425 + index).ToString(), BoxID = "BOXID-A", CustPackID = "PACK-" + index, PCSQty = quantities[index], DateCode = dateCode, Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-A", ProdRev = "R1", PlantCode = "1010" });
+                source.Packs.Add(new MesPackmasterReadModel { PK_Packmaster_Id = "PACK-GUID-" + index, PackID = (472425 + index).ToString(), BoxID = "BOXID-A", CustPackID = "PACK-" + index, PCSQty = quantities[index], DateCode = dateCode, Createdt = new DateTime(2026, 8, 19), ProdNo = "MAT-A", ProdRev = "R1", PlantCode = "1010", LotNo = "LOT-" + index, LotNoCount = 1 });
             return source;
         }
 
@@ -1160,6 +1249,7 @@ namespace WMS_HU_Model.Tests
                 PlantCode = " 1010 ",
                 MaterialCode = " MAT-A ",
                 BoxCode = " BOX-1 ",
+                InboundState = " inbound ",
                 IsHold = true
             });
 
@@ -1169,7 +1259,13 @@ namespace WMS_HU_Model.Tests
             Equal("1010", repository.LastQuery.PlantCode, "inventory plant normalized");
             Equal("MAT-A", repository.LastQuery.MaterialCode, "inventory material normalized");
             Equal("BOX-1", repository.LastQuery.BoxCode, "inventory box normalized");
+            Equal("INBOUND", repository.LastQuery.InboundState, "inventory inbound state normalized");
             Equal(true, repository.LastQuery.IsHold.Value, "inventory hold filter preserved");
+            Equal(true, service.Query(new FinishedGoodsInventoryQuery { InboundState = " pending " }).IsSuccess, "inventory pending state accepted");
+            Equal("PENDING", repository.LastQuery.InboundState, "inventory pending state normalized");
+            Equal(true, service.Query(new FinishedGoodsInventoryQuery { InboundState = "   " }).IsSuccess, "inventory empty inbound state means all");
+            Equal(null, repository.LastQuery.InboundState, "inventory empty inbound state normalized to null");
+            Equal(false, service.Query(new FinishedGoodsInventoryQuery { InboundState = "UNKNOWN" }).IsSuccess, "inventory rejects unknown inbound state");
             Equal(false, service.Query(new FinishedGoodsInventoryQuery { Page = -1 }).IsSuccess, "inventory rejects invalid page");
             Equal(false, service.Query(new FinishedGoodsInventoryQuery { PageSize = 201 }).IsSuccess, "inventory rejects oversized page");
             Equal(false, service.GetPreview("missing").IsSuccess, "inventory preview missing box");
@@ -1178,7 +1274,7 @@ namespace WMS_HU_Model.Tests
 
         private static void FinishedGoodsInventorySqlPreservesCurrentInventorySemantics()
         {
-            string sql = FinishedGoodsInventoryRepository.CurrentInventoryFromWhereSql.ToUpperInvariant();
+            string sql = (FinishedGoodsInventoryRepository.CurrentInventoryCteSql + FinishedGoodsInventoryRepository.CurrentInventoryFromWhereSql).ToUpperInvariant();
             Equal(true, sql.Contains("B.HUTYPE = 'OUTER_BOX'"), "inventory grain outer box");
             Equal(true, sql.Contains("B.LIFECYCLESTATUS = 'ACTIVE'"), "inventory active boxes only");
             Equal(true, sql.Contains("PACK.LIFECYCLESTATUS = 'ACTIVE'"), "inventory active packs only");
@@ -1187,8 +1283,17 @@ namespace WMS_HU_Model.Tests
             Equal(true, sql.Contains("PH.LIFECYCLESTATUS = 'ACTIVE'"), "inventory inactive parent excluded");
             Equal(true, sql.Contains("RANKEDEFFECTIVELOCATIONS") && sql.Contains("LOCATIONRANK = 1"), "inventory uses nearest canonical effective location");
             Equal(true, sql.Contains("DL.ID IS NOT NULL") && sql.Contains("DL.LOCATIONCODE <> 'SHIPPED'"), "inventory effective location required and shipped excluded");
+            Equal(true, sql.Contains("@INBOUNDSTATE = 'PENDING' AND DL.LOCATIONCODE = 'INBOUND-PENDING'"), "inventory pending filter uses effective location");
+            Equal(true, sql.Contains("@INBOUNDSTATE = 'INBOUND'") && sql.Contains("ISNULL(DL.LOCATIONCODE, '') <> ''") && sql.Contains("DL.LOCATIONCODE <> 'INBOUND-PENDING'"), "inventory inbound filter uses non-pending effective location");
             Equal(true, FinishedGoodsInventoryRepository.QuantityAggregationSql.ToUpperInvariant().Contains("SUM(ITEM.QTY)"), "inventory quantity uses active item sum");
-            Equal(true, sql.Contains("@PLANTCODE") && sql.Contains("@MATERIALCODE") && sql.Contains("@BOXCODE") && sql.Contains("@LOCATIONCODE") && sql.Contains("@ISHOLD"), "inventory filters are server side");
+            Equal(true, sql.Contains("@PLANTCODE") && sql.Contains("@MATERIALCODE") && sql.Contains("@BOXCODE") && sql.Contains("@LOCATIONCODE") && sql.Contains("@INBOUNDSTATE") && sql.Contains("@ISHOLD"), "inventory filters are server side");
+            System.Reflection.BindingFlags privateStatic = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            string countSql = Convert.ToString(typeof(FinishedGoodsInventoryRepository).GetField("CountSql", privateStatic).GetValue(null)).ToUpperInvariant();
+            string rowsSql = Convert.ToString(typeof(FinishedGoodsInventoryRepository).GetField("RowsSql", privateStatic).GetValue(null)).ToUpperInvariant();
+            Equal(true, countSql.Contains("@INBOUNDSTATE") && rowsSql.Contains("@INBOUNDSTATE"), "inventory count and rows share inbound filter");
+            Equal(true, rowsSql.IndexOf("@INBOUNDSTATE", StringComparison.Ordinal) < rowsSql.IndexOf("OFFSET @OFFSET", StringComparison.Ordinal), "inventory inbound filter runs before paging");
+            string module = File.ReadAllText(Path.Combine("WMS", "Modules", "FinishedGoodsInventoryModule.cs"));
+            Equal(true, module.Contains("Request.Query.inboundState") && module.Contains("InboundState = inboundState"), "inventory module passes inboundState");
             Pass();
         }
 
@@ -1576,7 +1681,7 @@ namespace WMS_HU_Model.Tests
             direct.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
             OperationResult<PutawayRecommendationResultDto> directResult = Recommend(direct);
             Equal(true, directResult.IsSuccess, "direct receive recommendation succeeds");
-            Equal("V1_DYNAMIC_CLUSTER", directResult.Data.RecommendationVersion, "recommendation version returned");
+            Equal("V1.1.1_DYNAMIC_CLUSTER", directResult.Data.RecommendationVersion, "recommendation version returned");
 
             PutawayRecommendationSnapshot inherited = RecommendationSnapshot("PARENT_PALLET");
             inherited.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
@@ -1601,8 +1706,11 @@ namespace WMS_HU_Model.Tests
             PutawayRecommendationResultDto result = Recommend(snapshot).Data;
             Equal("H210", result.RecommendedLocationCode, "single cluster remains at occupied location");
             Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "single cluster level");
-            Equal("H211", result.Recommendations[1].LocationCode, "single cluster forward expansion is second");
-            Equal("H209", result.Recommendations[2].LocationCode, "single cluster backward expansion is third");
+            Equal(3, result.Recommendations.Count, "single observed cluster fills available operation top three");
+            Equal(1, result.Recommendations[0].ClusterLocationCount, "single cluster location count");
+            Equal("INSUFFICIENT_SAMPLE", result.Recommendations[0].ClusterInferenceStatus, "single cluster sample status");
+            Equal("OPERATION_BACKUP", result.Recommendations[1].RecommendationLevel, "single cluster forward empty is backup only");
+            Equal(1, result.Recommendations[1].ClusterLocationCount, "backup does not increase observed cluster count");
             Pass();
         }
 
@@ -1622,8 +1730,9 @@ namespace WMS_HU_Model.Tests
             PutawayRecommendationResultDto result = Recommend(snapshot).Data;
             Equal("H208", result.RecommendedLocationCode, "existing target cluster survives legacy mixed inventory at no-mix location");
             Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "legacy mixed location keeps existing-cluster level");
-            Equal("H209", result.Recommendations[1].LocationCode, "forward expansion follows existing H208 cluster");
-            Equal("H207", result.Recommendations[2].LocationCode, "backward expansion remains third");
+            Equal(4, result.Recommendations[0].CurrentBoxCount, "current box count includes exact plant material revision only");
+            Equal(3, result.Recommendations.Count, "single legacy cluster adds two operation backups");
+            Equal(true, result.Recommendations.Skip(1).All(x => x.RecommendationLevel == "OPERATION_BACKUP"), "legacy empty neighbors are backups rather than expansion");
             Pass();
         }
 
@@ -1640,12 +1749,133 @@ namespace WMS_HU_Model.Tests
             Equal("H211", unbalanced.RecommendedLocationCode, "lower cluster count fills first");
             Equal("CLUSTER_FILL", unbalanced.Recommendations[0].RecommendationLevel, "unbalanced level");
             Equal(1, unbalanced.Recommendations[0].ClusterFillGap, "dynamic fill gap");
+            Equal("OPERATION_BACKUP", unbalanced.Recommendations.Single(x => x.LocationCode == "H212").RecommendationLevel, "two-location fill mode exposes empty only as backup");
 
             AddRecommendationBoxes(snapshot, 211, 1, "MAT-A", "82", 2026, 34, 4000);
             PutawayRecommendationResultDto balanced = Recommend(snapshot).Data;
-            Equal("H212", balanced.RecommendedLocationCode, "balanced cluster expands");
-            Equal("CLUSTER_EXPANSION", balanced.Recommendations[0].RecommendationLevel, "balanced expansion level");
+            Equal(3, balanced.Recommendations.Count, "balanced two-location cluster fills operator top three");
+            Equal(true, balanced.Recommendations.Take(2).All(x => x.RecommendationLevel == "CLUSTER_OBSERVE"), "balanced occupied locations remain observation mode");
+            Equal(true, balanced.Recommendations.All(x => x.ClusterInferenceStatus == "INSUFFICIENT_SAMPLE"), "balanced two-location sample remains insufficient");
+            Equal("OPERATION_BACKUP", balanced.Recommendations[2].RecommendationLevel, "balanced empty third candidate is operation backup");
+            Equal(2, balanced.Recommendations[2].ClusterLocationCount, "backup does not become third inventory sample");
             Equal(0, balanced.Recommendations[0].ClusterFillGap, "balanced dynamic gap");
+            Pass();
+        }
+
+        private static void PutawayRecommendationV11EnforcesObservationAndFillModes()
+        {
+            PutawayRecommendationSnapshot twoEqual = RecommendationSnapshot("SELF");
+            twoEqual.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            twoEqual.Locations.Add(RecommendationLocation(302, "H302", "H34", "H3", 2));
+            twoEqual.Locations.Add(RecommendationLocation(303, "H303", "H34", "H3", 3));
+            twoEqual.Locations.Add(RecommendationLocation(401, "H401", "H34", "H4", 1));
+            AddRecommendationBoxes(twoEqual, 301, 2, "MAT-A", "82", 2026, 34, 10000);
+            AddRecommendationBoxes(twoEqual, 302, 2, "MAT-A", "82", 2026, 34, 10100);
+            PutawayRecommendationResultDto twoEqualResult = Recommend(twoEqual).Data;
+            Equal(3, twoEqualResult.Recommendations.Count, "two equal locations return two observations and one backup");
+            Equal("H301", twoEqualResult.Recommendations[0].LocationCode, "two-location observation order is stable");
+            Equal("H302", twoEqualResult.Recommendations[1].LocationCode, "second occupied observation returned");
+            Equal("H303", twoEqualResult.Recommendations[2].LocationCode, "same-row adjacent empty is third");
+            Equal("OPERATION_BACKUP", twoEqualResult.Recommendations[2].RecommendationLevel, "third candidate is operation backup");
+            Equal(true, twoEqualResult.Recommendations.All(x => x.ClusterLocationCount == 2 && x.ClusterMinBoxCount == 2 && x.ClusterMaxBoxCount == 2), "backup keeps two-location metadata");
+            Equal(true, twoEqualResult.Recommendations.All(x => x.ClusterInferenceStatus == "INSUFFICIENT_SAMPLE"), "two equal locations are insufficient evidence");
+            Equal(false, twoEqualResult.Recommendations.Any(x => x.LocationCode == "H401"), "same-row backup ranks before paired-row backup");
+            Equal(false, twoEqualResult.Recommendations.Any(x => x.RecommendationLevel == "CLUSTER_EXPANSION" || x.RecommendationLevel == "PAIRED_ROW_NEARBY" || x.RecommendationLevel == "EMPTY"), "observation backup does not reuse inference levels");
+            Equal(twoEqualResult.Recommendations.Count, twoEqualResult.Recommendations.Select(x => x.LocationCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(), "recommendations contain distinct location codes");
+            Equal("同料号，现存2箱", twoEqualResult.Recommendations[0].Reason, "operator reason is concise");
+            Equal("同排相邻空位，备用", twoEqualResult.Recommendations[2].Reason, "backup operator reason is concise");
+            Equal(false, twoEqualResult.Recommendations.Any(x => x.Reason.Contains("簇") || x.Reason.Contains("样本") || x.Reason.Contains("FillGap") || x.Reason.Contains("推断") || x.Reason.Contains("容量")), "operator reasons hide diagnostic terminology");
+            Equal(null, twoEqualResult.Recommendations[0].ITReason, "operator mode omits diagnostic reason");
+
+            PutawayRecommendationSnapshot twoUnequal = RecommendationSnapshot("SELF");
+            twoUnequal.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            twoUnequal.Locations.Add(RecommendationLocation(302, "H302", "H34", "H3", 2));
+            twoUnequal.Locations.Add(RecommendationLocation(303, "H303", "H34", "H3", 3));
+            AddRecommendationBoxes(twoUnequal, 301, 1, "MAT-A", "82", 2026, 34, 10200);
+            AddRecommendationBoxes(twoUnequal, 302, 2, "MAT-A", "82", 2026, 34, 10300);
+            PutawayRecommendationResultDto twoUnequalResult = Recommend(twoUnequal).Data;
+            Equal("H301", twoUnequalResult.Recommendations[0].LocationCode, "two-location low count fills first");
+            Equal("CLUSTER_FILL", twoUnequalResult.Recommendations[0].RecommendationLevel, "two-location low count uses fill level");
+            Equal(true, twoUnequalResult.Recommendations.All(x => x.ClusterInferenceStatus == "FILL_REQUIRED"), "two-location unequal cluster keeps fill context");
+            Equal("OPERATION_BACKUP", twoUnequalResult.Recommendations.Single(x => x.LocationCode == "H303").RecommendationLevel, "two-location unequal empty remains backup");
+
+            PutawayRecommendationSnapshot threeUnequal = RecommendationSnapshot("SELF");
+            for (int position = 1; position <= 4; position++)
+                threeUnequal.Locations.Add(RecommendationLocation(300 + position, "H30" + position, "H34", "H3", position));
+            AddRecommendationBoxes(threeUnequal, 301, 2, "MAT-A", "82", 2026, 34, 10400);
+            AddRecommendationBoxes(threeUnequal, 302, 2, "MAT-A", "82", 2026, 34, 10500);
+            AddRecommendationBoxes(threeUnequal, 303, 1, "MAT-A", "82", 2026, 34, 10600);
+            PutawayRecommendationResultDto threeUnequalResult = Recommend(threeUnequal).Data;
+            Equal("H303", threeUnequalResult.RecommendedLocationCode, "three-location low count fills first");
+            Equal("FILL_REQUIRED", threeUnequalResult.Recommendations[0].ClusterInferenceStatus, "three unequal locations require fill");
+            Equal(false, threeUnequalResult.Recommendations.Any(x => x.LocationCode == "H304"), "three unequal locations block expansion");
+
+            AddRecommendationBoxes(threeUnequal, 303, 1, "MAT-A", "82", 2026, 34, 10700);
+            PutawayRecommendationResultDto threeEqualResult = Recommend(threeUnequal).Data;
+            Equal("H304", threeEqualResult.RecommendedLocationCode, "three equal locations permit adjacent expansion");
+            Equal("CLUSTER_EXPANSION", threeEqualResult.Recommendations[0].RecommendationLevel, "three equal locations use expansion level");
+            Equal("POSSIBLY_FULL", threeEqualResult.Recommendations[0].ClusterInferenceStatus, "three equal locations are possibly full");
+            Equal(3, threeEqualResult.Recommendations[0].ClusterLocationCount, "three-location evidence count exposed");
+            Equal("同排相邻空位，优先扩展", threeEqualResult.Recommendations[0].Reason, "expansion operator reason is concise");
+
+            PutawayRecommendationSnapshot fourUnequal = RecommendationSnapshot("SELF");
+            for (int position = 1; position <= 5; position++)
+                fourUnequal.Locations.Add(RecommendationLocation(300 + position, "H30" + position, "H34", "H3", position));
+            AddRecommendationBoxes(fourUnequal, 301, 2, "MAT-A", "82", 2026, 34, 10800);
+            AddRecommendationBoxes(fourUnequal, 302, 2, "MAT-A", "82", 2026, 34, 10900);
+            AddRecommendationBoxes(fourUnequal, 303, 2, "MAT-A", "82", 2026, 34, 11000);
+            AddRecommendationBoxes(fourUnequal, 304, 1, "MAT-A", "82", 2026, 34, 11100);
+            PutawayRecommendationResultDto fourUnequalResult = Recommend(fourUnequal).Data;
+            Equal("H304", fourUnequalResult.RecommendedLocationCode, "four-location low count fills first");
+            Equal(false, fourUnequalResult.Recommendations.Any(x => x.LocationCode == "H305"), "current imbalance cancels prior capacity trend");
+
+            PutawayRecommendationSnapshot isolated = RecommendationSnapshot("SELF");
+            isolated.Box.PlantCode = "1020";
+            isolated.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            isolated.Locations.Add(RecommendationLocation(302, "H302", "H34", "H3", 2));
+            isolated.Locations.Add(RecommendationLocation(201, "H201", "H12", "H2", 1));
+            isolated.Locations[2].PlantPolicy = null;
+            AddRecommendationBoxes(isolated, 301, 2, "MAT-A", "82", 2026, 34, 11200);
+            AddRecommendationBoxes(isolated, 302, 2, "MAT-A", "82", 2026, 34, 11300);
+            AddRecommendationBoxes(isolated, 201, 5, "MAT-A", "82", 2026, 34, 11400);
+            foreach (PutawayRecommendationInventorySnapshot row in isolated.Inventory.Where(x => x.LocationId == 301 || x.LocationId == 302)) row.PlantCode = "1020";
+            PutawayRecommendationResultDto isolatedResult = Recommend(isolated).Data;
+            Equal(2, isolatedResult.Recommendations.Count, "only two legal locations return two distinct candidates");
+            Equal(2, isolatedResult.Recommendations[0].ClusterLocationCount, "plant and revision isolation preserves target cluster count");
+            Equal(false, isolatedResult.Recommendations.Any(x => x.LocationCode == "H201"), "same material revision from another plant does not join target cluster");
+            Equal("V1.1.1_DYNAMIC_CLUSTER", isolatedResult.RecommendationVersion, "V1.1.1 version is returned");
+            Pass();
+        }
+
+        private static void PutawayRecommendationItModeDoesNotChangeRecommendations()
+        {
+            PutawayRecommendationSnapshot snapshot = RecommendationSnapshot("SELF");
+            snapshot.Locations.Add(RecommendationLocation(301, "H301", "H34", "H3", 1));
+            snapshot.Locations.Add(RecommendationLocation(302, "H302", "H34", "H3", 2));
+            snapshot.Locations.Add(RecommendationLocation(303, "H303", "H34", "H3", 3));
+            AddRecommendationBoxes(snapshot, 301, 2, "MAT-A", "82", 2026, 34, 12000);
+            AddRecommendationBoxes(snapshot, 302, 2, "MAT-A", "82", 2026, 34, 12100);
+
+            PutawayRecommendationResultDto operatorResult = Recommend(snapshot, false).Data;
+            PutawayRecommendationResultDto itResult = Recommend(snapshot, true).Data;
+            Equal(false, operatorResult.ITMode, "operator result mode false");
+            Equal(true, itResult.ITMode, "IT result mode true");
+            Equal(string.Join("|", operatorResult.Recommendations.Select(x => x.LocationCode + ":" + x.RecommendationLevel)), string.Join("|", itResult.Recommendations.Select(x => x.LocationCode + ":" + x.RecommendationLevel)), "IT mode does not change candidates or levels");
+            Equal(string.Join("|", operatorResult.Recommendations.Select(x => x.Rank)), string.Join("|", itResult.Recommendations.Select(x => x.Rank)), "IT mode does not change ranking");
+            Equal(true, operatorResult.Recommendations.All(x => string.IsNullOrEmpty(x.ITReason)), "operator mode hides diagnostics");
+            Equal(true, itResult.Recommendations.All(x => !string.IsNullOrEmpty(x.ITReason)), "IT mode returns diagnostics");
+            Equal(true, itResult.Recommendations[2].ITReason.Contains("不计入ClusterLocationCount") && itResult.Recommendations[2].ITReason.Contains("不表示库存簇已满"), "backup diagnostic isolates capacity inference");
+            Equal(false, itResult.Recommendations[0].ITReason.Contains("POSSIBLY_FULL"), "two observations remain insufficient in IT mode");
+            Pass();
+        }
+
+        private static void RecommendedPutawayPdaSeparatesOperatorAndItModes()
+        {
+            string pda = File.ReadAllText(Path.Combine("D:\\com.delton.gz\\Learun.Application.Web", "Areas", "WMS", "Views", "PDA", "WMS_RecommendedPutaway.cshtml"));
+            Equal(true, pda.Contains("app.itMode = page.toBool(request('itMode'))") && pda.Contains("&itMode=' + (app.itMode ? 'true' : 'false')"), "PDA reads URL IT mode and sends API parameter");
+            Equal(true, pda.Contains("{{if ITMode}}") && pda.Contains("IT：{{:ITReason}}"), "PDA diagnostics are IT-mode only");
+            Equal(true, pda.Contains("if (rank == 1) return '首选'; if (rank == 2) return '次选'; return '备选';"), "PDA uses operator rank labels");
+            Equal(false, pda.Contains("if (level == 'CLUSTER_FILL') return '库存簇补齐'"), "PDA hides internal recommendation levels");
             Pass();
         }
 
@@ -1679,11 +1909,13 @@ namespace WMS_HU_Model.Tests
             snapshot.Locations.Add(RecommendationLocation(210, "H210", "H12", "H2", 10));
             snapshot.Locations.Add(RecommendationLocation(211, "H211", "H12", "H2", 11));
             snapshot.Locations.Add(RecommendationLocation(212, "H212", "H12", "H2", 12));
+            snapshot.Locations.Add(RecommendationLocation(213, "H213", "H12", "H2", 13));
             AddRecommendationBoxes(snapshot, 210, 4, "MAT-A", "82", 2026, 34, 6000);
             AddRecommendationBoxes(snapshot, 211, 4, "MAT-A", "82", 2026, 34, 6100);
+            AddRecommendationBoxes(snapshot, 212, 4, "MAT-A", "82", 2026, 34, 6200);
 
             PutawayRecommendationResultDto result = Recommend(snapshot).Data;
-            Equal("H212", result.Recommendations[0].LocationCode, "forward boundary ranks before backward");
+            Equal("H213", result.Recommendations[0].LocationCode, "forward boundary ranks before backward");
             Equal("H209", result.Recommendations[1].LocationCode, "backward boundary remains candidate");
             Equal("CLUSTER_EXPANSION", result.Recommendations[0].RecommendationLevel, "forward expansion level");
             Pass();
@@ -1755,7 +1987,8 @@ namespace WMS_HU_Model.Tests
             PutawayRecommendationResultDto result = Recommend(snapshot).Data;
             Equal("H210", result.RecommendedLocationCode, "missing topology still keeps existing material location");
             Equal("EXISTING_CLUSTER", result.Recommendations[0].RecommendationLevel, "missing topology remains single cluster");
-            Equal("EMPTY", result.Recommendations.First(x => x.LocationCode == "H211").RecommendationLevel, "numeric neighbor is not guessed as expansion");
+            Equal(3, result.Recommendations.Count, "single location observation fills available backup candidates");
+            Equal(true, result.Recommendations.Skip(1).All(x => x.RecommendationLevel == "OPERATION_BACKUP"), "missing topology empties remain generic backups");
             Equal(false, result.Recommendations.Any(x => x.RecommendationLevel == "PAIRED_ROW_NEARBY"), "missing topology has no paired-row semantics");
 
             PutawayRecommendationSnapshot legality = RecommendationSnapshot("SELF");
@@ -1770,6 +2003,7 @@ namespace WMS_HU_Model.Tests
             PutawayRecommendationResultDto legalResult = Recommend(legality).Data;
             Equal(1, legalResult.Recommendations.Count, "illegal candidates are not added to reach top three");
             Equal("H403", legalResult.RecommendedLocationCode, "only legal storage candidate remains");
+            Equal("NONE", legalResult.Recommendations[0].ClusterInferenceStatus, "no main cluster exposes NONE inference status");
             Pass();
         }
 
@@ -1788,7 +2022,7 @@ namespace WMS_HU_Model.Tests
             Equal(true, migration.Contains("PhysicalRackGroupCode") && migration.Contains("PhysicalRowCode") && migration.Contains("PositionSequence"), "topology migration adds minimal fields");
             Equal(true, migration.Contains("'H913','H89','H9',13") && !migration.Contains("H813"), "confirmed H topology includes H913 without H813");
             Equal(false, migration.Contains("LocationAdjacency"), "no adjacency table created");
-            Equal(true, module.Contains("Get(\"/recommendations\"") && module.Contains("Request.Query.warehouseCode") && module.Contains("Request.Query.boxHuCode"), "public recommendation route registered");
+            Equal(true, module.Contains("Get(\"/recommendations\"") && module.Contains("Request.Query.warehouseCode") && module.Contains("Request.Query.boxHuCode") && module.Contains("Request.Query.itMode"), "public recommendation route and optional IT mode registered");
             Pass();
         }
 
@@ -1980,6 +2214,15 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static void CanonicalBoxCodeBuildsFinalSequenceKeys()
+        {
+            DateTime dayOne = new DateTime(2026, 9, 1);
+            Equal("OUTER_BOX|1020|20260901", CanonicalOuterBoxCode.BuildSequenceKey(dayOne, " 1020 "), "sequence key encodes normalized plant and natural date");
+            Equal(false, CanonicalOuterBoxCode.BuildSequenceKey(dayOne, "1010") == CanonicalOuterBoxCode.BuildSequenceKey(dayOne, "1020"), "plant scopes remain independent");
+            Equal(false, CanonicalOuterBoxCode.BuildSequenceKey(dayOne, "1020") == CanonicalOuterBoxCode.BuildSequenceKey(dayOne.AddDays(1), "1020"), "daily scopes remain independent");
+            Pass();
+        }
+
         private static void CanonicalBoxCodeRejectsInvalidInputs()
         {
             bool exhaustedRejected = false;
@@ -2082,14 +2325,17 @@ namespace WMS_HU_Model.Tests
         private static void MergeBoxRepositoryIsAtomicAndConcurrentSafe()
         {
             string repository = File.ReadAllText(Path.Combine("WMS-HU-Model", "Repositories", "Impl", "MergeBoxRepository.cs"));
-            string migration = File.ReadAllText(Path.Combine("docs", "database", "016_MergeBoxCodeSequence.sql"));
             Equal(true, repository.Contains("IsolationLevel.Serializable") && repository.Contains("WITH (UPDLOCK,HOLDLOCK)"), "merge and sequence allocation use serializable locking");
+            Equal(true, repository.IndexOf("ReadExistingRequest", StringComparison.Ordinal) < repository.IndexOf("AllocateSequence", StringComparison.Ordinal), "request replay is checked before sequence allocation");
             Equal(true, repository.IndexOf("MergeBoxRules.Validate", StringComparison.Ordinal) < repository.IndexOf("AllocateSequence", StringComparison.Ordinal), "all pack rules run before sequence allocation");
             Equal(true, repository.Contains("BOX_CODE_DAILY_SEQUENCE_EXHAUSTED") && repository.Contains("current.Value >= 9999"), "sequence exhaustion is stable business failure");
             Equal(false, repository.Contains("MAX(HUCode)") || repository.Contains("AddWithValue"), "allocator avoids max HUCode and AddWithValue");
+            Equal(true, repository.Contains("SELECT CurrentValue FROM dbo.WMS_FG_BoxCodeSequence") && repository.Contains("WHERE SequenceKey=@SequenceKey"), "allocator reads final sequence schema by key");
+            Equal(true, repository.Contains("SequenceKey,CurrentValue,CreateDt,CreateBy") && repository.Contains("LastEditDt=@Now,LastEditBy=@Operator"), "allocator writes final sequence and audit columns");
+            Equal(false, repository.Contains("CurrentNo") || repository.Contains("WMS_FG_BoxCodeSequence(BusinessDate") || repository.Contains("WMS_BoxCodeSequence"), "runtime sequence SQL has no legacy physical columns or table");
+            Equal(true, repository.Contains("@SequenceKey\", SqlDbType.VarChar, 100") && repository.Contains("@CurrentValue\", SqlDbType.Int"), "allocator uses typed final-schema parameters");
             Equal(true, repository.Contains("DELETE FROM dbo.WMS_FG_HU_CurrentLocation") && repository.Contains("'INBOUND-PENDING'") && repository.Contains("\"RECEIVE\""), "merge clears child direct locations and resolves pending target");
             Equal(true, repository.Contains("HuMoveLogWriter.Insert") && repository.Contains("\"MERGE_BOX\"") && repository.Contains("\"ATTACH_HU\""), "merge writes movement and operation audit");
-            Equal(true, migration.Contains("PRIMARY KEY CLUSTERED (BusinessDate, PlantCode)") && migration.Contains("SET XACT_ABORT ON") && migration.Contains("BETWEEN 1 AND 9999"), "sequence migration is scoped and rerun-safe");
             Pass();
         }
 
@@ -2180,10 +2426,10 @@ namespace WMS_HU_Model.Tests
             }
         }
 
-        private static OperationResult<PutawayRecommendationResultDto> Recommend(PutawayRecommendationSnapshot snapshot)
+        private static OperationResult<PutawayRecommendationResultDto> Recommend(PutawayRecommendationSnapshot snapshot, bool itMode = false)
         {
             return new PutawayRecommendationService(new FakePutawayRecommendationRepository { Snapshot = snapshot })
-                .GetRecommendations(" fg01 ", " incoming-box ");
+                .GetRecommendations(" fg01 ", " incoming-box ", itMode);
         }
 
         private static InventoryItemFact Fact(long boxId, string boxCode, long packId, string packCode, string material, string revision, string batch, short year, byte week, decimal qty, bool hold)
@@ -3077,6 +3323,82 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
+        private static ShipmentManagementRowDto ShipmentRow(string outbound, string posting)
+        {
+            return new ShipmentManagementRowDto { SapDeliveryNo="8001",OutboundStatus=outbound,SapPostingStatus=posting };
+        }
+
+        private static ShipmentManagementRowDto MapShipmentRow(string outbound, string posting)
+        {
+            FakeSapPostingRepository repository=ReadyPostingRepository(); repository.ShipmentRows.Items.Add(ShipmentRow(outbound,posting));
+            return new SapOutboundPostingService(repository,new FakeSapPostingClient()).QueryShipmentManagement(new ShipmentManagementQuery()).Data.Items.Single();
+        }
+
+        private static void ShipmentManagementNormalizesPagedQuery()
+        {
+            FakeSapPostingRepository repository=ReadyPostingRepository();new SapOutboundPostingService(repository,new FakeSapPostingClient()).QueryShipmentManagement(new ShipmentManagementQuery{SapDeliveryNo=" 8001 ",CustomerCode=" C01 ",SapPostingStatus=" failed ",PlantCode=" 1020 ",Page=0,PageSize=500});
+            Equal("8001",repository.LastShipmentQuery.SapDeliveryNo,"shipment delivery normalized");Equal("C01",repository.LastShipmentQuery.CustomerCode,"shipment customer normalized");Equal("FAILED",repository.LastShipmentQuery.SapPostingStatus,"shipment SAP status normalized");Equal("1020",repository.LastShipmentQuery.PlantCode,"shipment plant normalized");Equal(1,repository.LastShipmentQuery.Page,"shipment page normalized");Equal(100,repository.LastShipmentQuery.PageSize,"shipment page size bounded");Pass();
+        }
+        private static void ShipmentManagementMapsWaitPick(){ShipmentManagementRowDto row=MapShipmentRow("WAIT_PICK","READY");Equal("WAIT_PICK",row.BusinessStatusCode,"wait pick business status");Equal("待拣货",row.BusinessStatusText,"wait pick text");Pass();}
+        private static void ShipmentManagementMapsPicking(){ShipmentManagementRowDto row=MapShipmentRow("PICKING","READY");Equal("PICKING",row.BusinessStatusCode,"picking business status");Equal("拣货中",row.BusinessStatusText,"picking text");Pass();}
+        private static void ShipmentManagementMapsReadyToShip(){ShipmentManagementRowDto row=MapShipmentRow("PICKED",null);Equal("WAIT_CONFIRM",row.BusinessStatusCode,"ready ship status");Equal(true,row.CanConfirmShipment,"picked without posting can confirm");Pass();}
+        private static void ShipmentManagementBlocksFailedRetry(){ShipmentManagementRowDto row=MapShipmentRow("PICKED","FAILED");Equal("SAP_EXCEPTION",row.BusinessStatusCode,"failed business status");Equal(false,row.CanConfirmShipment,"failed confirm hidden");Equal(true,row.RequiresITReview,"failed review");Pass();}
+        private static void ShipmentManagementBlocksUnknownRetry(){ShipmentManagementRowDto row=MapShipmentRow("PICKED","UNKNOWN");Equal("SAP_EXCEPTION",row.BusinessStatusCode,"unknown business status");Equal(false,row.CanConfirmShipment,"unknown confirm hidden");Equal(true,row.RequiresITReview,"unknown review");Pass();}
+        private static void ShipmentManagementMapsCompleted(){ShipmentManagementRowDto row=MapShipmentRow("SHIPPED","SUCCESS");Equal("SHIPPED",row.BusinessStatusCode,"completed business status");Equal("已出货",row.BusinessStatusText,"completed text");Pass();}
+        private static void ShipmentManagementDetailKeepsFrozenCharg(){ShipmentPickedItemDto item=new ShipmentPickedItemDto{SapBatchNo="A000472425",BatchNo="LOT-1"};Equal("A000472425",item.SapBatchNo,"frozen CHARG exposed");Equal("LOT-1",item.BatchNo,"internal lot kept separate");Pass();}
+        private static void ShipmentManagementDetailHidesRetry(){FakeSapPostingRepository repository=ReadyPostingRepository();repository.ShipmentDetail.Posting=new ShipmentPostingBusinessDto{PostingStatus="FAILED",RetryAllowedOnShipmentPage=true};ShipmentManagementDetailDto detail=new SapOutboundPostingService(repository,new FakeSapPostingClient()).GetShipmentManagementDetail("8001").Data;Equal(false,detail.Posting.RetryAllowedOnShipmentPage,"detail retry forced hidden");Equal("SAP过账失败",detail.Posting.PostingStatusText,"posting business text");Pass();}
+
+        private static void ShipmentManagementUsesPageSpecificAcronymContract()
+        {
+            Equal(true, typeof(ShipmentManagementRowDto).GetProperty("SapDeliveryNo") != null, "shipment row uses SapDeliveryNo");
+            Equal(null, typeof(ShipmentManagementRowDto).GetProperty("SAPDeliveryNo"), "shipment row does not inherit legacy acronym");
+            Equal(true, typeof(ShipmentManagementDetailDto).GetProperty("SapDeliveryNo") != null, "shipment detail uses SapDeliveryNo");
+            Equal(true, typeof(ShipmentDeliveryLineDto).GetProperty("SapItemNo") != null, "shipment line uses SapItemNo");
+            Equal(true, typeof(ShipmentPickedItemDto).GetProperty("SapItemNo") != null, "picked item uses SapItemNo");
+            Equal(true, typeof(ShipmentPickedItemDto).GetProperty("SapBatchNo") != null, "picked item uses SapBatchNo");
+            Equal(null, typeof(ShipmentPickedItemDto).GetProperty("SAPBatchNo"), "picked item has no legacy acronym alias");
+            Pass();
+        }
+
+        private static void ShipmentManagementRepositoryUsesFrozenFactsAndFullSummary()
+        {
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "OutboundSapPostingModule.cs"));
+            int detailStart = repository.IndexOf("public ShipmentManagementDetailDto GetShipmentManagementDetail", StringComparison.Ordinal);
+            int detailEnd = repository.IndexOf("private static void AddShipmentQuery", detailStart, StringComparison.Ordinal);
+            string detailRepository = repository.Substring(detailStart, detailEnd - detailStart);
+            Equal(true, repository.Contains("SUM(item.AllocatedQty) AS PickedQty") && repository.Contains("COUNT(DISTINCT detail.BoxHUId) AS PickedBoxCount"), "list quantity and boxes use frozen pick facts");
+            Equal(true, repository.Contains("item.SAPBatchNo") && repository.Contains("item.ProdRev") && repository.Contains("item.DateCode"), "detail uses frozen CHARG revision and date code");
+            Equal(true, repository.Contains("source.LocationCode") && repository.Contains("source.Id=moveLog.FromLocationId"), "source location comes from immutable move log");
+            Equal(false, detailRepository.Contains("WMS_FG_HU_Item") || detailRepository.Contains("WMS_FG_HU_CurrentLocation"), "shipment history does not query mutable inventory facts");
+            Equal(true, repository.Contains("result.Summary.All") && repository.Contains("summarySql + fromSql + filterSql"), "summary covers full non-paged filter scope");
+            Equal(true, repository.Contains("@Customer") && repository.Contains("@SapPosting") && repository.Contains("@Business='WAIT_CONFIRM'"), "customer SAP and business filters are server-side");
+            Equal(true, repository.Contains("o.SAPDeliveryNo DESC") && repository.Contains("OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY"), "paging order is deterministic and server-side");
+            Equal(true, module.Contains("Request.Query.customerCode") && module.Contains("Request.Query.sapPostingStatus"), "module consumes page filter names");
+            Equal(false, repository.Contains("AddWithValue") || repository.Contains(" dynamic "), "shipment repository remains typed and non-dynamic");
+            Pass();
+        }
+
+        private static void ShipmentManagementKeepsOneBoxWithChildItems()
+        {
+            ShipmentPickedBoxDto box = new ShipmentPickedBoxDto { BoxCode="B1963880B",SourceLocationCode="H201" };
+            box.Items.Add(new ShipmentPickedItemDto { InnerPackCode="B000000124",SapItemNo="000010",SapBatchNo="C1",AllocatedQty=10m });
+            box.Items.Add(new ShipmentPickedItemDto { InnerPackCode="B000000125",SapItemNo="000010",SapBatchNo="C2",AllocatedQty=10m });
+            box.Items.Add(new ShipmentPickedItemDto { InnerPackCode="B000000126",SapItemNo="000010",SapBatchNo="C3",AllocatedQty=10m });
+            ShipmentManagementDetailDto detail = new ShipmentManagementDetailDto(); detail.PickedBoxes.Add(box);
+            Equal(1,detail.PickedBoxes.Count,"one physical box remains one parent DTO");Equal(3,detail.PickedBoxes[0].Items.Count,"three frozen items remain children");Equal(30m,detail.PickedBoxes[0].Items.Sum(x=>x.AllocatedQty),"child quantities retain frozen total");Pass();
+        }
+
+        private static void ShipmentManagementFrontendKeepsBusinessBoundary()
+        {
+            string root=Path.Combine("D:\\com.delton.gz\\Learun.Application.Web","Areas","WMS","Views","SapOutboundPosting");string js=File.ReadAllText(Path.Combine(root,"Index.js"));string html=File.ReadAllText(Path.Combine(root,"Index.cshtml"));string api=File.ReadAllText(Path.Combine(root,"SapOutboundPostingApi.js"));
+            Equal(true,js.Contains("shipmentDetail")&&js.Contains("data-action=\"confirm\""),"shipment page binds detail and confirm");Equal(true,js.Contains("查看SAP接口日志"),"shipment page exposes log link");Equal(false,js.Contains("manualPosted")||js.Contains("manualNotPosted")||js.Contains("SapOutboundPostingApi.retry"),"shipment page has no retry or manual confirm");
+            Equal(true,js.Contains("var activeTab = \"lines\"")&&html.IndexOf("data-tab=\"lines\"")<html.IndexOf("data-tab=\"picking\"")&&html.IndexOf("data-tab=\"picking\"")<html.IndexOf("data-tab=\"posting\""),"tab order and default are lines picking posting");
+            Equal(true,js.Contains("renderBusinessSummary(data.summary)")&&js.Contains("result.dateFrom = result.date")&&js.Contains("result.dateTo = result.date"),"server summary and date filters connected");
+            Equal(false,(js+api).Contains("sAPDeliveryNo")||(js+api).Contains("sAPItemNo")||(js+api).Contains("sAPBatchNo"),"frontend has one clean acronym contract");
+            Equal(false,api.Contains("/shipping-orders")||api.Contains("/shipping-state"),"unused page wrappers removed");Pass();
+        }
+
         private static SapOutboundPostingPayload PostingPayload()
         {
             return new SapOutboundPostingPayload { Data = new List<SapOutboundPostingRow> { new SapOutboundPostingRow { VBELN="8001",POSNR="000010",LGORT="31C3",BOXNO="B1",MATNR="M1",CHARG="C1",LFIMG=28.000000m,LFIMG_BOX=28.000000m,NTGEW=0m,BRGEW=0m,GEWEI="KG",VRKME="",BOXSIZE="" } } };
@@ -3126,6 +3448,9 @@ namespace WMS_HU_Model.Tests
             public int ClaimCalls;
             public SapOutboundPostingPreviewDto Preview = new SapOutboundPostingPreviewDto();
             public string RetryPayload = "{\"data\":[]}";
+            public ShipmentManagementQuery LastShipmentQuery;
+            public ShipmentManagementResultDto ShipmentRows = new ShipmentManagementResultDto();
+            public ShipmentManagementDetailDto ShipmentDetail = new ShipmentManagementDetailDto { Posting=new ShipmentPostingBusinessDto{PostingStatus="READY"} };
             public SapPostingSnapshotBuildResult BuildPreview(string sapDeliveryNo) { PreviewCalls++; return new SapPostingSnapshotBuildResult { IsSuccess=true,Preview=Preview }; }
             public SapPostingClaimResult ClaimInitial(string sapDeliveryNo,SapOutboundPostingControlRequest request,SapOutboundPostingPreviewDto preview) { ClaimCalls++; return new SapPostingClaimResult { IsSuccess=true,ShouldInvokeSap=true,PostingId=1,AttemptNo=1,PayloadJson=preview.PayloadJson,PayloadHash=preview.PayloadHash }; }
             public SapPostingClaimResult ClaimRetry(string sapDeliveryNo,SapOutboundPostingControlRequest request) { ClaimCalls++; return new SapPostingClaimResult { IsSuccess=true,ShouldInvokeSap=true,PostingId=1,AttemptNo=2,PayloadJson=RetryPayload,PayloadHash="HASH" }; }
@@ -3139,6 +3464,8 @@ namespace WMS_HU_Model.Tests
             public OutboundShippingStateDto ManualConfirmPosted(string sapDeliveryNo,SapOutboundManualConfirmRequest request) { return new OutboundShippingStateDto { SAPDeliveryNo=sapDeliveryNo,OutboundStatus="SHIPPED",SapPostingStatus="SUCCESS",SuccessConfirmSource="MANUAL_CONFIRM" }; }
             public OutboundShippingStateDto ManualConfirmNotPosted(string sapDeliveryNo,SapOutboundManualConfirmRequest request) { return new OutboundShippingStateDto { SAPDeliveryNo=sapDeliveryNo,OutboundStatus="PICKED",SapPostingStatus="FAILED",CanRetry=true }; }
             public PagedResult<OutboundShippingStateDto> QueryShippingOrders(string sapDeliveryNo,string outboundStatus,string postingStatus,int page,int pageSize) { return new PagedResult<OutboundShippingStateDto>(); }
+            public ShipmentManagementResultDto QueryShipmentManagement(ShipmentManagementQuery query) { LastShipmentQuery=query;ShipmentRows.Page=query.Page;ShipmentRows.PageSize=query.PageSize;return ShipmentRows; }
+            public ShipmentManagementDetailDto GetShipmentManagementDetail(string sapDeliveryNo) { ShipmentDetail.SapDeliveryNo=sapDeliveryNo;return ShipmentDetail; }
             public PagedResult<SapIntegrationLogDto> QueryLogs(SapIntegrationLogQuery query) { return new PagedResult<SapIntegrationLogDto>(); }
             public SapIntegrationLogDto GetLog(long id) { return null; }
             public void RecordReceiveCommunication(string businessKey,string requestJson,string resultStatus,string externalMessage,string payloadHash) { }

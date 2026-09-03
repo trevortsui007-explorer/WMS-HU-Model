@@ -63,6 +63,8 @@ namespace WMS.Modules
             string weekCode = Convert.ToString(rawWeekCode);
             object rawStockStatus = Request.Query.stockStatus;
             string stockStatus = Convert.ToString(rawStockStatus);
+            object rawInboundState = Request.Query.inboundState;
+            string inboundState = Convert.ToString(rawInboundState);
             object rawIsHold = Request.Query.isHold;
             string isHold = Convert.ToString(rawIsHold);
             object rawPage = Request.Query.page;
@@ -96,6 +98,7 @@ namespace WMS.Modules
                 LocationCode = locationCode,
                 WeekCode = weekCode,
                 StockStatus = stockStatus,
+                InboundState = inboundState,
                 IsHold = parsedIsHold,
                 Page = parsedPage,
                 PageSize = parsedPageSize

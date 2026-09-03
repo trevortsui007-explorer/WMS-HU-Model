@@ -50,6 +50,7 @@ namespace WMS_HU_Model.Services
             query.LocationCode = Trim(query.LocationCode);
             query.WeekCode = Trim(query.WeekCode);
             query.StockStatus = Trim(query.StockStatus);
+            query.InboundState = Upper(query.InboundState);
             if (query.Page == 0) query.Page = 1;
             if (query.PageSize == 0) query.PageSize = 50;
 
@@ -62,6 +63,8 @@ namespace WMS_HU_Model.Services
             if (TooLong(query.LocationCode, 50)) return "货位长度不能超过50。";
             if (TooLong(query.WeekCode, 20)) return "周码长度不能超过20。";
             if (TooLong(query.StockStatus, 20)) return "库存状态长度不能超过20。";
+            if (query.InboundState != null && query.InboundState != "INBOUND" && query.InboundState != "PENDING")
+                return "inboundState仅支持INBOUND或PENDING。";
             return null;
         }
 
@@ -73,6 +76,12 @@ namespace WMS_HU_Model.Services
         private static string Trim(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        private static string Upper(string value)
+        {
+            string text = Trim(value);
+            return text == null ? null : text.ToUpperInvariant();
         }
     }
 }

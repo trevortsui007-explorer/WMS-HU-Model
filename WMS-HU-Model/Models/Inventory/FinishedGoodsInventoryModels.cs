@@ -13,6 +13,7 @@ namespace WMS_HU_Model.Models.Inventory
         public string LocationCode { get; set; }
         public string WeekCode { get; set; }
         public string StockStatus { get; set; }
+        public string InboundState { get; set; }
         public bool? IsHold { get; set; }
         public int Page { get; set; }
         public int PageSize { get; set; }

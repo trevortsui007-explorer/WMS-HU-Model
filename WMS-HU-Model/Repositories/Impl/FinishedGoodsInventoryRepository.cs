@@ -8,7 +8,7 @@ namespace WMS_HU_Model.Repositories
 {
     public class FinishedGoodsInventoryRepository : IFinishedGoodsInventoryRepository
     {
-        public static readonly string CurrentInventoryFromWhereSql = @"
+        public static readonly string CurrentInventoryCteSql = @"
 ;WITH Roots AS
 (
     SELECT b.Id AS RootHUId, b.Id AS HUId, b.HUCode, b.HUType, CAST(0 AS INT) AS LevelNo
@@ -21,7 +21,9 @@ namespace WMS_HU_Model.Repositories
     SELECT RootHUId, LocationId
     FROM RankedEffectiveLocations
     WHERE LocationRank = 1
-)
+)";
+
+        public static readonly string CurrentInventoryFromWhereSql = @"
 FROM dbo.WMS_FG_HU b
 INNER JOIN EffectiveLocations effective ON effective.RootHUId = b.Id
 LEFT JOIN dbo.WMS_FG_HU_CurrentLocation dc ON dc.HUId = b.Id
@@ -59,6 +61,14 @@ WHERE dl.Id IS NOT NULL
            AND ip.HUType = 'INNER_PACK' AND ip.LifecycleStatus = 'ACTIVE'
        WHERE ir.ParentHUId = b.Id AND ir.IsActive = 1 AND ip.HUCode LIKE '%' + @InnerPackCode + '%'))
   AND (@LocationCode IS NULL OR dl.LocationCode LIKE '%' + @LocationCode + '%')
+  AND
+  (
+      ISNULL(@InboundState, '') = ''
+      OR (@InboundState = 'PENDING' AND dl.LocationCode = 'INBOUND-PENDING')
+      OR (@InboundState = 'INBOUND'
+          AND ISNULL(dl.LocationCode, '') <> ''
+          AND dl.LocationCode <> 'INBOUND-PENDING')
+  )
   AND (@StockStatus IS NULL OR EXISTS
       (SELECT 1 FROM dbo.WMS_FG_HU_Relation sr
        INNER JOIN dbo.WMS_FG_HU sp ON sp.Id = sr.ChildHUId
@@ -78,12 +88,12 @@ WHERE dl.Id IS NOT NULL
 
         public const string QuantityAggregationSql = "SUM(item.Qty) AS TotalQty";
 
-        private static readonly string CountSql = @"
+        private static readonly string CountSql = CurrentInventoryCteSql + @"
 SELECT COUNT(DISTINCT b.Id)
 " + CurrentInventoryFromWhereSql + ";";
 
-        private static readonly string RowsSql = @"
-;WITH InventoryRows AS
+        private static readonly string RowsSql = CurrentInventoryCteSql + @"
+, InventoryRows AS
 (
 SELECT
     b.Id AS BoxHuId,
@@ -279,6 +289,7 @@ ORDER BY pack.Id;";
             AddVarchar(command, "@ExactBoxCode", exactBoxCode, 100);
             AddVarchar(command, "@InnerPackCode", query.InnerPackCode, 100);
             AddVarchar(command, "@LocationCode", query.LocationCode, 50);
+            AddVarchar(command, "@InboundState", query.InboundState, 20);
             AddVarchar(command, "@WeekCode", query.WeekCode, 20);
             AddVarchar(command, "@StockStatus", query.StockStatus, 20);
             command.Parameters.Add("@IsHold", SqlDbType.Bit).Value = query.IsHold.HasValue ? (object)query.IsHold.Value : DBNull.Value;

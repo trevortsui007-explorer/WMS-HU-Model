@@ -85,7 +85,11 @@ Therefore:
 
 ## HU integration
 
+- The Grid's native `+ / -` child row is a fast box-fact view. Expansion reads the same Receipt detail GET as the Drawer, renders a controlled HTML table rather than a nested jfGrid, shows up to the server-owned first 50 boxes, and states the limit when `hasMoreBoxes = true`.
+- Learun jfGrid creates its callback content inside the left row-number layer and a separate empty placeholder inside the main scroll area. Page 04 resolves both DOM nodes by `rownum`, hides the covered left-layer content, and renders loading/data/error states into the visible main-area placeholder.
+- The child row shows box code, lifecycle status, material/revision, quantity/UOM, InnerPack count, WeekCode, exception summary, and effective location. It has loading, empty, and retry-safe error states; stale async responses are discarded after collapse or grid redraw.
 - Clicking a real Receipt row opens a read-only `Wms.SideDrawer`; page load, query, reset, paging, and grid rendering keep it closed.
+- Clicking the `+ / -` icon does not open the Drawer. Clicking a normal parent-row cell still opens it.
 - Clicking a box uses `learun.frameTab` to open `/WMS/HuDetail/Index?huCode=...` (Page 03). It does not stack another Drawer.
 - Page 02's inventory preview has the same small “查看完整 HU 履历” frameTab entry.
 - The Drawer includes no retry, receive, reprocess, Release, Recalculate, move, edit, delete, or export action.

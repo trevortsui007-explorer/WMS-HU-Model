@@ -35,8 +35,8 @@ V1 新增只读接口：
 
 | Method | Route | Request | Response data | 用途 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/wms/inventory/finished-goods/` | `plantCode/materialCode/materialRevision/boxCode/innerPackCode/locationCode/weekCode/stockStatus/isHold/page/pageSize` | `FinishedGoodsInventoryResultDto` | 一次返回 OUTER_BOX 当前库存分页 Grid 所需全部字段 |
-| GET | `/api/wms/inventory/finished-goods/{boxCode}/preview` | path `boxCode` | `FinishedGoodsInventoryPreviewDto` | 单击箱行后聚合基础信息、位置、周码组和 InnerPack |
+| GET | `/api/wms-fg/inventory/finished-goods/` | `plantCode/materialCode/materialRevision/boxCode/innerPackCode/locationCode/weekCode/stockStatus/inboundState/isHold/page/pageSize` | `FinishedGoodsInventoryResultDto` | 一次返回 OUTER_BOX 当前库存分页 Grid 所需全部字段；`inboundState=PENDING` 仅返回有效货位 `INBOUND-PENDING`，`INBOUND` 仅返回有效非待入库货位 |
+| GET | `/api/wms-fg/inventory/finished-goods/{boxCode}/preview` | path `boxCode` | `FinishedGoodsInventoryPreviewDto` | 单击箱行后聚合基础信息、位置、周码组和 InnerPack |
 
 两者均使用 `{ code, message, data }` envelope；浏览器中的业务 DTO 为 camelCase。
 

@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using Nancy;
 using Nancy.ModelBinding;
 using System;
@@ -10,16 +11,16 @@ using WMS_HU_Model.Services;
 using WMS.Infrastructure.Sap;
 
 namespace WMS.Modules
-{    public class OutboundSapPostingModule : NancyModule
+{    public class OutboundSapPostingModule : BaseApi
     {
         private readonly ISapOutboundPostingService _sapPostingService;
 
         public OutboundSapPostingModule()
-            : base("/api/wms/outbound")
+            : base("/api/wms-fg/outbound")
         {
             _sapPostingService = new SapOutboundPostingService(new SapOutboundPostingRepository(), new S0089SapOutboundPostingClient());
 
-            Post("/orders/{vbeln}/confirm-shipment", args =>
+            Post["/orders/{vbeln}/confirm-shipment"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -28,9 +29,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
                     : PostingFailure(result.Message);
-            });
+            };
 
-            Get("/orders/{vbeln}/sap-posting-preview", args =>
+            Get["/orders/{vbeln}/sap-posting-preview"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -38,9 +39,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
 
-            Get("/orders/{vbeln}/shipping-state", args =>
+            Get["/orders/{vbeln}/shipping-state"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -48,36 +49,36 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
 
-            Post("/orders/{vbeln}/sap-posting/retry", args =>
+            Post["/orders/{vbeln}/sap-posting/retry"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
                 SapOutboundPostingControlRequest request = this.Bind<SapOutboundPostingControlRequest>();
                 OperationResult<OutboundShippingStateDto> result = _sapPostingService.Retry(vbeln, request);
                 return result.IsSuccess ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK) : PostingFailure(result.Message);
-            });
+            };
 
-            Post("/orders/{vbeln}/sap-posting/manual-confirm-posted", args =>
+            Post["/orders/{vbeln}/sap-posting/manual-confirm-posted"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
                 SapOutboundManualConfirmRequest request = this.Bind<SapOutboundManualConfirmRequest>();
                 OperationResult<OutboundShippingStateDto> result = _sapPostingService.ManualConfirmPosted(vbeln, request);
                 return result.IsSuccess ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK) : PostingFailure(result.Message);
-            });
+            };
 
-            Post("/orders/{vbeln}/sap-posting/manual-confirm-not-posted", args =>
+            Post["/orders/{vbeln}/sap-posting/manual-confirm-not-posted"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
                 SapOutboundManualConfirmRequest request = this.Bind<SapOutboundManualConfirmRequest>();
                 OperationResult<OutboundShippingStateDto> result = _sapPostingService.ManualConfirmNotPosted(vbeln, request);
                 return result.IsSuccess ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK) : PostingFailure(result.Message);
-            });
+            };
 
-            Get("/shipping-orders", _ =>
+            Get["/shipping-orders"] = _ =>
             {
                 object rawDelivery = Request.Query.sapDeliveryNo;
                 object rawOutboundStatus = Request.Query.outboundStatus;
@@ -91,16 +92,16 @@ namespace WMS.Modules
                 OperationResult<PagedResult<OutboundShippingStateDto>> result = _sapPostingService.QueryShippingOrders(
                     Convert.ToString(rawDelivery), Convert.ToString(rawOutboundStatus), Convert.ToString(rawPostingStatus), page, pageSize);
                 return Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK);
-            });
+            };
 
-            Get("/shipment-management/orders", _ =>
+            Get["/shipment-management/orders"] = _ =>
             {
                 ShipmentManagementQuery query = ReadShipmentQuery();
                 OperationResult<ShipmentManagementResultDto> result = _sapPostingService.QueryShipmentManagement(query);
                 return Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK);
-            });
+            };
 
-            Get("/orders/{vbeln}/shipment-detail", args =>
+            Get["/orders/{vbeln}/shipment-detail"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -108,45 +109,22 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
         }
 
         private ShipmentManagementQuery ReadShipmentQuery()
         {
-            object rawDelivery = Request.Query.sapDeliveryNo;
-            object rawCustomer = Request.Query.customerCode;
+            object rawDelivery = Request.Query.sapDeliveryNo; object rawCustomer = Request.Query.customerCode;
             object rawMaterial = Request.Query.materialCode;
-            object rawPlant = Request.Query.plantCode;
-            object rawWarehouse = Request.Query.warehouseCode;
-            object rawBusiness = Request.Query.businessStatus;
-            object rawPosting = Request.Query.sapPostingStatus;
-            object rawFrom = Request.Query.dateFrom;
-            object rawTo = Request.Query.dateTo;
-            object rawPage = Request.Query.page;
-            object rawPageSize = Request.Query.pageSize;
-            int page;
-            int pageSize;
-            DateTime parsed;
-            DateTime? from = null;
-            DateTime? to = null;
-            int.TryParse(Convert.ToString(rawPage), out page);
-            int.TryParse(Convert.ToString(rawPageSize), out pageSize);
+            object rawPlant = Request.Query.plantCode; object rawWarehouse = Request.Query.warehouseCode;
+            object rawBusiness = Request.Query.businessStatus; object rawPosting = Request.Query.sapPostingStatus;
+            object rawFrom = Request.Query.dateFrom; object rawTo = Request.Query.dateTo;
+            object rawPage = Request.Query.page; object rawPageSize = Request.Query.pageSize;
+            int page; int pageSize; DateTime parsed; DateTime? from = null; DateTime? to = null;
+            int.TryParse(Convert.ToString(rawPage), out page); int.TryParse(Convert.ToString(rawPageSize), out pageSize);
             if (DateTime.TryParse(Convert.ToString(rawFrom), out parsed)) from = parsed;
             if (DateTime.TryParse(Convert.ToString(rawTo), out parsed)) to = parsed;
-            return new ShipmentManagementQuery
-            {
-                SapDeliveryNo = Convert.ToString(rawDelivery),
-                CustomerCode = Convert.ToString(rawCustomer),
-                MaterialCode = Convert.ToString(rawMaterial),
-                PlantCode = Convert.ToString(rawPlant),
-                WarehouseCode = Convert.ToString(rawWarehouse),
-                BusinessStatus = Convert.ToString(rawBusiness),
-                SapPostingStatus = Convert.ToString(rawPosting),
-                DateFrom = from,
-                DateTo = to,
-                Page = page,
-                PageSize = pageSize
-            };
+            return new ShipmentManagementQuery { SapDeliveryNo=Convert.ToString(rawDelivery),CustomerCode=Convert.ToString(rawCustomer),MaterialCode=Convert.ToString(rawMaterial),PlantCode=Convert.ToString(rawPlant),WarehouseCode=Convert.ToString(rawWarehouse),BusinessStatus=Convert.ToString(rawBusiness),SapPostingStatus=Convert.ToString(rawPosting),DateFrom=from,DateTo=to,Page=page,PageSize=pageSize };
         }
 
         private object PostingFailure(string message)
@@ -159,3 +137,6 @@ namespace WMS.Modules
         }
     }
 }
+
+
+

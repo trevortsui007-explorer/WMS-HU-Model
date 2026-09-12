@@ -14,12 +14,16 @@ namespace WMS.Infrastructure.Sap
     {
         private const string EndpointKey = "Sap.S0089.Endpoint";
         private const string TimeoutKey = "Sap.S0089.TimeoutMs";
+        private const string UsernameKey = "ApiAccountSAP";
+        private const string PasswordKey = "ApiPasswordSAP";
         private const int DefaultTimeoutMs = 100000;
 
         public SapOutboundTransportConfigurationResult ValidateConfiguration()
         {
             string endpoint = Normalize(ConfigurationManager.AppSettings[EndpointKey]);
             string timeoutText = Normalize(ConfigurationManager.AppSettings[TimeoutKey]);
+            string username = Normalize(ConfigurationManager.AppSettings[UsernameKey]);
+            string password = Normalize(ConfigurationManager.AppSettings[PasswordKey]);
             Uri endpointUri;
             int timeout = DefaultTimeoutMs;
             if (endpoint == null || !Uri.TryCreate(endpoint, UriKind.Absolute, out endpointUri)
@@ -27,12 +31,16 @@ namespace WMS.Infrastructure.Sap
                 return Invalid("Sap.S0089.Endpoint必须为有效的HTTP/HTTPS绝对地址。");
             if (timeoutText != null && (!int.TryParse(timeoutText, out timeout) || timeout <= 0))
                 return Invalid("Sap.S0089.TimeoutMs必须为正整数。");
+            if (username == null) return Invalid("ApiAccountSAP不能为空。");
+            if (password == null) return Invalid("ApiPasswordSAP不能为空。");
             return new SapOutboundTransportConfigurationResult
             {
                 IsValid = true,
                 Configuration = new SapOutboundTransportConfiguration
                 {
                     Endpoint = endpointUri.AbsoluteUri,
+                    Username = username,
+                    Password = password,
                     TimeoutMs = timeout
                 }
             };
@@ -55,6 +63,8 @@ namespace WMS.Infrastructure.Sap
                 request.Method = "POST";
                 request.ContentType = "application/json; charset=utf-8";
                 request.Accept = "application/json";
+                string credentials = configuration.Username + ":" + configuration.Password;
+                request.Headers[HttpRequestHeader.Authorization] = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
                 request.Timeout = configuration.TimeoutMs;
                 request.ReadWriteTimeout = configuration.TimeoutMs;
                 request.ContentLength = body.Length;
@@ -85,7 +95,13 @@ namespace WMS.Infrastructure.Sap
                             result.ResponseJson = reader.ReadToEnd();
                     }
                 }
-                if (result.InvocationStarted && !string.IsNullOrWhiteSpace(result.ResponseJson))
+                if (IsAuthenticationRejected(result.HttpStatusCode))
+                {
+                    result.ResultStatus = SapOutboundPostingStatuses.Failed;
+                    result.ExceptionType = "SAP_AUTHENTICATION_REJECTED";
+                    result.ExceptionMessage = "SAP认证失败，HTTP状态码" + result.HttpStatusCode.Value + "。";
+                }
+                else if (result.InvocationStarted && !string.IsNullOrWhiteSpace(result.ResponseJson))
                     ParseBusinessResponse(result);
                 if (result.ResultStatus != SapOutboundPostingStatuses.Success
                     && result.ResultStatus != SapOutboundPostingStatuses.Failed)
@@ -110,6 +126,11 @@ namespace WMS.Infrastructure.Sap
                 result.ResponseTime = DateTime.Now;
             }
             return result;
+        }
+
+        private static bool IsAuthenticationRejected(int? httpStatusCode)
+        {
+            return httpStatusCode == (int)HttpStatusCode.Unauthorized || httpStatusCode == (int)HttpStatusCode.Forbidden;
         }
 
         private static void ParseBusinessResponse(SapOutboundTransportResult result)

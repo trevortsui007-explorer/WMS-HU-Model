@@ -49,9 +49,11 @@ namespace WMS_HU_Model.Services
         public OperationResult<OutboundShippingStateDto> Retry(string sapDeliveryNo, SapOutboundPostingControlRequest request)
         {
             string deliveryNo = Normalize(sapDeliveryNo);
-            string error = ValidateControl(deliveryNo, request, false);
+            string error = ValidateControl(deliveryNo, request, true);
             if (error != null)
                 return OperationResult<OutboundShippingStateDto>.Fail(error);
+            if (request.ExpectedIntegrationLogId <= 0)
+                return OperationResult<OutboundShippingStateDto>.Fail("ExpectedIntegrationLogId无效。");
 
             SapOutboundTransportConfigurationResult configuration = _client.ValidateConfiguration();
             if (!configuration.IsValid)
@@ -78,6 +80,8 @@ namespace WMS_HU_Model.Services
             string error = ValidateControl(deliveryNo, request, true);
             if (error != null)
                 return OperationResult<OutboundShippingStateDto>.Fail(error);
+            if (request.ExpectedIntegrationLogId <= 0)
+                return OperationResult<OutboundShippingStateDto>.Fail("ExpectedIntegrationLogId无效。");
             try
             {
                 return OperationResult<OutboundShippingStateDto>.Success(_repository.ManualConfirmPosted(deliveryNo, request));
@@ -94,6 +98,8 @@ namespace WMS_HU_Model.Services
             string error = ValidateControl(deliveryNo, request, true);
             if (error != null)
                 return OperationResult<OutboundShippingStateDto>.Fail(error);
+            if (request.ExpectedIntegrationLogId <= 0)
+                return OperationResult<OutboundShippingStateDto>.Fail("ExpectedIntegrationLogId无效。");
             try
             {
                 return OperationResult<OutboundShippingStateDto>.Success(_repository.ManualConfirmNotPosted(deliveryNo, request));
@@ -218,6 +224,19 @@ namespace WMS_HU_Model.Services
                 : OperationResult<SapIntegrationLogDto>.Success(log);
         }
 
+        public OperationResult<SapIntegrationLogDto> GetLog(string direction, long id)
+        {
+            string normalizedDirection = NormalizeUpper(direction);
+            if (id <= 0)
+                return OperationResult<SapIntegrationLogDto>.Fail("日志Id无效。");
+            if (normalizedDirection != "INBOUND" && normalizedDirection != "OUTBOUND")
+                return OperationResult<SapIntegrationLogDto>.Fail("SAP日志方向无效。");
+            SapIntegrationLogDto log = _repository.GetLog(normalizedDirection, id);
+            return log == null
+                ? OperationResult<SapIntegrationLogDto>.Fail("SAP接口日志不存在。")
+                : OperationResult<SapIntegrationLogDto>.Success(log);
+        }
+
         private OperationResult<OutboundShippingStateDto> ExecuteClaim(
             SapPostingClaimResult claim,
             SapOutboundTransportConfiguration configuration,
@@ -252,7 +271,7 @@ namespace WMS_HU_Model.Services
             if (request.Remark != null && request.Remark.Length > 500)
                 return "Remark长度不能超过500。";
             if (requireRemark && request.Remark == null)
-                return "ManualConfirmRemark不能为空。";
+                return "Remark不能为空。";
             return null;
         }
 

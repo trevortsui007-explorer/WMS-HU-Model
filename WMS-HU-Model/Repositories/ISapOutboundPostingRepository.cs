@@ -16,6 +16,7 @@ namespace WMS_HU_Model.Repositories
         ShipmentManagementDetailDto GetShipmentManagementDetail(string sapDeliveryNo);
         PagedResult<SapIntegrationLogDto> QueryLogs(SapIntegrationLogQuery query);
         SapIntegrationLogDto GetLog(long id);
+        SapIntegrationLogDto GetLog(string direction, long id);
         void RecordReceiveCommunication(string businessKey, string requestJson, string resultStatus, string externalMessage, string payloadHash);
     }
 }

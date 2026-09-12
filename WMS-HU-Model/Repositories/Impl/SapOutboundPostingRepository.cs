@@ -48,7 +48,7 @@ namespace WMS_HU_Model.Repositories
                         DateTime now = DateTime.Now;
                         long postingId = InsertPosting(connection, transaction, order.Id, snapshot.Preview.PayloadHash, now);
                         InsertDetails(connection, transaction, postingId, ReadItems(connection, transaction, order.AllocationId));
-                        long logId = InsertAttempt(connection, transaction, postingId, order.SAPDeliveryNo, 1, snapshot.Preview.PayloadJson, now);
+                        long logId = InsertAttempt(connection, transaction, postingId, order.SAPDeliveryNo, 1, snapshot.Preview.PayloadJson, request, now);
                         SetSending(connection, transaction, postingId, logId, now, SapOutboundPostingStatuses.Sending);
                         transaction.Commit();
                         return Claim(postingId, logId, 1, snapshot.Preview);
@@ -71,7 +71,35 @@ namespace WMS_HU_Model.Repositories
                         OrderRow order = ReadOrder(connection, transaction, sapDeliveryNo, true);
                         if (order == null) return Rollback(transaction, "出库订单不存在。");
                         PostingRow posting = ReadPosting(connection, transaction, order.Id, true);
-                        if (posting == null || posting.Status != SapOutboundPostingStatuses.Failed) return Rollback(transaction, "只有FAILED过账记录允许Retry；UNKNOWN禁止盲目重试。");
+                        if (posting == null) return Rollback(transaction, "该交货单不存在SAP过账记录。");
+                        AttemptRow duplicate = ReadAttemptByRequestId(connection, transaction, request.RequestId);
+                        if (duplicate != null)
+                        {
+                            if (duplicate.PostingId != posting.Id)
+                                return Rollback(transaction, "RequestId已被其他SAP过账请求使用。");
+                            if (IsManualDecisionCode(duplicate.ResultCode))
+                                return Rollback(transaction, "RequestId已被人工判定动作使用，不能用于SAP推送重试。");
+                            OutboundShippingStateDto duplicateState = ReadState(connection, transaction, order.Id);
+                            transaction.Commit();
+                            return new SapPostingClaimResult
+                            {
+                                IsSuccess = true,
+                                ShouldInvokeSap = false,
+                                PostingId = posting.Id,
+                                IntegrationLogId = duplicate.Id,
+                                AttemptNo = duplicate.AttemptNo,
+                                State = duplicateState,
+                                Message = "重复RequestId，返回已记录的SAP发送状态。"
+                            };
+                        }
+                        if (order.Status != "PICKED")
+                            return Rollback(transaction, "交货单当前状态不是PICKED，禁止Retry。");
+                        if (posting.LastLogId != request.ExpectedIntegrationLogId)
+                            return Rollback(transaction, "SAP过账Attempt已变化，请刷新日志后重试。");
+                        bool authenticationRejected = posting.Status == SapOutboundPostingStatuses.Unknown
+                            && IsAuthenticationRejectedAttempt(connection, transaction, posting.Id, posting.LastLogId);
+                        if (posting.Status != SapOutboundPostingStatuses.Failed && !authenticationRejected)
+                            return Rollback(transaction, "只有FAILED或最新Attempt明确为HTTP 401/403的UNKNOWN过账记录允许Retry；其他UNKNOWN禁止盲目重试。");
                         SapPostingSnapshotBuildResult current = Build(order, ReadItems(connection, transaction, order.AllocationId));
                         if (!current.IsSuccess) return Rollback(transaction, current.Message);
                         if (!string.Equals(current.Preview.PayloadHash, posting.PayloadHash, StringComparison.Ordinal)) return Rollback(transaction, "PAYLOAD_CHANGED：当前Payload与第一次过账快照不一致。");
@@ -79,8 +107,8 @@ namespace WMS_HU_Model.Repositories
                         if (frozen == null || frozen.PayloadHash != posting.PayloadHash) return Rollback(transaction, "PAYLOAD_CHANGED：当前冻结快照Hash不匹配。");
                         DateTime now = DateTime.Now;
                         int attemptNo = NextAttempt(connection, transaction, posting.Id);
-                        long logId = InsertAttempt(connection, transaction, posting.Id, order.SAPDeliveryNo, attemptNo, frozen.PayloadJson, now);
-                        SetSending(connection, transaction, posting.Id, logId, now, SapOutboundPostingStatuses.Failed);
+                        long logId = InsertAttempt(connection, transaction, posting.Id, order.SAPDeliveryNo, attemptNo, frozen.PayloadJson, request, now);
+                        SetSending(connection, transaction, posting.Id, logId, now, posting.Status);
                         transaction.Commit();
                         return Claim(posting.Id, logId, attemptNo, frozen);
                     }
@@ -120,8 +148,68 @@ namespace WMS_HU_Model.Repositories
         {
             using (SqlConnection connection = DbConnectionFactory.Create()) { connection.Open(); OrderRow order = ReadOrder(connection, null, sapDeliveryNo, false); return order == null ? null : ReadState(connection, null, order.Id); }
         }
-        public OutboundShippingStateDto ManualConfirmPosted(string sapDeliveryNo, SapOutboundManualConfirmRequest request) { throw new InvalidOperationException("UNKNOWN必须经SAP权威状态查询确认；人工确认接口已弃用。"); }
-        public OutboundShippingStateDto ManualConfirmNotPosted(string sapDeliveryNo, SapOutboundManualConfirmRequest request) { throw new InvalidOperationException("UNKNOWN必须经SAP权威状态查询确认；人工确认接口已弃用。"); }
+        public OutboundShippingStateDto ManualConfirmPosted(string sapDeliveryNo, SapOutboundManualConfirmRequest request)
+        {
+            return ManualConfirm(sapDeliveryNo, request, true);
+        }
+
+        public OutboundShippingStateDto ManualConfirmNotPosted(string sapDeliveryNo, SapOutboundManualConfirmRequest request)
+        {
+            return ManualConfirm(sapDeliveryNo, request, false);
+        }
+
+        private static OutboundShippingStateDto ManualConfirm(string sapDeliveryNo, SapOutboundManualConfirmRequest request, bool posted)
+        {
+            string resultCode = posted ? "MANUAL_CONFIRMED_POSTED" : "MANUAL_CONFIRMED_NOT_POSTED";
+            string targetStatus = posted ? SapOutboundPostingStatuses.Success : SapOutboundPostingStatuses.Failed;
+            using (SqlConnection connection = DbConnectionFactory.Create())
+            {
+                connection.Open();
+                using (SqlTransaction transaction = connection.BeginTransaction(IsolationLevel.Serializable))
+                {
+                    try
+                    {
+                        OrderRow order = ReadOrder(connection, transaction, sapDeliveryNo, true);
+                        if (order == null) throw new InvalidOperationException("出库订单不存在。");
+                        PostingRow posting = ReadPosting(connection, transaction, order.Id, true);
+                        if (posting == null) throw new InvalidOperationException("该交货单不存在SAP过账记录。");
+                        AttemptRow duplicate = ReadAttemptByRequestId(connection, transaction, request.RequestId);
+                        if (duplicate != null)
+                        {
+                            if (duplicate.PostingId != posting.Id || !string.Equals(duplicate.ResultCode, resultCode, StringComparison.Ordinal))
+                                throw new InvalidOperationException("RequestId已被其他SAP过账业务或人工判定动作使用。");
+                            OutboundShippingStateDto duplicateState = ReadState(connection, transaction, order.Id);
+                            transaction.Commit();
+                            return duplicateState;
+                        }
+                        if (order.Status != "PICKED") throw new InvalidOperationException("交货单当前状态不是PICKED，禁止人工判定。");
+                        if (posting.Status != SapOutboundPostingStatuses.Unknown) throw new InvalidOperationException("只有UNKNOWN过账记录允许人工判定。");
+                        if (posting.LastLogId != request.ExpectedIntegrationLogId) throw new InvalidOperationException("SAP过账Attempt已变化，请刷新日志后重新操作。");
+                        if (!IsManualConfirmableUnknownAttempt(connection, transaction, posting.Id, posting.LastLogId))
+                            throw new InvalidOperationException("当前Attempt不是可人工判定的UNKNOWN；HTTP 401/403请直接推送重试。");
+
+                        DateTime now = DateTime.Now;
+                        int eventNo = NextAttempt(connection, transaction, posting.Id);
+                        long logId = InsertManualDecision(connection, transaction, posting.Id, order.SAPDeliveryNo, eventNo, targetStatus, resultCode, request, now);
+                        UpdatePostingFromManualDecision(connection, transaction, posting.Id, posting.LastLogId, logId, targetStatus, resultCode, request.Remark, now);
+                        if (posted) FinalizeShipment(connection, transaction, posting.OrderId, request.Operator, request.Remark, now);
+                        OutboundShippingStateDto state = ReadState(connection, transaction, posting.OrderId);
+                        transaction.Commit();
+                        return state;
+                    }
+                    catch (SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
+                    {
+                        if (transaction.Connection != null) transaction.Rollback();
+                        throw new InvalidOperationException("人工判定RequestId或日志序号发生并发冲突，请刷新后重试。");
+                    }
+                    catch
+                    {
+                        if (transaction.Connection != null) transaction.Rollback();
+                        throw;
+                    }
+                }
+            }
+        }
         public PagedResult<OutboundShippingStateDto> QueryShippingOrders(string sapDeliveryNo, string outboundStatus, string postingStatus, int page, int pageSize) { return new PagedResult<OutboundShippingStateDto> { Page = page, PageSize = pageSize }; }
         public ShipmentManagementResultDto QueryShipmentManagement(ShipmentManagementQuery query)
         {
@@ -416,22 +504,208 @@ WHERE posting.OutboundOrderId=@Id;";
             using (SqlConnection c = DbConnectionFactory.Create())
             {
                 c.Open();
-                const string where = " WHERE (@B IS NULL OR BizNo LIKE '%' + @B + '%') AND (@I IS NULL OR InterfaceCode=@I) AND (@S IS NULL OR IntegrationStatus=@S) ";
-                using (SqlCommand x = new SqlCommand("SELECT COUNT(1) FROM dbo.WMS_FG_SapIntegrationLog" + where, c)) { S(x,"@B",100,query.BusinessKey);S(x,"@I",50,query.InterfaceCode);S(x,"@S",20,query.ResultStatus);result.Total=Convert.ToInt32(x.ExecuteScalar()); }
-                using (SqlCommand x = new SqlCommand("SELECT Id,InterfaceCode,BizType,BizId,BizNo,AttemptNo,IntegrationStatus,StartDt,EndDt,DurationMs,NULL,NULL,ResultCode,ResultMessage,HttpStatusCode FROM dbo.WMS_FG_SapIntegrationLog" + where + " ORDER BY StartDt DESC,Id DESC OFFSET @O ROWS FETCH NEXT @P ROWS ONLY", c))
-                { S(x,"@B",100,query.BusinessKey);S(x,"@I",50,query.InterfaceCode);S(x,"@S",20,query.ResultStatus);I(x,"@O",(query.Page-1)*query.PageSize);I(x,"@P",query.PageSize);using(SqlDataReader r=x.ExecuteReader())while(r.Read())result.Items.Add(MapLog(r)); }
+                const string source = @"
+WITH SapLogs AS
+(
+    SELECT log.Id, 'OUTBOUND' AS Direction, log.InterfaceCode, log.BizType AS BusinessType,
+           log.BizNo AS BusinessKey, log.RequestId, log.AttemptNo, log.IntegrationStatus AS ResultStatus,
+           log.StartDt AS RequestTime, log.EndDt AS ResponseTime, CONVERT(BIGINT, log.DurationMs) AS DurationMs,
+           log.ResultCode AS ExternalCode, log.ResultMessage AS ExternalMessage, log.HttpStatusCode,
+           log.TriggerUser, log.TriggerRemark
+    FROM dbo.WMS_FG_SapIntegrationLog log
+    UNION ALL
+    SELECT receiveLog.Id, 'INBOUND', 'SAP_OUTBOUND_ORDER', 'OUTBOUND_ORDER_RECEIVE',
+           receiveLog.SAPDeliveryNo, NULL, 0, receiveLog.ProcessStatus,
+           receiveLog.ReceiveDt, CAST(NULL AS DATETIME2(3)), CAST(NULL AS BIGINT),
+           receiveLog.ResultCode, receiveLog.ResultMessage, NULL, NULL, NULL
+    FROM dbo.WMS_FG_OutboundOrderReceiveLog receiveLog
+)
+";
+                const string where = @"
+WHERE (@B IS NULL OR BusinessKey LIKE '%' + @B + '%')
+  AND (@I IS NULL OR InterfaceCode = @I)
+  AND (@Direction IS NULL OR Direction = @Direction)
+  AND (@S IS NULL OR ResultStatus = @S)
+  AND (@DateFrom IS NULL OR RequestTime >= @DateFrom)
+  AND (@DateTo IS NULL OR RequestTime < DATEADD(day, 1, @DateTo))";
+                using (SqlCommand command = new SqlCommand(source + "SELECT COUNT(1) FROM SapLogs " + where, c))
+                {
+                    AddLogQuery(command, query);
+                    result.Total = Convert.ToInt32(command.ExecuteScalar());
+                }
+                using (SqlCommand command = new SqlCommand(source + @"
+SELECT Id,Direction,InterfaceCode,BusinessType,BusinessKey,RequestId,AttemptNo,ResultStatus,
+       RequestTime,ResponseTime,DurationMs,ExternalCode,ExternalMessage,HttpStatusCode,TriggerUser,TriggerRemark
+FROM SapLogs " + where + " ORDER BY RequestTime DESC,Direction DESC,Id DESC OFFSET @O ROWS FETCH NEXT @P ROWS ONLY", c))
+                {
+                    AddLogQuery(command, query);
+                    I(command, "@O", (query.Page - 1) * query.PageSize);
+                    I(command, "@P", query.PageSize);
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            result.Items.Add(MapLogSummary(reader));
+                    }
+                }
             }
             return result;
         }
+
         public SapIntegrationLogDto GetLog(long id)
         {
-            using (SqlConnection c=DbConnectionFactory.Create()) { c.Open(); using(SqlCommand x=new SqlCommand("SELECT Id,InterfaceCode,BizType,BizId,BizNo,AttemptNo,IntegrationStatus,StartDt,EndDt,DurationMs,RequestJson,ResponseJson,ResultCode,ResultMessage,HttpStatusCode FROM dbo.WMS_FG_SapIntegrationLog WHERE Id=@I",c)){L(x,"@I",id);using(SqlDataReader r=x.ExecuteReader())return r.Read()?MapLog(r):null;} }
+            return GetLog("OUTBOUND", id);
+        }
+
+        public SapIntegrationLogDto GetLog(string direction, long id)
+        {
+            return direction == "INBOUND" ? GetInboundLog(id) : GetOutboundLog(id);
         }
         public void RecordReceiveCommunication(string businessKey, string requestJson, string resultStatus, string externalMessage, string payloadHash) { }
 
-        private static SapIntegrationLogDto MapLog(SqlDataReader r)
+        private static SapIntegrationLogDto GetInboundLog(long id)
         {
-            return new SapIntegrationLogDto { Id=r.GetInt64(0),InterfaceCode=r.GetString(1),BusinessType=r.GetString(2),BusinessKey=r.IsDBNull(4)?null:r.GetString(4),AttemptNo=r.GetInt32(5),ResultStatus=r.GetString(6),RequestTime=r.GetDateTime(7),ResponseTime=r.IsDBNull(8)?(DateTime?)null:r.GetDateTime(8),DurationMs=r.IsDBNull(9)?(long?)null:Convert.ToInt64(r.GetInt32(9)),RequestJson=r.IsDBNull(10)?null:r.GetString(10),ResponseJson=r.IsDBNull(11)?null:r.GetString(11),ExternalCode=r.IsDBNull(12)?null:r.GetString(12),ExternalMessage=r.IsDBNull(13)?null:r.GetString(13),HttpStatusCode=r.IsDBNull(14)?(int?)null:r.GetInt32(14) };
+            using (SqlConnection connection = DbConnectionFactory.Create())
+            {
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(@"
+SELECT Id,SAPDeliveryNo,ProcessStatus,RequestJson,RequestHash,ResultCode,ResultMessage,ReceiveDt
+FROM dbo.WMS_FG_OutboundOrderReceiveLog
+WHERE Id=@Id;", connection))
+                {
+                    L(command, "@Id", id);
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (!reader.Read()) return null;
+                        return new SapIntegrationLogDto
+                        {
+                            Id = reader.GetInt64(0), LogKey = "INBOUND:" + reader.GetInt64(0), Direction = "INBOUND",
+                            InterfaceCode = "SAP_OUTBOUND_ORDER", BusinessType = "OUTBOUND_ORDER_RECEIVE",
+                            BusinessKey = reader.IsDBNull(1) ? null : reader.GetString(1), AttemptNo = 0,
+                            ResultStatus = reader.GetString(2), RequestJson = reader.IsDBNull(3) ? null : reader.GetString(3),
+                            PayloadHash = reader.IsDBNull(4) ? null : reader.GetString(4),
+                            ExternalCode = reader.IsDBNull(5) ? null : reader.GetString(5),
+                            ExternalMessage = reader.IsDBNull(6) ? null : reader.GetString(6),
+                            RequestTime = reader.GetDateTime(7), ResponseTime = null,
+                            TriggerAction = "RECEIVE", CanResend = false, ResendBlockedReason = "接收日志不支持重新发送。"
+                        };
+                    }
+                }
+            }
+        }
+
+        private static SapIntegrationLogDto GetOutboundLog(long id)
+        {
+            using (SqlConnection connection = DbConnectionFactory.Create())
+            {
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(@"
+SELECT log.Id,log.InterfaceCode,log.BizType,log.BizNo,log.RequestId,log.AttemptNo,
+       log.IntegrationStatus,log.StartDt,log.EndDt,log.DurationMs,log.RequestJson,log.ResponseJson,
+       log.ResultCode,log.ResultMessage,log.HttpStatusCode,posting.PayloadHash,
+       log.TriggerUser,log.TriggerRemark,posting.PostingStatus,
+       CASE WHEN posting.LastIntegrationLogId=log.Id THEN 1 ELSE 0 END,
+       outboundOrder.OrderStatus
+FROM dbo.WMS_FG_SapIntegrationLog log
+LEFT JOIN dbo.WMS_FG_OutboundSapPosting posting ON posting.Id=log.BizId AND log.BizType='OUTBOUND_SAP_POSTING'
+LEFT JOIN dbo.WMS_FG_OutboundOrder outboundOrder ON outboundOrder.Id=posting.OutboundOrderId
+WHERE log.Id=@Id;", connection))
+                {
+                    L(command, "@Id", id);
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (!reader.Read()) return null;
+                        SapIntegrationLogDto log = new SapIntegrationLogDto
+                        {
+                            Id = reader.GetInt64(0), LogKey = "OUTBOUND:" + reader.GetInt64(0), Direction = "OUTBOUND",
+                            InterfaceCode = reader.GetString(1), BusinessType = reader.GetString(2),
+                            BusinessKey = reader.IsDBNull(3) ? null : reader.GetString(3), RequestId = reader.IsDBNull(4) ? null : reader.GetString(4),
+                            AttemptNo = reader.GetInt32(5), ResultStatus = reader.GetString(6), RequestTime = reader.GetDateTime(7),
+                            ResponseTime = reader.IsDBNull(8) ? (DateTime?)null : reader.GetDateTime(8),
+                            DurationMs = reader.IsDBNull(9) ? (long?)null : Convert.ToInt64(reader.GetInt32(9)),
+                            RequestJson = reader.GetString(10), ResponseJson = reader.IsDBNull(11) ? null : reader.GetString(11),
+                            ExternalCode = reader.IsDBNull(12) ? null : reader.GetString(12), ExternalMessage = reader.IsDBNull(13) ? null : reader.GetString(13),
+                            HttpStatusCode = reader.IsDBNull(14) ? (int?)null : reader.GetInt32(14), PayloadHash = reader.IsDBNull(15) ? null : reader.GetString(15),
+                            TriggerUser = reader.IsDBNull(16) ? null : reader.GetString(16), TriggerRemark = reader.IsDBNull(17) ? null : reader.GetString(17),
+                            CurrentPostingStatus = reader.IsDBNull(18) ? null : reader.GetString(18), IsLatestAttempt = !reader.IsDBNull(19) && reader.GetInt32(19) == 1,
+                            TriggerAction = ResolveTriggerAction(reader.IsDBNull(12) ? null : reader.GetString(12), reader.GetInt32(5))
+                        };
+                        string outboundStatus = reader.IsDBNull(20) ? null : reader.GetString(20);
+                        bool authenticationRejectedUnknown = log.ResultStatus == SapOutboundPostingStatuses.Unknown
+                            && log.CurrentPostingStatus == SapOutboundPostingStatuses.Unknown
+                            && (log.HttpStatusCode == 401 || log.HttpStatusCode == 403);
+                        log.CanResend = log.InterfaceCode == "S0089" && log.IsLatestAttempt
+                            && ((log.ResultStatus == SapOutboundPostingStatuses.Failed && log.CurrentPostingStatus == SapOutboundPostingStatuses.Failed)
+                                || authenticationRejectedUnknown)
+                            && outboundStatus == "PICKED";
+                        log.ResendBlockedReason = log.CanResend ? null : ResendBlockedReason(log, outboundStatus);
+                        log.CanManualConfirm = log.InterfaceCode == "S0089" && log.IsLatestAttempt
+                            && log.ResultStatus == SapOutboundPostingStatuses.Unknown
+                            && log.CurrentPostingStatus == SapOutboundPostingStatuses.Unknown
+                            && log.HttpStatusCode != 401 && log.HttpStatusCode != 403
+                            && outboundStatus == "PICKED";
+                        log.ManualConfirmBlockedReason = log.CanManualConfirm ? null : ManualConfirmBlockedReason(log, outboundStatus);
+                        return log;
+                    }
+                }
+            }
+        }
+
+        private static string ResendBlockedReason(SapIntegrationLogDto log, string outboundStatus)
+        {
+            if (log.InterfaceCode != "S0089") return "只有S0089发送日志支持重新发送。";
+            if (!log.IsLatestAttempt) return "历史Attempt仅供查看，请打开最新发送记录。";
+            if (log.ResultStatus == SapOutboundPostingStatuses.Unknown && log.CurrentPostingStatus == SapOutboundPostingStatuses.Unknown
+                && (log.HttpStatusCode == 401 || log.HttpStatusCode == 403)) return null;
+            if (log.ResultStatus != SapOutboundPostingStatuses.Failed) return "选中的Attempt不是FAILED，禁止重新发送。";
+            if (log.CurrentPostingStatus == SapOutboundPostingStatuses.Unknown) return "SAP状态待确认，禁止盲目重新发送。";
+            if (log.CurrentPostingStatus != SapOutboundPostingStatuses.Failed) return "只有当前FAILED过账记录允许重新发送。";
+            if (outboundStatus != "PICKED") return "交货单当前状态不是PICKED，禁止重新发送。";
+            return "当前记录不满足重新发送条件。";
+        }
+
+        private static string ManualConfirmBlockedReason(SapIntegrationLogDto log, string outboundStatus)
+        {
+            if (log.InterfaceCode != "S0089") return "只有S0089发送日志支持人工判定。";
+            if (!log.IsLatestAttempt) return "历史Attempt仅供查看，请打开最新发送记录。";
+            if (outboundStatus != "PICKED") return "交货单当前状态不是PICKED，禁止人工判定。";
+            if (log.CurrentPostingStatus != SapOutboundPostingStatuses.Unknown || log.ResultStatus != SapOutboundPostingStatuses.Unknown)
+                return "只有当前最新UNKNOWN记录允许人工判定。";
+            if (log.HttpStatusCode == 401 || log.HttpStatusCode == 403) return "HTTP认证已明确拒绝，请直接推送重试。";
+            return "当前记录不满足人工判定条件。";
+        }
+
+        private static SapIntegrationLogDto MapLogSummary(SqlDataReader reader)
+        {
+            string direction = reader.GetString(1);
+            int attemptNo = reader.GetInt32(6);
+            return new SapIntegrationLogDto
+            {
+                Id = reader.GetInt64(0), LogKey = direction + ":" + reader.GetInt64(0), Direction = direction,
+                InterfaceCode = reader.GetString(2), BusinessType = reader.GetString(3), BusinessKey = reader.IsDBNull(4) ? null : reader.GetString(4),
+                RequestId = reader.IsDBNull(5) ? null : reader.GetString(5), AttemptNo = attemptNo, ResultStatus = reader.GetString(7),
+                RequestTime = reader.GetDateTime(8), ResponseTime = reader.IsDBNull(9) ? (DateTime?)null : reader.GetDateTime(9),
+                DurationMs = reader.IsDBNull(10) ? (long?)null : reader.GetInt64(10), ExternalCode = reader.IsDBNull(11) ? null : reader.GetString(11),
+                ExternalMessage = reader.IsDBNull(12) ? null : reader.GetString(12), HttpStatusCode = reader.IsDBNull(13) ? (int?)null : reader.GetInt32(13),
+                TriggerUser = reader.IsDBNull(14) ? null : reader.GetString(14), TriggerRemark = reader.IsDBNull(15) ? null : reader.GetString(15),
+                TriggerAction = direction == "INBOUND" ? "RECEIVE" : ResolveTriggerAction(reader.IsDBNull(11) ? null : reader.GetString(11), attemptNo)
+            };
+        }
+
+        private static string ResolveTriggerAction(string resultCode, int attemptNo)
+        {
+            if (resultCode == "MANUAL_CONFIRMED_POSTED") return "MANUAL_CONFIRM_POSTED";
+            if (resultCode == "MANUAL_CONFIRMED_NOT_POSTED") return "MANUAL_CONFIRM_NOT_POSTED";
+            return attemptNo <= 1 ? "CONFIRM_SHIPMENT" : "RESEND";
+        }
+
+        private static void AddLogQuery(SqlCommand command, SapIntegrationLogQuery query)
+        {
+            S(command, "@B", 100, query.BusinessKey);
+            S(command, "@I", 50, query.InterfaceCode);
+            S(command, "@Direction", 20, query.Direction);
+            S(command, "@S", 20, query.ResultStatus);
+            DN(command, "@DateFrom", query.DateFrom);
+            DN(command, "@DateTo", query.DateTo);
         }
 
         private static SapPostingSnapshotBuildResult Build(OrderRow order, List<ItemRow> items)
@@ -454,14 +728,139 @@ WHERE posting.OutboundOrderId=@Id;";
         }
         private static long InsertPosting(SqlConnection c,SqlTransaction t,long orderId,string hash,DateTime now){using(SqlCommand x=new SqlCommand("INSERT dbo.WMS_FG_OutboundSapPosting(OutboundOrderId,PostingStatus,PayloadHash,FirstSendDt,LastAttemptDt) OUTPUT INSERTED.Id VALUES(@O,'SENDING',@H,@N,@N)",c,t)){L(x,"@O",orderId);S(x,"@H",64,hash);D(x,"@N",now);return Convert.ToInt64(x.ExecuteScalar());}}
         private static void InsertDetails(SqlConnection c,SqlTransaction t,long postingId,List<ItemRow> items){int n=0;foreach(var g in items.GroupBy(x=>new{x.PickDetailId,x.LineId,x.SapBatchNo})){ItemRow first=g.First();using(SqlCommand x=new SqlCommand("INSERT dbo.WMS_FG_OutboundSapPostingDetail(PostingId,SequenceNo,OutboundOrderLineId,PickDetailId,BoxHUId,SAPItemNo,ProdNo,BoxNo,SAPBatchNo,PostingQty,Uom,SAPStorageLocation) SELECT @P,@N,@L,@D,@H,@I,@M,@B,@C,@Q,@U,o.SAPStorageLocation FROM dbo.WMS_FG_OutboundPickBatch b INNER JOIN dbo.WMS_FG_OutboundAllocation a ON a.Id=b.AllocationId INNER JOIN dbo.WMS_FG_OutboundOrder o ON o.Id=a.OutboundOrderId WHERE b.Id=(SELECT PickBatchId FROM dbo.WMS_FG_OutboundPickBatchDetail WHERE Id=@D)",c,t)){L(x,"@P",postingId);I(x,"@N",++n);L(x,"@L",g.Key.LineId);L(x,"@D",g.Key.PickDetailId);L(x,"@H",first.BoxHuId);S(x,"@I",20,first.SapItemNo);S(x,"@M",50,first.ProdNo);S(x,"@B",100,first.BoxNo);S(x,"@C",50,g.Key.SapBatchNo);Q(x,"@Q",g.Sum(a=>a.Qty));S(x,"@U",20,first.Uom);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("PostingDetail快照失败。");}}}
-        private static long InsertAttempt(SqlConnection c,SqlTransaction t,long p,string no,int n,string json,DateTime now){using(SqlCommand x=new SqlCommand("INSERT dbo.WMS_FG_SapIntegrationLog(InterfaceCode,BizType,BizId,BizNo,AttemptNo,IntegrationStatus,RequestJson,StartDt) OUTPUT INSERTED.Id VALUES('S0089','OUTBOUND_SAP_POSTING',@P,@B,@N,'SENDING',@J,@D)",c,t)){L(x,"@P",p);S(x,"@B",100,no);I(x,"@N",n);NV(x,"@J",json);D(x,"@D",now);return Convert.ToInt64(x.ExecuteScalar());}}
+        private static long InsertAttempt(SqlConnection c, SqlTransaction t, long postingId, string businessNo, int attemptNo, string json, SapOutboundPostingControlRequest request, DateTime now)
+        {
+            using (SqlCommand command = new SqlCommand(@"
+INSERT dbo.WMS_FG_SapIntegrationLog
+(InterfaceCode,BizType,BizId,BizNo,AttemptNo,IntegrationStatus,RequestJson,StartDt,RequestId,TriggerUser,TriggerRemark)
+OUTPUT INSERTED.Id
+VALUES ('S0089','OUTBOUND_SAP_POSTING',@PostingId,@BusinessNo,@AttemptNo,'SENDING',@Json,@Now,@RequestId,@TriggerUser,@TriggerRemark);", c, t))
+            {
+                L(command, "@PostingId", postingId);
+                S(command, "@BusinessNo", 100, businessNo);
+                I(command, "@AttemptNo", attemptNo);
+                NV(command, "@Json", json);
+                D(command, "@Now", now);
+                S(command, "@RequestId", 100, request.RequestId);
+                S(command, "@TriggerUser", 50, request.Operator);
+                NS(command, "@TriggerRemark", 500, request.Remark);
+                return Convert.ToInt64(command.ExecuteScalar());
+            }
+        }
+        private static long InsertManualDecision(SqlConnection c, SqlTransaction t, long postingId, string businessNo, int eventNo, string status, string resultCode, SapOutboundManualConfirmRequest request, DateTime now)
+        {
+            string decisionJson = resultCode == "MANUAL_CONFIRMED_POSTED"
+                ? "{\"manualDecision\":\"POSTED\",\"sapCalled\":false}"
+                : "{\"manualDecision\":\"NOT_POSTED\",\"sapCalled\":false}";
+            using (SqlCommand command = new SqlCommand(@"
+INSERT dbo.WMS_FG_SapIntegrationLog
+(InterfaceCode,BizType,BizId,BizNo,AttemptNo,IntegrationStatus,RequestJson,ResultCode,ResultMessage,
+ StartDt,EndDt,DurationMs,RequestId,TriggerUser,TriggerRemark)
+OUTPUT INSERTED.Id
+VALUES ('S0089','OUTBOUND_SAP_POSTING',@PostingId,@BusinessNo,@EventNo,@Status,@RequestJson,@ResultCode,@ResultMessage,
+        @Now,@Now,0,@RequestId,@TriggerUser,@TriggerRemark);", c, t))
+            {
+                L(command, "@PostingId", postingId);
+                S(command, "@BusinessNo", 100, businessNo);
+                I(command, "@EventNo", eventNo);
+                S(command, "@Status", 20, status);
+                NV(command, "@RequestJson", decisionJson);
+                S(command, "@ResultCode", 50, resultCode);
+                NS(command, "@ResultMessage", 1000, request.Remark);
+                D(command, "@Now", now);
+                S(command, "@RequestId", 100, request.RequestId);
+                S(command, "@TriggerUser", 50, request.Operator);
+                NS(command, "@TriggerRemark", 500, request.Remark);
+                return Convert.ToInt64(command.ExecuteScalar());
+            }
+        }
+        private static void UpdatePostingFromManualDecision(SqlConnection c, SqlTransaction t, long postingId, long expectedLogId, long decisionLogId, string status, string resultCode, string remark, DateTime now)
+        {
+            using (SqlCommand command = new SqlCommand(@"
+UPDATE dbo.WMS_FG_OutboundSapPosting
+SET PostingStatus=@Status,
+    LastAttemptDt=@Now,
+    SuccessDt=CASE WHEN @Status='SUCCESS' THEN @Now ELSE SuccessDt END,
+    ResultCode=@ResultCode,
+    ResultMessage=@ResultMessage,
+    LastIntegrationLogId=@DecisionLogId
+WHERE Id=@PostingId
+  AND PostingStatus='UNKNOWN'
+  AND LastIntegrationLogId=@ExpectedLogId;", c, t))
+            {
+                S(command, "@Status", 20, status);
+                D(command, "@Now", now);
+                S(command, "@ResultCode", 50, resultCode);
+                NS(command, "@ResultMessage", 1000, remark);
+                L(command, "@DecisionLogId", decisionLogId);
+                L(command, "@PostingId", postingId);
+                L(command, "@ExpectedLogId", expectedLogId);
+                if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("SAP人工判定发生并发冲突，请刷新后重试。");
+            }
+        }
         private static void SetSending(SqlConnection c,SqlTransaction t,long p,long l,DateTime n,string expected){using(SqlCommand x=new SqlCommand("UPDATE dbo.WMS_FG_OutboundSapPosting SET PostingStatus='SENDING',LastAttemptDt=@N,LastIntegrationLogId=@L WHERE Id=@P AND PostingStatus=@E",c,t)){D(x,"@N",n);L(x,"@L",l);L(x,"@P",p);S(x,"@E",20,expected);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("Posting claim并发冲突。");}}
         private static int NextAttempt(SqlConnection c,SqlTransaction t,long p){using(SqlCommand x=new SqlCommand("SELECT ISNULL(MAX(AttemptNo),0)+1 FROM dbo.WMS_FG_SapIntegrationLog WITH(UPDLOCK,HOLDLOCK) WHERE InterfaceCode='S0089' AND BizType='OUTBOUND_SAP_POSTING' AND BizId=@P",c,t)){L(x,"@P",p);return Convert.ToInt32(x.ExecuteScalar());}}
+        private static bool IsAuthenticationRejectedAttempt(SqlConnection c, SqlTransaction t, long postingId, long logId)
+        {
+            using (SqlCommand command = new SqlCommand(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_FG_SapIntegrationLog WITH (UPDLOCK,HOLDLOCK,ROWLOCK)
+    WHERE Id=@LogId
+      AND InterfaceCode='S0089'
+      AND BizType='OUTBOUND_SAP_POSTING'
+      AND BizId=@PostingId
+      AND IntegrationStatus='UNKNOWN'
+      AND HttpStatusCode IN (401,403)
+) THEN 1 ELSE 0 END;", c, t))
+            {
+                L(command, "@LogId", logId);
+                L(command, "@PostingId", postingId);
+                return Convert.ToInt32(command.ExecuteScalar()) == 1;
+            }
+        }
+        private static bool IsManualConfirmableUnknownAttempt(SqlConnection c, SqlTransaction t, long postingId, long logId)
+        {
+            using (SqlCommand command = new SqlCommand(@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM dbo.WMS_FG_SapIntegrationLog WITH (UPDLOCK,HOLDLOCK,ROWLOCK)
+    WHERE Id=@LogId
+      AND InterfaceCode='S0089'
+      AND BizType='OUTBOUND_SAP_POSTING'
+      AND BizId=@PostingId
+      AND IntegrationStatus='UNKNOWN'
+      AND (HttpStatusCode IS NULL OR HttpStatusCode NOT IN (401,403))
+) THEN 1 ELSE 0 END;", c, t))
+            {
+                L(command, "@LogId", logId);
+                L(command, "@PostingId", postingId);
+                return Convert.ToInt32(command.ExecuteScalar()) == 1;
+            }
+        }
         private static PostingRow ReadPosting(SqlConnection c,SqlTransaction t,long o,bool l){return ReadPosting(c,t,"OutboundOrderId",o,l);} private static PostingRow ReadPostingById(SqlConnection c,SqlTransaction t,long p,bool l){return ReadPosting(c,t,"Id",p,l);} private static PostingRow ReadPosting(SqlConnection c,SqlTransaction t,string col,long v,bool l){using(SqlCommand x=new SqlCommand("SELECT Id,OutboundOrderId,PostingStatus,PayloadHash,LastIntegrationLogId FROM dbo.WMS_FG_OutboundSapPosting"+(l?" WITH(UPDLOCK,HOLDLOCK,ROWLOCK)":"")+" WHERE "+col+"=@V",c,t)){L(x,"@V",v);using(SqlDataReader r=x.ExecuteReader())return r.Read()?new PostingRow{Id=r.GetInt64(0),OrderId=r.GetInt64(1),Status=r.GetString(2),PayloadHash=r.GetString(3),LastLogId=r.IsDBNull(4)?0:r.GetInt64(4)}:null;}}
-        private static AttemptRow ReadAttempt(SqlConnection c,SqlTransaction t,long p,int n,bool l){using(SqlCommand x=new SqlCommand("SELECT Id FROM dbo.WMS_FG_SapIntegrationLog"+(l?" WITH(UPDLOCK,HOLDLOCK,ROWLOCK)":"")+" WHERE InterfaceCode='S0089' AND BizType='OUTBOUND_SAP_POSTING' AND BizId=@P AND AttemptNo=@N",c,t)){L(x,"@P",p);I(x,"@N",n);object id=x.ExecuteScalar();return id==null?null:new AttemptRow{Id=Convert.ToInt64(id)};}}
+        private static AttemptRow ReadAttempt(SqlConnection c,SqlTransaction t,long p,int n,bool l){using(SqlCommand x=new SqlCommand("SELECT Id,BizId,AttemptNo FROM dbo.WMS_FG_SapIntegrationLog"+(l?" WITH(UPDLOCK,HOLDLOCK,ROWLOCK)":"")+" WHERE InterfaceCode='S0089' AND BizType='OUTBOUND_SAP_POSTING' AND BizId=@P AND AttemptNo=@N",c,t)){L(x,"@P",p);I(x,"@N",n);using(SqlDataReader r=x.ExecuteReader())return r.Read()?new AttemptRow{Id=r.GetInt64(0),PostingId=r.GetInt64(1),AttemptNo=r.GetInt32(2)}:null;}}
+        private static AttemptRow ReadAttemptByRequestId(SqlConnection c, SqlTransaction t, string requestId)
+        {
+            using (SqlCommand command = new SqlCommand(@"
+SELECT Id,BizId,AttemptNo,ResultCode
+FROM dbo.WMS_FG_SapIntegrationLog WITH (UPDLOCK,HOLDLOCK)
+WHERE RequestId=@RequestId;", c, t))
+            {
+                S(command, "@RequestId", 100, requestId);
+                using (SqlDataReader reader = command.ExecuteReader())
+                    return reader.Read() ? new AttemptRow { Id = reader.GetInt64(0), PostingId = reader.GetInt64(1), AttemptNo = reader.GetInt32(2), ResultCode = reader.IsDBNull(3) ? null : reader.GetString(3) } : null;
+            }
+        }
+        private static bool IsManualDecisionCode(string resultCode)
+        {
+            return resultCode == "MANUAL_CONFIRMED_POSTED" || resultCode == "MANUAL_CONFIRMED_NOT_POSTED";
+        }
         private static SapOutboundPostingPreviewDto ReadFrozenPayload(SqlConnection c,SqlTransaction t,long p,string no){using(SqlCommand x=new SqlCommand("SELECT SAPItemNo,ProdNo,BoxNo,SAPBatchNo,PostingQty,Uom,SAPStorageLocation FROM dbo.WMS_FG_OutboundSapPostingDetail WHERE PostingId=@P ORDER BY SequenceNo",c,t)){L(x,"@P",p);List<SapOutboundPostingRow> rows=new List<SapOutboundPostingRow>();using(SqlDataReader r=x.ExecuteReader())while(r.Read())rows.Add(new SapOutboundPostingRow{VBELN=no,POSNR=r.GetString(0),MATNR=r.GetString(1),BOXNO=r.GetString(2),CHARG=r.IsDBNull(3)?null:r.GetString(3),LFIMG=r.GetDecimal(4),LFIMG_BOX=r.GetDecimal(4),VRKME=string.Empty,BOXSIZE=string.Empty,GEWEI="KG",LGORT=r.GetString(6)});if(rows.Count==0)return null;string j=SapOutboundPayloadSerializer.Serialize(new SapOutboundPostingPayload{Data=rows});return new SapOutboundPostingPreviewDto{SAPDeliveryNo=no,Data=rows,PayloadJson=j,PayloadHash=SapOutboundPayloadSerializer.ComputeHash(j)};}}
-        private static void UpdateAttempt(SqlConnection c,SqlTransaction t,long id,string s,SapOutboundTransportResult r,DateTime n){using(SqlCommand x=new SqlCommand("UPDATE dbo.WMS_FG_SapIntegrationLog SET IntegrationStatus=@S,ResponseJson=@R,HttpStatusCode=@H,ResultCode=@C,ResultMessage=@M,EndDt=@N,DurationMs=@U WHERE Id=@I AND IntegrationStatus='SENDING'",c,t)){S(x,"@S",20,s);NV(x,"@R",r==null?null:r.ResponseJson);IN(x,"@H",r==null?null:r.HttpStatusCode);S(x,"@C",50,r==null?"LOCAL_NOT_INVOKED":r.SapCode);NS(x,"@M",1000,r==null?"SAP调用未开始":r.SapMessage??r.ExceptionMessage);D(x,"@N",n);IN(x,"@U",r==null?null:(int?)r.DurationMs);L(x,"@I",id);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("Attempt完成失败。");}}
-        private static void UpdatePosting(SqlConnection c,SqlTransaction t,long id,string s,long log,SapOutboundTransportResult r,DateTime n){using(SqlCommand x=new SqlCommand("UPDATE dbo.WMS_FG_OutboundSapPosting SET PostingStatus=@S,LastAttemptDt=@N,SuccessDt=CASE WHEN @S='SUCCESS' THEN @N ELSE SuccessDt END,ResultCode=@C,ResultMessage=@M,LastIntegrationLogId=@L WHERE Id=@I AND PostingStatus='SENDING'",c,t)){S(x,"@S",20,s);D(x,"@N",n);S(x,"@C",50,r==null?"LOCAL_NOT_INVOKED":r.SapCode);NS(x,"@M",1000,r==null?"SAP调用未开始":r.SapMessage??r.ExceptionMessage);L(x,"@L",log);L(x,"@I",id);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("Posting完成失败。");}}
+        private static void UpdateAttempt(SqlConnection c,SqlTransaction t,long id,string s,SapOutboundTransportResult r,DateTime n){using(SqlCommand x=new SqlCommand("UPDATE dbo.WMS_FG_SapIntegrationLog SET IntegrationStatus=@S,ResponseJson=@R,HttpStatusCode=@H,ResultCode=@C,ResultMessage=@M,EndDt=@N,DurationMs=@U WHERE Id=@I AND IntegrationStatus='SENDING'",c,t)){S(x,"@S",20,s);NV(x,"@R",r==null?null:r.ResponseJson);IN(x,"@H",r==null?null:r.HttpStatusCode);S(x,"@C",50,r==null?"LOCAL_NOT_INVOKED":r.SapCode??r.ExceptionType);NS(x,"@M",1000,r==null?"SAP调用未开始":r.SapMessage??r.ExceptionMessage);D(x,"@N",n);IN(x,"@U",r==null?null:(int?)r.DurationMs);L(x,"@I",id);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("Attempt完成失败。");}}
+        private static void UpdatePosting(SqlConnection c,SqlTransaction t,long id,string s,long log,SapOutboundTransportResult r,DateTime n){using(SqlCommand x=new SqlCommand("UPDATE dbo.WMS_FG_OutboundSapPosting SET PostingStatus=@S,LastAttemptDt=@N,SuccessDt=CASE WHEN @S='SUCCESS' THEN @N ELSE SuccessDt END,ResultCode=@C,ResultMessage=@M,LastIntegrationLogId=@L WHERE Id=@I AND PostingStatus='SENDING'",c,t)){S(x,"@S",20,s);D(x,"@N",n);S(x,"@C",50,r==null?"LOCAL_NOT_INVOKED":r.SapCode??r.ExceptionType);NS(x,"@M",1000,r==null?"SAP调用未开始":r.SapMessage??r.ExceptionMessage);L(x,"@L",log);L(x,"@I",id);if(x.ExecuteNonQuery()!=1)throw new InvalidOperationException("Posting完成失败。");}}
         private static void FinalizeShipment(SqlConnection c, SqlTransaction t, long orderId, string op, string remark, DateTime now)
         {
             long allocationId;
@@ -650,9 +1049,35 @@ WHERE Id = @OrderId AND OrderStatus = 'PICKED';", c, t))
                     throw new InvalidOperationException("订单SHIPPED状态更新失败。");
             }
         }
-        private static OutboundShippingStateDto ReadState(SqlConnection c,SqlTransaction t,long id){using(SqlCommand x=new SqlCommand("SELECT o.SAPDeliveryNo,o.OrderStatus,ISNULL(p.PostingStatus,'READY'),p.ResultCode,p.ResultMessage FROM dbo.WMS_FG_OutboundOrder o LEFT JOIN dbo.WMS_FG_OutboundSapPosting p ON p.OutboundOrderId=o.Id WHERE o.Id=@I",c,t)){L(x,"@I",id);using(SqlDataReader r=x.ExecuteReader())return r.Read()?new OutboundShippingStateDto{SAPDeliveryNo=r.GetString(0),OutboundStatus=r.GetString(1),SapPostingStatus=r.GetString(2),LastSapCode=r.IsDBNull(3)?null:r.GetString(3),LastSapMessage=r.IsDBNull(4)?null:r.GetString(4),CanConfirmShipment=r.GetString(1)=="PICKED"&&r.GetString(2)=="READY",CanRetry=r.GetString(2)=="FAILED",RequiresITReview=r.GetString(2)=="UNKNOWN"}:null;}}
+        private static OutboundShippingStateDto ReadState(SqlConnection c, SqlTransaction t, long id)
+        {
+            using (SqlCommand x = new SqlCommand("SELECT o.SAPDeliveryNo,o.OrderStatus,ISNULL(p.PostingStatus,'READY'),p.ResultCode,p.ResultMessage FROM dbo.WMS_FG_OutboundOrder o LEFT JOIN dbo.WMS_FG_OutboundSapPosting p ON p.OutboundOrderId=o.Id WHERE o.Id=@I", c, t))
+            {
+                L(x, "@I", id);
+                using (SqlDataReader r = x.ExecuteReader())
+                {
+                    if (!r.Read()) return null;
+                    string postingStatus = r.GetString(2);
+                    string resultCode = r.IsDBNull(3) ? null : r.GetString(3);
+                    return new OutboundShippingStateDto
+                    {
+                        SAPDeliveryNo = r.GetString(0),
+                        OutboundStatus = r.GetString(1),
+                        SapPostingStatus = postingStatus,
+                        LastSapCode = resultCode,
+                        LastSapMessage = r.IsDBNull(4) ? null : r.GetString(4),
+                        CanConfirmShipment = r.GetString(1) == "PICKED" && postingStatus == "READY",
+                        CanRetry = postingStatus == SapOutboundPostingStatuses.Failed,
+                        RequiresITReview = postingStatus == SapOutboundPostingStatuses.Unknown,
+                        SuccessConfirmSource = postingStatus != SapOutboundPostingStatuses.Success
+                            ? null
+                            : resultCode == "MANUAL_CONFIRMED_POSTED" ? "MANUAL_CONFIRM" : "SAP_RESPONSE"
+                    };
+                }
+            }
+        }
         private static string Normalize(string s){return s==SapOutboundPostingStatuses.Success||s==SapOutboundPostingStatuses.Failed?s:SapOutboundPostingStatuses.Unknown;} private static SapPostingSnapshotBuildResult Fail(string m){return new SapPostingSnapshotBuildResult{IsSuccess=false,Message=m};} private static SapPostingClaimResult Rollback(SqlTransaction t,string m){t.Rollback();return new SapPostingClaimResult{IsSuccess=false,Message=m};} private static SapPostingClaimResult Claim(long p,long l,int n,SapOutboundPostingPreviewDto x){return new SapPostingClaimResult{IsSuccess=true,ShouldInvokeSap=true,PostingId=p,IntegrationLogId=l,AttemptNo=n,PayloadJson=x.PayloadJson,PayloadHash=x.PayloadHash};}
         private static void S(SqlCommand c,string n,int z,string v){c.Parameters.Add(n,SqlDbType.VarChar,z).Value=(object)v??DBNull.Value;} private static void NS(SqlCommand c,string n,int z,string v){c.Parameters.Add(n,SqlDbType.NVarChar,z).Value=(object)v??DBNull.Value;} private static void NV(SqlCommand c,string n,string v){c.Parameters.Add(n,SqlDbType.NVarChar,-1).Value=(object)v??DBNull.Value;} private static void L(SqlCommand c,string n,long v){c.Parameters.Add(n,SqlDbType.BigInt).Value=v;} private static void I(SqlCommand c,string n,int v){c.Parameters.Add(n,SqlDbType.Int).Value=v;} private static void IN(SqlCommand c,string n,int? v){c.Parameters.Add(n,SqlDbType.Int).Value=v.HasValue?(object)v.Value:DBNull.Value;} private static void D(SqlCommand c,string n,DateTime v){c.Parameters.Add(n,SqlDbType.DateTime2).Value=v;} private static void DN(SqlCommand c,string n,DateTime? v){c.Parameters.Add(n,SqlDbType.Date).Value=v.HasValue?(object)v.Value.Date:DBNull.Value;} private static void Q(SqlCommand c,string n,decimal v){SqlParameter p=c.Parameters.Add(n,SqlDbType.Decimal);p.Precision=18;p.Scale=4;p.Value=v;}
-        private class OrderRow{public long Id;public string SAPDeliveryNo;public long WarehouseId;public string Status;public string SapStorageLocation;public long AllocationId;} private class ItemRow{public long LineId;public long PickDetailId;public long BoxHuId;public string ProdNo;public string SapBatchNo;public decimal Qty;public string Uom;public string SapItemNo;public string BoxNo;} private class PostingRow{public long Id;public long OrderId;public string Status;public string PayloadHash;public long LastLogId;} private class AttemptRow{public long Id;} private class ShipRow{public long DetailId;public long HuId;public long FromId;}
+        private class OrderRow{public long Id;public string SAPDeliveryNo;public long WarehouseId;public string Status;public string SapStorageLocation;public long AllocationId;} private class ItemRow{public long LineId;public long PickDetailId;public long BoxHuId;public string ProdNo;public string SapBatchNo;public decimal Qty;public string Uom;public string SapItemNo;public string BoxNo;} private class PostingRow{public long Id;public long OrderId;public string Status;public string PayloadHash;public long LastLogId;} private class AttemptRow{public long Id;public long PostingId;public int AttemptNo;public string ResultCode;} private class ShipRow{public long DetailId;public long HuId;public long FromId;}
     }
 }

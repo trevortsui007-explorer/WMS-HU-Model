@@ -16,5 +16,6 @@ namespace WMS_HU_Model.Services
         OperationResult<ShipmentManagementDetailDto> GetShipmentManagementDetail(string sapDeliveryNo);
         OperationResult<PagedResult<SapIntegrationLogDto>> QueryLogs(SapIntegrationLogQuery query);
         OperationResult<SapIntegrationLogDto> GetLog(long id);
+        OperationResult<SapIntegrationLogDto> GetLog(string direction, long id);
     }
 }

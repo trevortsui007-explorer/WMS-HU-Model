@@ -64,6 +64,8 @@ namespace WMS_HU_Model.Models.Outbound.Integration
     public class SapOutboundTransportConfiguration
     {
         public string Endpoint { get; set; }
+        public string Username { get; set; }
+        public string Password { get; set; }
         public int TimeoutMs { get; set; }
     }
 
@@ -94,6 +96,7 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string RequestId { get; set; }
         public string Operator { get; set; }
         public string Remark { get; set; }
+        public long ExpectedIntegrationLogId { get; set; }
     }
 
     public class SapOutboundManualConfirmRequest : SapOutboundPostingControlRequest
@@ -281,6 +284,8 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string InterfaceCode { get; set; }
         public string Direction { get; set; }
         public string ResultStatus { get; set; }
+        public DateTime? DateFrom { get; set; }
+        public DateTime? DateTo { get; set; }
         public int Page { get; set; }
         public int PageSize { get; set; }
     }
@@ -288,6 +293,7 @@ namespace WMS_HU_Model.Models.Outbound.Integration
     public class SapIntegrationLogDto
     {
         public long Id { get; set; }
+        public string LogKey { get; set; }
         public string InterfaceCode { get; set; }
         public string Direction { get; set; }
         public string BusinessType { get; set; }
@@ -307,6 +313,15 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string ExceptionType { get; set; }
         public string ExceptionMessage { get; set; }
         public string PayloadHash { get; set; }
+        public string TriggerUser { get; set; }
+        public string TriggerRemark { get; set; }
+        public string TriggerAction { get; set; }
+        public string CurrentPostingStatus { get; set; }
+        public bool IsLatestAttempt { get; set; }
+        public bool CanResend { get; set; }
+        public string ResendBlockedReason { get; set; }
+        public bool CanManualConfirm { get; set; }
+        public string ManualConfirmBlockedReason { get; set; }
     }
 
     public class PagedResult<T>

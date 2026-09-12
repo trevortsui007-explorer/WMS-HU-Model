@@ -1,4 +1,25 @@
-# WMS 成品仓正式出库后端交接
+﻿# WMS 成品仓正式出库后端交接
+
+## 2026-09-07 SAP 日志人工确认与推送重试
+
+- Backend：恢复既有 `manual-confirm-posted` / `manual-confirm-not-posted` 实现。两者要求 `RequestId`、必填 `Remark` 与 `ExpectedIntegrationLogId`，在 Serializable 事务内锁定订单、Posting 和最新 Attempt；只允许订单 PICKED 且 Posting/最新日志均为 UNKNOWN。HTTP 401/403 是明确认证拒绝，不允许人工改判，仅保留受控 Retry。
+- Decision semantics：“确认SAP已过账”不调用 SAP，追加 `MANUAL_CONFIRMED_POSTED/SUCCESS` 审计事件，并复用 SAP SUCCESS 的唯一 Shipment Finalizer 原子完成 SHIPPED；“确认SAP未过账”追加 `MANUAL_CONFIRMED_NOT_POSTED/FAILED`，仅将 Posting 转 FAILED，订单/HU 保持 PICKED。原 UNKNOWN 日志始终保留不修改。
+- Idempotency/concurrency：同 RequestId、同 Posting、同动作返回当前结果；跨 Posting 或跨动作复用拒绝。提交时重新比较 `ExpectedIntegrationLogId`；人工判定产生独立下一日志序号。Retry 也要求 expected log id，并继续复用冻结 Payload/Hash/Detail。
+- Log contract：发送日志详情增加 `CanManualConfirm` 与 `ManualConfirmBlockedReason`；`CanResend`/`CanManualConfirm` 均由后端状态决定。人工确认成功响应从 ResultCode 派生 `SuccessConfirmSource=MANUAL_CONFIRM`，未新增物理字段。
+- Learun：SAP 日志抽屉增加绿色“确认SAP已过账”、橙色“确认SAP未过账”和“推送重试”，共用必填原因输入框及 `sapResend` 权限。Controller 从登录会话写 Operator；通用 WMS Proxy 阻断 retry 和两个 manual-confirm Route。401/403 UNKNOWN 只显示重试。
+- Security：`DIRECT_WMS_IT_RECOVERY_API_SERVER_AUTH=FALSE` 保持不变；Learun 会话账户不是 WMS Host 的独立服务端认证。部署必须限制 WMS Host 到可信内部网络。
+- Runtime sync：Core/Service/Repository 已同步实际 Learun WebApi WMS_FG 编译副本；Learun 页面、Controller、API adapter 同步完成。无 Schema 或 migration 修改。
+- Verification：WMS-HU-Model、Test Project、WMS Host、Learun Web 与实际 Learun WebApi Debug build 均 PASS；控制台完整回归 `156/156 PASS`，AuditLog 两个 JS 文件通过 Node syntax check。Learun 两个大宿主仅出现既有依赖版本/旧代码 warning。未执行人工确认、Retry、真实 SAP、数据库 DML/DDL 或 migration；Git 未 stage/commit。
+
+## 2026-09-07 SAP S0089 Basic Authentication 与 401 恢复
+
+- Authentication：S0089 强类型 Client 复用旧 `NetHelper("SAP")` 配置约定，读取 `ApiAccountSAP`/`ApiPasswordSAP`，以 UTF-8 `username:password` 生成 Basic Authorization 并预先发送；不直接复用旧 NetHelper。Endpoint 继续来自 `Sap.S0089.Endpoint`，`Sap.S0089.TimeoutMs` 可选且默认 100000ms。
+- Pre-claim gate：Endpoint、Username、Password 与 Timeout 在冻结 Posting、创建 Attempt、进入 SENDING 或外部调用前校验。配置无效返回 `SAP_OUTBOUND_CONFIGURATION_ERROR`，不创建/修改 Posting，不创建 IntegrationLog，不调用 SAP，也不归类 UNKNOWN。
+- Classification：HTTP 401/403 直接归类 FAILED，Client 内部分类为 `SAP_AUTHENTICATION_REJECTED`，并使用现有 `ResultCode/ResultMessage/HttpStatusCode/ResponseJson` 审计；不要求 `WMS_FG_SapIntegrationLog.ExceptionType/ExceptionMessage` 物理列，也不把 NetWeaver HTML 错误页送入 SAP 业务 JSON parser。SAP S/E 不变；timeout/reset/空响应/畸形业务响应仍为 UNKNOWN。凭据、Base64 与 Authorization 不写日志或 DTO。
+- Historical recovery：FAILED 保持既有 retry；历史 UNKNOWN 只有在请求携带的 `ExpectedIntegrationLogId` 同时是当前 Posting 最新日志，且该日志属于 S0089 outbound posting、状态 UNKNOWN、HTTP 401/403 时，才允许用新 RequestId 创建新 Attempt。旧 UNKNOWN 日志、PayloadJson、PayloadHash、Detail 保留不改；其他 UNKNOWN 继续禁止盲目 retry。
+- Runtime sync：standalone Host/Core 与 Learun WebApi WMS_FG 编译副本同步；实际 WebApi 继续使用既有 `ApiAccountSAP`/`ApiPasswordSAP` 配置，不在源码或文档复制值。仓库 standalone Web.config 仅保留空占位。
+- Verification：WMS-HU-Model、WMS Host、Test Project、Learun WebApi Debug build 均 PASS；控制台完整回归 `156/156 PASS`。WebApi 仅出现既有依赖版本/源码 warning 和一次被 IIS Express 占用 DLL 的自动重试，最终输出成功。静态守卫覆盖 Basic Header、配置键、401/403 分类、Exception 审计字段和受限 UNKNOWN recovery。
+- Safety：未调用真实 SAP，未执行 DML/DDL/migration，未修改 migration 018，未 Git stage/commit。
 
 ## 2026-09-01 Putaway Recommendation V1.1.1
 
@@ -147,7 +168,7 @@
 - Special source：MES provider 在读取 PlanStock source graph 时同批投影 PackID，并用 `EXISTS(PK_PackLot INNER JOIN PP_LotCard ON LotNo)` 判断任一源 Lot 的 OrderType 是否特殊；不读取 outbound LFART/PSTYV，不调用 PK_BoxTOSAP_API，无 N+1、无 JavaScript/MES 查询。
 - Snapshot chain：FinishedGoodsInboundService 忽略客户端 SapBatchNo 并由 resolver 服务端生成；MES canonical ingress 在同一批量查询中读取每个 `PK_Packmaster_Id` 的全部有效 `PK_PackLot.LotNo`，Trim、去重后按该 LotNo 的最小 `LotSeq ASC`、再按 `LotNo ASC` 稳定排序，以英文逗号无空格拼接。零个有效值返回 `MES_LOTNO_INVALID:`；拼接后超过 500 字符返回 `MES_LOTNO_TOO_LONG:`，不截断、不选择第一条。组合 LotNo 写 `WMS_FG_HU_Item.LotNo`，PackID 写 `MES_PACK_ID` identifier，SAP CHARG 写独立 `WMS_FG_HU_Item.SAPBatchNo`。开发期所有新入库 snapshot 统一使用 `FGI_V3` 固定 9 字段 inner hash 结构，不保留 FGI_V1/FGI_V2 运行时选择。通用 inbound 客户端 LotNo 会被清空，不作为权威事实。Formal Pick 原样复制完整 LotNo/SAPBatchNo 到 PickDetailItem；S0089 继续只读 PickDetailItem.SAPBatchNo、无 BatchNo fallback。
 - MES LotNo verification：`WMS_FG_HU_Item.LotNo` 与 `WMS_FG_OutboundPickDetailItem.LotNo` 的 500 字符物理长度由 Human 已完成，本轮不生成/执行 migration。standalone 与 Learun WebApi WMS_FG 的 5 个本轮相关源码文件 SHA-256 一致；Model、Test、WMS Host、Learun WebApi build PASS，控制台完整回归 `142/142` PASS（仅既有编译 warning）。未连接 BaseDb，未执行 DML/DDL/migration，未调用 SAP；开发期 Hash 直接以最新 FGI_V3 为准，不实现旧版本兼容分支。
-- Quantity/contract：`LFIMG_BOX_RULE=ROW_BATCH_QTY` 保持不变；UMCHA 未加入 S0089；Endpoint-only/no Basic Authorization 保持不变。MergeBox 只移动既有 INNER_PACK relation，不重建 HU Item，因此 SAPBatchNo 快照保留。
+- Quantity/contract：`LFIMG_BOX_RULE=ROW_BATCH_QTY` 保持不变；UMCHA 未加入 S0089。此处记录的 Endpoint-only/no Basic Authorization 是当时结论，已由 2026-09-07 S0089 Basic Authentication 修复替代。MergeBox 只移动既有 INNER_PACK relation，不重建 HU Item，因此 SAPBatchNo 快照保留。
 - Historical null strategy：历史 WMS_HU_Item.SAPBatchNo 不自动写 BatchNo、不从 HUCode 推导。可通过 INNER_PACK SourceEntityId=PK_Packmaster_Id 回查 MES PackID+Lot OrderType；后续如需 backfill，应单独生成“只读审计结果→Human Review→受控写入”的工具。本轮未生成/执行 backfill，不修改 WMS_DEV。
 - PDA：当前 `WMS_OutboundPicking.cshtml` 已存在专用 SAP confirm dialog 样式并核对符合要求：左侧稍后处理为灰色次按钮、右侧确认出货并过账SAP为蓝色主按钮、5px 圆角，无“是否装车”，SAP V1 行为未改变。本轮不覆盖该既有页面改动。
 - Verification：WMS-HU-Model、WMS Host、Test Project、Learun Web Debug build 均 PASS；`BEFORE_TEST_COUNT=122`、`NEW_TEST_COUNT=3`、`TOTAL_TESTS=125`、`PASSED_TESTS=125`、`FAILED_TESTS=0`。本轮依据 MES provider/entity 与 WMS persistence 源码完成 PackID 链路核对，未执行 MES/WMS 数据库运行时查询。migration 018 未修改/执行；无真实 SAP POST、WMS_DEV DML/DDL、Git stage/commit。
@@ -155,7 +176,7 @@
 ## 2026-08-27 SAP Outbound Posting V1 Runtime Preview Gate
 
 - Contract correction：SAP 确认 `LFIMG_BOX` 是当前 BOXNO+POSNR+CHARG 行数量。Repository 现在对分组只计算一次 `lineQuantity` 并同时赋给 LFIMG/LFIMG_BOX；仍按 PickDetail 汇总所有有效 PickDetailItem 并校验等于 PickBatchDetail.EffectiveQty。新增单批 70/70、混 CHARG 40/40+30/30、跨 POSNR+CHARG、禁止整箱数量重复四类回归。
-- S0089 configuration：必需项仅 `Sap.S0089.Endpoint`；删除 Username/Password 配置和 transport DTO 字段，不设置 Credentials/PreAuthenticate/Basic Authorization。`Sap.S0089.TimeoutMs` 保留为可选技术参数，空值使用 100000ms，已配置的非正整数仍拒绝。测试/正式 URL 未硬编码到业务代码，仓库 Endpoint 继续为空占位。
+- S0089 configuration（历史）：当时必需项仅 `Sap.S0089.Endpoint` 且不设置 Basic Authorization；该结论已由 2026-09-07 修复替代，当前同时要求既有 `ApiAccountSAP`/`ApiPasswordSAP`。`Sap.S0089.TimeoutMs` 仍为可选技术参数，空值使用 100000ms，已配置的非正整数仍拒绝。测试/正式 URL 未硬编码到业务代码。
 - Build/regression：WMS-HU-Model、WMS Host、Test Project Debug build 均 PASS（0 warning/error）；Learun Web Debug build PASS，只有两个既有依赖项目 assembly-reference cache access-denied warning。`TOTAL_TESTS=122`、`PASSED_TESTS=122`、`FAILED_TESTS=0`。
 - Migration：migration 018 已由 Human 执行成功；Codex 未重新执行或修改。文件修改前后 SHA-256 均为 `F8C5B5E00C552945D93AB4A5E201ADE1344A6665AB0AB21F706A7D4995E731E5`。`MIGRATION_EXECUTED_BY_HUMAN=True`、`MIGRATION_EXECUTED_BY_CODEX=False`。
 - Runtime candidate：WMS Host `/shipping-orders?outboundStatus=PICKED` 返回仅 2 单：8304812756、8304812755，均 PICKED/READY、2 boxes/70 qty。两单 Preview 都返回 HTTP/API 400 `SAP_POSTING_CHARG_MISSING`；分别首先发现 B-B-2608260840125E2P-01、B-B-2608251758532HCO-01 缺少 SAPBatchNo。因此 WMS_DEV 当前没有可生成 data[] 的合格 PICKED VBELN，不能使用 BatchNo fallback 或伪造 CHARG。`MIXED_CHARG_RUNTIME_CASE=NOT_AVAILABLE`。
@@ -168,7 +189,7 @@
 - Implemented scope：新增 VBELN 聚合的 S0089 出货过账快照、发送状态、通用 SAP 通信审计、只读 preview/shipping-state、人工 UNKNOWN 恢复、受控 retry、PDA 完成确认、Learun“出货管理”和“SAP接口日志”页面。旧 `/orders/{vbeln}/ship` 保留为 deprecated alias，但已改为调用同一 ConfirmShipmentService，不再直接调用 FormalOutboundService.ShipOrder。
 - Authoritative snapshot：只读取 completed/current Allocation 下的 PICKED Batch/Detail、PickDetailItem、OutboundOrderLine 和 canonical OUTER_BOX HU。`CHARG=WMS_OutboundPickDetailItem.SAPBatchNo`，无 internal BatchNo fallback；`LGORT=OutboundOrderLine.SAPStorageLocation`；`LFIMG` 按 PickDetail+Line+SAPBatchNo 汇总；`LFIMG_BOX` 等于当前 BOXNO+POSNR+CHARG 行的 LFIMG。每个 PickDetail 的全部 Payload 行 LFIMG 合计仍校验等于 PickBatchDetail.EffectiveQty。历史 RETURNED/QUALITY_HOLD detail 不进入 payload。
 - SAP payload：单 VBELN 一个 `{data:[...]}`，包含全部 POSNR/BOX/CHARG；混 CHARG 与跨 POSNR 箱按行输出实际数量，不重复整箱 EffectiveQty。LFIMG、LFIMG_BOX、NTGEW、BRGEW 是 decimal 并由 Json.NET 输出 JSON Number；VRKME/BOXSIZE 为空，NTGEW/BRGEW=0，GEWEI=KG。
-- SAP transport：Core 仅依赖 `ISapOutboundPostingClient`；WMS Host 的 S0089 adapter 使用 UTF-8/application-json，不使用账号密码或 Basic Authorization。必需配置仅 `Sap.S0089.Endpoint`；可选 `Sap.S0089.TimeoutMs` 未配置时为 100000ms。配置在 snapshot/claim/attempt 之前验证；无效时不创建 Posting、Attempt 或 SENDING，也不归类 UNKNOWN。未引用 Learun NetHelper/H5TPM，也不读取或记录 Authorization。
+- SAP transport（初版历史）：Core 仅依赖 `ISapOutboundPostingClient`；WMS Host 的 S0089 adapter 使用 UTF-8/application-json。初版不使用 Basic Authorization 的结论已由 2026-09-07 修复替代；当前强类型 Client 复用旧 NetHelper 的配置与 Basic 约定，但仍不直接依赖 NetHelper。配置继续在 snapshot/claim/attempt 之前验证，网络调用仍在事务外。
 - State/concurrency：migration 018 定义 READY/SENDING/SUCCESS/FAILED/UNKNOWN、唯一 SAPDeliveryNo、冻结 PayloadJson/Hash/Detail 和通用 `WMS_SapIntegrationLog`。Transaction A 使用 Serializable + UPDLOCK/HOLDLOCK/ROWLOCK claim；SAP 调用在事务外；Transaction B 以 PostingId+RequestId+AttemptNo ownership 完成。S 执行原子 Shipment Finalizer 并标记 SAP_RESPONSE；E 保持 PICKED；可能已到 SAP 但结果不可确认才为 UNKNOWN。无自动 retry/status query。
 - Recovery：UNKNOWN 手工“已过账”不调用 SAP，转 SUCCESS/SHIPPED/MANUAL_CONFIRM；“未过账”转 retry-eligible FAILED 并保留 UNKNOWN 通信证据；retry 使用新 RequestId 和 attempt，原 PayloadJson/Hash/Detail 不变。
 - Receive audit：现有 SAP Delivery Receive 继续保留 `WMS_OutboundOrderReceiveLog`，并在每次完成、重复、拒绝或异常请求后追加通用 `WMS_SapIntegrationLog`。
@@ -320,7 +341,7 @@
 - Page07 Layout 改为纵向 Flex：Toolbar 固定 62px 置顶，Body `flex:1 1 auto` 且 `min-height:0`，Pane 保持 `top:0/bottom:8px`，Grid/Pager/Drawer Foundation 与 jfGrid 均未修改。
 - 后续 Human Review 将四个日志 Tab 要求置于最右侧：Toolbar DOM 调整为筛选条件 → 查询/重置 → Tab，Tab 组使用 `margin-left:auto` 右对齐；Tab click 与查询逻辑不变。
 - 更新 Pager integration Harness 的 Page07 高度合同。Page01/02/04/07 Pager integration、Page01/02/04/07 Drawer integration、Batch D D601–D732 全部 PASS；CSS UTF-8 BOM + CRLF、mojibake=0；Learun Web Debug build PASS（0 warning/0 error）。Human Runtime 需刷新缓存后确认工具栏、Grid、Pager 与左右边界。
-- Files：Learun `Areas/WMS/Views/AuditLog/Index.css`；Model repo `agents/wms-pager-integration-harness.js` 与本 handoff。无 backend/API/database/schema 变更。Git commits：none。
+- Files：Learun `Areas/WMS/Views/FG_AuditLog/Index.css`；Model repo `agents/wms-pager-integration-harness.js` 与本 handoff。无 backend/API/database/schema 变更。Git commits：none。
 
 ## 2026-08-25 Frontend Phase 1D Batch D - Page06 / Page07 Business Readability
 
@@ -475,7 +496,7 @@
 - Observability：已扫描 WMS、WMS-HU-Model、Learun、health endpoints、Receipt/HU logs、Learun LogEntity/log4net、Nancy diagnostics 和 `Application_Error`。成功 Receipt 不能代表总请求；Receipt 创建前失败没有完整持久化、可查询来源。`INBOUND_REQUEST_TOTAL_OBSERVABLE=False`、`INBOUND_FAILURE_HISTORY_PERSISTED=False`、`INBOUND_FAILURE_HISTORY_QUERYABLE=False`、`SUCCESS_RATE_METRIC_ALLOWED=False`。
 - API：新增只读 `GET /api/wms/monitoring/overview` 与 `GET /api/wms/monitoring/activity?days=7|14|30`。固定 WmsDb/MesDb 3 秒最小 `SELECT 1` 探针；依赖失败以 HTTP 200 + `DEGRADED` 返回，消息脱敏。没有任意 connection/sql/table/path/target 参数。
 - Metrics：自然日成功 Receipt/Box/Pack/Qty；当前 active Hold Box、Page 01 语义的 WeekCode anomaly、入库后异常 Receipt。Activity 后端按日聚合成功 Receipt 并补零，复用 Page 04 Read Service 返回最近 20 条；不是请求趋势或成功率。
-- Frontend：新增 Learun `/WMS/Monitoring/Index`，六个紧凑 `Wms.MetricCard`、Bootstrap tabs、手动刷新、Activity lazy load、现有 ECharts 3.6、最近活动 Grid、当前异常摘要及 Page 01/02/04 `frameTab` 导航。Proxy 502 分支明确显示 WMS 不可用、业务指标不可用而不是 0；无永久 Loading。`NOT_OBSERVABLE` 显示“当前不可追溯”，没有空失败表。
+- Frontend：新增 Learun `/WMS/FG_Monitoring/Index`，六个紧凑 `Wms.MetricCard`、Bootstrap tabs、手动刷新、Activity lazy load、现有 ECharts 3.6、最近活动 Grid、当前异常摘要及 Page 01/02/04 `frameTab` 导航。Proxy 502 分支明确显示 WMS 不可用、业务指标不可用而不是 0；无永久 Loading。`NOT_OBSERVABLE` 显示“当前不可追溯”，没有空失败表。
 - Runtime GET：overview HTTP 200，WmsDb/MesDb CONNECTED；2026-08-24 自然日成功 Receipt/Box/Pack/Qty 均 0，active Hold Box 298、WeekCode anomaly 308、inbound exception Receipt 34。7-day activity HTTP 200，2026-08-19 为 8/13/13/192，2026-08-20 为 46/1122/3659/230739，recent committed Receipts 20 条。
 - Safety：无 schema/table/log table/migration 变更；未执行 POST、DML 或 DDL。新 Repository 为 typed ADO.NET SELECT-only，无 `dynamic`、`AddWithValue`；Learun 无 direct DB、业务 JS 无端口和敏感连接信息。
 - Verification：WMS Debug build PASS；58 tests PASS；Learun Debug build PASS（0 error，既有 warning）；Monitoring/Foundation JS syntax PASS；受控 Proxy 502 前端合同 PASS（临时 harness 已删除）；前端 UTF-8 BOM + CRLF。应用内 Browser 初始化报 `Cannot redefine property: process`，因此不宣称 UI click/visual 通过。
@@ -523,7 +544,7 @@
 
 ### Implementation result
 
-- Scope: implemented standalone read-only `/WMS/HuDetail/Index?huCode=...`; Page 02 was not modified or integrated.
+- Scope: implemented standalone read-only `/WMS/FG_HuDetail/Index?huCode=...`; Page 02 was not modified or integrated.
 - API inventory: `docs/frontend/pages/03_HU_Detail_History_Page.md`. Existing location and MoveLog logic is reused; OperationLog/HoldLog had no read endpoint.
 - Backend: added `GET /api/wms/hus/{huCode}/detail`, `/operations?top=`, `/holds?top=`. Supports all three HU types, at most two ACTIVE-parent elevations, one current-tree query, backend direct/effective location, typed contents and active Hold. New histories default 50/cap 200.
 - Frontend: Tree + Detail/Bootstrap tabs, `WmsHuTree` over `lrtree`, `WmsTimeline` over `lrtimeline`, safe `WmsJsonViewer`, per-HU lazy history cache and stale-response guards. No write controls.
@@ -540,11 +561,11 @@
 - 真实 API 调查：原有 HU read API 仅覆盖单 HU 基础信息、树、有效位置、MoveLog、Location 主数据、Repack box 状态和 WeekCode anomaly；没有 current inventory server paging API。完整 `CURRENT_HU_READ_APIS` 见 `docs/frontend/pages/02_Finished_Goods_Inventory_Page.md`。
 - 后端：新增只读 `GET /api/wms/inventory/finished-goods/` 与 `GET /api/wms/inventory/finished-goods/{boxCode}/preview`，以及最小 DTO/Service/ADO.NET Repository/Nancy Module。所有参数为 typed `SqlParameter`，无 `dynamic`、`AddWithValue`、DML、DDL 或新依赖。
 - 当前库存语义：`OUTER_BOX ACTIVE` + active Relation + `INNER_PACK ACTIVE` + active Item + effective location；direct box location 优先、active parent location fallback；`SHIPPED` 排除，Hold 保留显示；数量为全部当前有效 Item Qty SUM。
-- 前端：新增 `/WMS/FinishedGoodsInventory/Index`、紧凑 Learun 查询区、`Wms.Grid` server paging（50/页）、camelCase adapter、Hold/status、multi-week summary 和 PREVIEW ONLY Drawer。页面初始/查询/Reset/Grid render/翻页均关闭 Drawer；仅 grid cell 真实 mousedown 后的行选择允许打开。
+- 前端：新增 `/WMS/FG_FinishedGoodsInventory/Index`、紧凑 Learun 查询区、`Wms.Grid` server paging（50/页）、camelCase adapter、Hold/status、multi-week summary 和 PREVIEW ONLY Drawer。页面初始/查询/Reset/Grid render/翻页均关闭 Drawer；仅 grid cell 真实 mousedown 后的行选择允许打开。
 - Preview：一次只读请求返回 box、effective location、WeekCode groups 与 InnerPack list；没有 Move/Hold/Release/Pick/Ship 等写动作，也没有 Reservation/Allocation 伪状态。
 - Runtime GET：list HTTP/API 200，TotalCount 1136；page 1/2 无重复，箱码/物料筛选有效；`B1951228B` Preview HTTP/API 200，4 packs、Qty 320=pack sum、父级 location fallback 到 `INBOUND-PENDING`。
 - 验证：WMS-HU-Model、WMS Nancy Host、Learun Web Debug build PASS；控制台 43 tests PASS；两个新增 JS `node --check` PASS；前端 UTF-8 BOM + CRLF、mojibake 0、read-only/static boundary checks PASS。Learun build 仅有既有 warnings。
-- 未验证：Codex in-app Browser 因当前浏览器运行环境初始化冲突未执行登录态 UI01–UI06，不宣称视觉/点击验收通过。Human 需直达 `/WMS/FinishedGoodsInventory/Index` 完成首次 Drawer closed、Query/Loading、真实 Row click、二次查询不自动打开、Hold 与多 Pack Preview。
+- 未验证：Codex in-app Browser 因当前浏览器运行环境初始化冲突未执行登录态 UI01–UI06，不宣称视觉/点击验收通过。Human 需直达 `/WMS/FG_FinishedGoodsInventory/Index` 完成首次 Drawer closed、Query/Loading、真实 Row click、二次查询不自动打开、Hold 与多 Pack Preview。
 - Schema/API 边界：`NEW_SCHEMA_ADDED=False`、`NEW_TABLE_ADDED=False`、`DIRECT_DB_FROM_LEARUN=False`；未执行 migration、POST 或数据库写入。
 - Foundation deferred：Pagination visual、WeekCode Drawer lifecycle、WeekCode Recalculate final result Modal migration。本轮未修改 Foundation pager 或 Page 01。
 - Git commits：本次未创建提交；Learun Web 为非 Git 工作副本。
@@ -624,8 +645,8 @@
 
 ## 2026-08-22 WMS Frontend Page 01 WeekCode Audit & Recalculate V1
 
-- 实现范围：新增 Learun 紧凑操作台页面 `/WMS/WeekCodeAudit/Index`，接线真实 `GET /api/wms/weekcode/audit` 与 `POST /api/wms/weekcode/recalculate`；查询、异常 Drawer、范围确认、pending 防重复、结果 Drawer 和自动刷新闭环均已实现。
-- Web 文件：新增 `WeekCodeAuditController.cs`、`Views/WeekCodeAudit/Index.cshtml/Index.css/Index.js/WeekCodeAuditApi.js`；旧式 `Learun.Application.Web.csproj` 已显式 Include。
+- 实现范围：新增 Learun 紧凑操作台页面 `/WMS/FG_WeekCodeAudit/Index`，接线真实 `GET /api/wms/weekcode/audit` 与 `POST /api/wms/weekcode/recalculate`；查询、异常 Drawer、范围确认、pending 防重复、结果 Drawer 和自动刷新闭环均已实现。
+- Web 文件：新增 `FG_WeekCodeAuditController.cs`、`Views/WeekCodeAudit/Index.cshtml/Index.css/Index.js/WeekCodeAuditApi.js`；旧式 `Learun.Application.Web.csproj` 已显式 Include。
 - Foundation：新增可复用 `Wms.AuditDiffCell`、`Wms.ResultPanel`；`Wms.Grid` 增加经异步数据源驱动的后端分页适配与 clear/empty message；`Wms.Api` 增加 PascalCase `Code/Message/Data` 归一化及保留 HTTP 400 response JSON 的 GET 传输路径。未修改 Learun、Bootstrap、jfGrid 或第三方源码。
 - Query/API：Audit 只发送 `plantCode/materialCode/materialRevision/anomalyType/riskLevel/isHold/page/pageSize`；Recalculate payload 严格只含 `PlantCode/MaterialCode/MaterialRevision/Operator/RequestId`，不发送 Box 或规则/周码派生值。
 - Operator/RequestId：Operator 优先 Learun `userinfo.account`，回退 `userinfo.userId`，没有稳定标识则阻止提交；Confirm 真正确认后生成一次 `WCR-UI-<learun.newGuid()>`，HTTP 返回前锁定按钮。
@@ -655,16 +676,16 @@
 ## 2026-08-22 WMS Frontend Foundation V1 Implementation
 
 - 实现范围：在现有 Learun/jQuery/Bootstrap 3 基线上新增 `Wms` namespace、Registry、统一 API、SearchPanel、Grid、Select、DateRange、StatusTag、DetailPanel、SideDrawer、Modal、ConfirmDialog，并新增只读 Mock Showcase。
-- Web 文件：新增 `Areas/WMS/Content/Foundation/**`、`Areas/WMS/Controllers/WMSFoundationDemoController.cs`、`Areas/WMS/Views/WMSFoundationDemo/**`；更新 `Learun.Application.Web.csproj` 显式包含项。
+- Web 文件：新增 `Areas/WMS/Content/Foundation/**`、`Areas/WMS/Controllers/FG_WMSFoundationDemoController.cs`、`Areas/WMS/Views/FG_WMSFoundationDemo/**`；更新 `Learun.Application.Web.csproj` 显式包含项。
 - 文档：新增 `docs/frontend/07_Modal_Drawer_Usage_Guide.md` 与 `08_WMS_Foundation_Implementation.md`；更新本 handoff。
-- Schema/API：无 schema 变更；无真实 WMS 业务 API 变更；Showcase 仅增加只读 Mock GET `/WMS/WMSFoundationDemo/GetMockRows`，没有数据库访问或生产写入。
+- Schema/API：无 schema 变更；无真实 WMS 业务 API 变更；Showcase 仅增加只读 Mock GET `/WMS/FG_WMSFoundationDemo/GetMockRows`，没有数据库访问或生产写入。
 - 框架/依赖：Learun、Bootstrap、第三方源码均未修改；未引入 Vue/React/npm/new grid。
 - 构建：VS 2022 MSBuild Debug PASS，0 errors；84 个既有 warning。构建命令：`MSBuild Learun.Application.Web.csproj /t:Build /p:Configuration=Debug /p:RestorePackages=false /p:SolutionDir=D:\com.delton.gz /m:1`。
 - 静态验证：6 个新增 JS `node --check` PASS；无同步 AJAX、`top.$`、fetch、Promise、async/await、Vue/React；直接 `$.ajax` 仅为 `wms-api.js` 中集中式 JSON POST。
 - 浏览器验证：IIS Express 启动成功；匿名请求按框架认证规则返回登录页。应用内浏览器 localhost 权限未获批准，未执行完整可视化交互验收，不宣称 UI runtime PASS。
 - 生命周期：WMS 自有事件使用 namespace 并提供 destroy；Showcase 内置 SearchPanel/Drawer 10 次生命周期自检。`jfGrid/lrselect/lrdate` 缺少统一公开 destroy，包装层复用底层实例，只清理自身资源。
 - Modal/Drawer：Quick Detail=Drawer；Complex Form=iframe Modal；高影响动作=ConfirmDialog；Drawer 可开 Modal；Modal 成功刷新 Drawer 与 Grid；默认最大 Modal 深度 1。
-- 推荐人工验收顺序：登录 Learun → 打开 `/WMS/WMSFoundationDemo/Index` → 搜索/重置/分页 → Drawer 10 次 → Drawer 内 Modal 保存/取消 10 次 → Confirm 取消/确认 → 检查 Registry、遮罩、焦点与控制台。
+- 推荐人工验收顺序：登录 Learun → 打开 `/WMS/FG_WMSFoundationDemo/Index` → 搜索/重置/分页 → Drawer 10 次 → Drawer 内 Modal 保存/取消 10 次 → Confirm 取消/确认 → 检查 Registry、遮罩、焦点与控制台。
 - 风险/限制：老框架底层组件销毁能力有限；真实 API response 映射尚待正式接口联调；Showcase 未注册菜单且只使用 Mock 数据。
 - Git commits：本次未创建提交。
 
@@ -986,3 +1007,211 @@
 - 回归守卫：新增专项 SQL topology 测试，并扩展 Runtime Final Schema guard 禁止 `b.OutboundOrderId`；生产 Runtime 扫描计数为 0。
 - 验证：完整 `142/142` PASS；Model、Test、WMS Host build PASS。Learun WebApi 本轮源码无编译错误，最终仍因运行中宿主占用 `obj/Debug/Learun.Application.WebApi.dll` 报 CS2012。
 - Runtime：未执行扫码 POST、DML/DDL、migration 或 SAP。原失败发生在任何扫码业务写入前，部署新 DLL 后可由 Human 使用原 RequestId 重试并核对 PickDetail/Item、Reservation、位置与日志。
+
+## 2026-09-03 Warehouse Digital Map Phase 1
+
+- 实现范围：在现有 `WMS-HU-Model`/`WMS` 项目内新增 Map DTO、内部模型、原生 ADO.NET Repository、Service、Validation、NPOI Excel Import 和 Nancy Module；未新增后端项目、微服务、库存状态或 Three.js。
+- 数据库：新增未执行的候选迁移 `docs/database/019_FinishedGoodsWarehouseMap.sql`，仅包含需求锁定的 `dbo.WMS_FG_MapLayout`、`dbo.WMS_FG_MapObject`；新增 `WMS-HU-Model/Sql/Map` 下三份纯 SELECT 验证脚本。未连接、迁移或修改 WMS_DEV。
+- API：新增 `GET /api/wms-fg/map/layouts`、`GET/POST /api/wms-fg/map/layouts/{id|root}`、`GET /layouts/{id}/validate`、`POST /layouts/{id}/import/excel`、`POST /layouts/{id}/objects/save` 和 `GET /api/wms-fg/map/layout`。继续使用既有 `ApiResult` envelope 和 `BaseDb`。
+- Import：按单元格/合并单元格生成 LOGICAL geometry；支持 `H101-H112`、`C001-C011`、`01W-30W`、`H912/H913`；展开结果逐一匹配同仓、启用、非虚拟 `WMS_FG_Location`。有效对象 best-effort 写入 DRAFT，无效项返回 issue 并跳过。未解析任意墙体、门、电柜、复杂边框或 polygon。
+- Excel 依赖：按用户指定使用 NPOI 2.3.0（Apache License 2.0，兼容 .NET Framework 4.7.2），传递依赖 SharpZipLib 0.86.0；不用 Office COM/Interop。
+- 前端：`D:\Code\WMS-Map-FrontEnd` 新建 Vue 3 + TypeScript + Vite 项目；Konva Editor 支持选择、拖动、缩放、旋转和本地 dirty state；SVG Viewer 使用同一 `MapObject[]`；提供可配置 `/api` proxy、Excel upload、Validate、Save、Reload 和属性面板。
+- Build/Test：`MSBuild WMS-HU-Model.sln /t:Build /p:Configuration=Debug /m:1` 成功；`WMS-HU-Model.Tests.exe` 为 `Passed 147 tests.`；前端 `npm run build` 成功（136 modules）。后端只有 6 个既有 obsolete warning。
+- Runtime 状态：`DB_RUNTIME_VERIFIED=FALSE`；`DB_RUNTIME_ACCEPTANCE_REQUIRES_MANUAL_VERIFICATION=TRUE`。未执行 migration 019、数据库 DDL/DML、Postman、IIS 启动或浏览器端到端验收。
+- 推荐验收顺序：人工备份/快照与审阅 019 → 人工执行 019 → 顺序运行 VerifyMapSchema/VerifyMapLayout/VerifyMapLocationBinding → 启动 WMS → 启动前端 → Create Draft → 上传 `成品仓布局图.xlsx` → Validate → 选中并拖动 H201 → Save → Reload → SVG Viewer。
+- 偏差/风险：冻结 schema evidence 不含 Map 表，019 是依据本轮锁定字段生成的候选 DDL，执行前必须由 Human 与真实 adms705 schema 对照；真实 Excel 的视觉细节和 multipart/IIS request size 未运行验证；NPOI 2.3.0 为用户指定的旧版本。
+- Git commits：本次未创建提交。现有工作区的 `WMS/Web.config` 与其他未提交内容未修改。
+
+## 2026-09-03 MapLayout Active Status 契约修复
+
+- 根因：`MapRepository.CreateDraftLayout` 固定插入 `Status='DRAFT', IsActive=1`，违反真实数据库的 `CK_WMS_FG_MapLayout_ActiveStatus`，导致创建草稿 POST 在 SQL INSERT 阶段返回 500。
+- 代码修复：新草稿固定写入 `DRAFT/0`；Service 仍仅以 `Status='DRAFT'` 判断可编辑，因此 inactive DRAFT 可保存和导入。Runtime 查询保持 `Status='PUBLISHED' AND IsActive=1`，列表及按 ID 查询不增加 active 过滤。
+- 候选 Schema：未执行的 `019_FinishedGoodsWarehouseMap.sql` 将 `IsActive` 默认值改为 0，并在新建表时限定合法组合为 `DRAFT/0`、`PUBLISHED/1`、`ARCHIVED/0`。已有表分支只检查命名 CHECK 与默认值，差异时中止并要求人工审查；不包含 ALTER/DROP 约束逻辑。
+- 只读核验：`VerifyMapSchema.sql` 增加 MapLayout CHECK constraint 与 IsActive default definition 输出，脚本仍仅包含 SELECT。
+- 测试：新增创建 SQL、Runtime SQL、三种状态组合、只读验证脚本与 inactive DRAFT 可编辑回归；PUBLISHED 只读测试明确使用 active published 布局。完整结果 `Passed 150 tests.`。
+- Build：`MSBuild WMS-HU-Model.sln /t:Build /p:Configuration=Debug /m:1` 成功，0 errors、6 个既有 obsolete warnings。
+- 安全边界：未连接数据库，未执行 DDL/DML/migration，未修改真实 constraint、前端、Map API、路由或 DTO JSON。未创建 Git commit；既有 `WMS/Web.config` 及其他无关工作区改动未触碰。
+- 推荐人工复测：部署新后端程序集后，先 POST `/api/wms-fg/map/layouts` 并确认响应 `status=DRAFT,isActive=false`；再 GET layouts/by-id 确认草稿可见与保存可用；最后 GET Runtime Map，确认只有 active PUBLISHED 可返回。
+
+## 2026-09-03 Warehouse Digital Map Phase 1.5
+
+- Backend scope：NPOI importer 改为基于真实列宽、Point→logical row height 和完整 merged region 提取 `ExcelSourceRect`；中文说明文本先提取 location expression，再展开 prefix/number/suffix range 与 `/ , ， 、` 列表。逻辑坐标不按浏览器或固定矩阵二次归一化。
+- GROUP/split：多货位来源生成透明 `GROUP`（`BindingType=NONE, BindingCode=NULL, StyleKey=LOCATION_RANGE_GROUP`）及独立 location children；宽高比 `>=1.5` 横向、`<=0.6666667` 纵向，中间值默认横向并报告 `IMPORT_SPLIT_DIRECTION_AMBIGUOUS`。共享单元格报告 `SHARED_SOURCE_CELL_SPLIT`，末项使用 source edge 消除 decimal gap。
+- Master/safety：location child 仍以同仓 `WMS_FG_Location` 的 active/non-virtual/type mapping 为权威；未知货位不建对象并报告 `SOURCE_LOCATION_NOT_FOUND`，重复来源保留首次 geometry 并报告 `SOURCE_DUPLICATE_LOCATION`。草稿已有对象时返回 `MAP_ALREADY_HAS_OBJECTS`；Repository 在同一事务再次加锁检查，绝不静默覆盖。
+- Parent/bounds：导入事务先写 GROUP，再解析临时 parent id 写 children，并在同事务按所有 used cells/merged regions（含无文本 merge）加 20 logical-unit margin 更新 MapLayout bounds。
+- Schema：未新增表或执行 migration。候选 019 的 Binding CHECK 已对齐 `NONE/NULL` 组合；真实 adms705 的 ObjectType/Binding CHECK 定义没有可用冻结证据，本轮未连接或 ALTER 数据库，部署前必须人工只读核验 GROUP 是否兼容。
+- Frontend：新增集中中文映射与共享 viewport utility；Editor/原生 SVG Viewer 共用 Layout Bounds、Fit 与 label LOD。首载/导入/Reload auto-fit，提供手动“适应窗口”、鼠标指针中心缩放、空白视口平移、精确库位搜索/定位、selected/hover/search 强制标签、缩小时 GROUP label/放大时 child labels，以及 Validation 全部/错误/警告/信息筛选与 issue 定位。
+- Dirty state：Reload、Import 和 Layout switch 在存在未保存 geometry 时显示中文确认；未实现低优先级 Undo/Redo。
+- Backend verification：Debug solution build PASS（0 errors，6 个既有 obsolete warnings）；完整 `Passed 154 tests.`。新增覆盖列宽累计、row height、merge（含空白 merge）、中文 expression、01W-30W、H912/H913、GROUP、横纵拆分、ambiguous/shared issue、duplicate、unknown master、parent、bounds 和 reimport protection。
+- Frontend verification：`npm run build` PASS（vue-tsc + Vite，138 modules）；启动日志仍为 `[WMS Map] API Proxy Target: https://localhost:44375`，src 无后端 host hardcode。in-app browser 初始化失败，未宣称真实浏览器交互或 DB-backed import/save/reload 已通过。
+- Regression status：Create Draft inactive SQL contract 与 Runtime PUBLISHED/active 静态测试仍通过；Import/Save/SVG 的代码与 build 回归通过。真实 Excel `成品仓布局图(1).xlsx`、GROUP DB constraint、鼠标交互和 Save→Reload 仍需 Human Runtime acceptance。
+- Files：Backend 修改 `MapExcelImportService.cs`、`MapRangeExpander.cs`、`IMapRepository.cs`、`MapRepository.cs`、`MapService.cs`、`Program.cs`、候选 `019_FinishedGoodsWarehouseMap.sql`；Frontend 修改 `App.vue`、`ObjectProperties.vue`、`MapEditor.vue`、`SvgViewer.vue`、`bounds.ts`、`style.css`，新增 `labels.ts`、`viewport.ts`。
+- Git commits：本次未创建提交；既有 `WMS/Web.config` 和其他无关 dirty/untracked 文件未修改。
+
+## 2026-09-03 Warehouse Digital Map Phase 1.6
+
+- Scope：仅修改 `D:\Code\WMS-Map-FrontEnd` 的 viewport、renderer、属性面板和响应式样式；未修改 Backend API、Repository、Service、Validation、Excel importer、DTO、DDL 或数据库。
+- Content bounds：新增 `calculateObjectBounds(objects)`，默认 Fit 以可见 MapObject 实际范围为准，GROUP/child 重叠不影响 min/max；跳过 NaN、Infinity、负 Size，支持旋转 RECT 和 POINT。仅在没有有效对象时回退 Layout Bounds。
+- Viewport：Editor 与原生 SVG Viewer 共用 `calculateFitTransform`（32px padding、aspect ratio、居中）、`calculateZoomToObject`（search max scale 3）、MIN/MAX scale 0.1/8。首次加载、Import、Reload、Layout switch 自动 Fit；Drag/Resize/Rotate/Select/Save 不触发 Fit。“适应窗口”重新使用当前 content bounds。
+- Resize/interaction：两种 renderer 均用 `ResizeObserver` 读取真实容器尺寸；未手动调整时 resize 可重新 Fit，用户 Zoom/Pan/Search 后保持当前 world center 与 scale。Wheel 以 pointer 为中心并阻止页面滚动；空白画布拖动用于 Pan，MapObject drag 保持 geometry edit。
+- Label LOD：统一纯函数阈值为 projected `28x10px`；只对 LOCATION 显示 individual label，Selected/Hover/Search 强制显示。GROUP 在没有任何可正常显示的 visible location child 时显示 `ObjectName`，否则隐藏 group label；children rectangles 始终渲染。两端标签居中，Konva `listening=false`，SVG text `pointer-events:none`。
+- UI：去除固定 1180px 页面宽度和 920x620 canvas 布局，主地图填充剩余区域、右侧属性栏 300px，小屏转单列。Editor 使用弱网格，Viewer 无网格。Location 属性新增所属 GROUP 名称；加载提示改为 `已加载：code · version · count`。
+- Verification：`npm run build` 最终 PASS（vue-tsc + Vite，138 modules）；Vite 仍输出 `[WMS Map] API Proxy Target: https://localhost:44375`。首次 sandbox build 因 `node_modules/.tmp/*.tsbuildinfo` EPERM 未写入，获授权后同一命令成功。
+- Runtime：Browser 技能在初始化时失败，未获得页面 DOM/截图；未点击 Create/Import/Save，也未执行 DB 请求。真实 FG01-MAIN 的 first-fit、Group/Location LOD、wheel/pan/search、Editor/Viewer 和 Save→Reload 必须 Human acceptance。
+- Files：修改 Frontend `src/App.vue`、`src/components/ObjectProperties.vue`、`src/map/editor/MapEditor.vue`、`src/map/viewer/SvgViewer.vue`、`src/map/geometry/viewport.ts`、`src/style.css`。没有新增依赖或测试框架。
+- Git commits：本次未创建提交；Frontend 目录当前不是 Git worktree。Backend 既有 dirty/untracked 内容与 `WMS/Web.config` 未修改。
+
+## 2026-09-05 Page07 SAP 通信审计与受控重新发送
+
+- Scope：Page07 新增第 5 个“SAP通信”页签，含默认“接收”和“发送”子页签。接收读取 `WMS_FG_OutboundOrderReceiveLog`，发送读取 `WMS_FG_SapIntegrationLog`；Repository 使用标准化 `UNION ALL`、方向/日期/交货单/状态过滤及服务端分页，`INBOUND:{id}`/`OUTBOUND:{id}` 消除两表 Id 冲突。
+- Detail：新增方向化详情 Route；列表不返回大型 JSON。接收详情明确“接收响应正文未持久化”，且不以唯一 ReceiveDt 伪造完成时间或耗时；发送详情按业务摘要、当前状态、追溯信息、默认折叠技术证据展示。未知 Terms 保留 raw fallback，JSON 使用 text node，不注入 HTML。
+- Resend：仅 Page07 发送详情抽屉显示操作；业务条件为 OUTBOUND + S0089 + 选中日志自身/Posting 都是最新 FAILED + Order=PICKED。原因必填并二次确认。事务内重验 `ExpectedIntegrationLogId`、状态、PayloadHash、冻结报文与并发所有权；相同 RequestId 返回既有 Attempt，不再次调用 SAP。
+- Permission：新增代码契约 `sapResend`，Learun `FG_AuditLogController.ResendSap` 再查按钮权限并从 `LoginUserInfo.account` 写 TriggerUser，不接受客户端 Operator。通用 `/api/wms-fg/*` Proxy 精确拒绝 retry POST，旧 `/WMS/FG_SapOutboundPosting/Logs` 保留为携带 businessKey 的 Page07 跳转。实际按钮记录及 IT 管理员授权需 Human 在 Learun 中配置。
+- Schema：新增未执行候选迁移 `docs/database/020_SapIntegrationResendAudit.sql`，为发送日志增加 nullable `RequestId VARCHAR(100)`、`TriggerUser VARCHAR(50)`、`TriggerRemark NVARCHAR(500)` 及非空 RequestId filtered unique index。历史行允许为空；未复制接收日志。部署顺序必须为人工备份/审批 → migration 020 → backend/runtime → Learun Web → `sapResend` 权限。
+- API：扩展 `GET /api/wms-fg/integration/sap/logs` 的 dateFrom/dateTo/direction；新增 `GET .../logs/{direction}/{id}`；旧 `GET .../logs/{id}` 仍解释为发送日志。Retry body 新增必填 `ExpectedIntegrationLogId`，用于防止基于过期抽屉重发。
+- Verification：standalone solution Debug build PASS（0 errors，6 个既有 obsolete warnings）；console suite `Passed 156 tests.`；Learun Web build PASS；4 个相关 JavaScript syntax check PASS。Learun WebApi 完整编译到本轮源码无错误，最终因运行宿主占用 `obj/Debug/Learun.Application.WebApi.dll` 报 CS2012。
+- Not executed：migration 020、任何 WMS_DEV DDL/DML、真实 SAP、Postman/DB integration、浏览器 Human Runtime、Learun 权限数据写入。不得在 migration 020 执行前部署依赖新列的后端。
+- Human acceptance：使用 SAP Stub 或明确批准的测试单验证两方向独立分页/过滤、详情 JSON、旧入口跳转、无权限 403、通用代理绕过失败、最新 FAILED 重发、旧 FAILED/UNKNOWN/SENDING/SUCCESS 拒绝、同 RequestId 不发生第二次 SAP 调用，以及原四 Tab、Pager、Drawer 与 Shipment Management 回归。
+- Git commits：本次未创建提交；保留并未清理既有工作区改动。
+
+## 2026-09-07 WMS-HS 标签维护与输出链路静态分析
+
+- Scope：只读分析 `D:\Code\WMS-HS\Developer_Chenhong18` 的 `WMS_LabelTemplate`、`WMS_LabelParamImport`、`HS_LabelMapperMaint`、客户发货打印、内包打印及动态字段求值代码；未修改该旧系统。
+- 结论：`.btw` 提供 Named Values，`WMS_PrintingDataMaint` 定义 0 默认/1 主数据列/2 存储过程/3 手工四种求值方式，`HS_LabelMapperMaint` 保存模板+料号+参数定制值；预览调用 `BtwExportImg`，正式业务打印向 `HS_LabelPrinterPath.PrinterPath` 写 `[Bartender]/[NamedValues]` UTF-8 无 BOM 任务文件。
+- 关键缺口：C# 求值器不直接读取 `HS_LabelMapperMaint`，其最终生效依赖所选数据库存储过程；过程定义和打印目录监听程序不在仓库内，需只读采集生产证据后才能确认完整优先级与物理出纸闭环。
+- 风险：OQC 仅客户发货打印强制；内包路径目录校验被强制覆盖；导入缺少 NamedValue 归属校验且失败早退未显式回滚；任务文件与历史非原子；秒级文件名存在冲突风险；打印共享目录凭据存在明文配置（未在文档记录具体值）。
+- 文档：`docs/legacy-label-maintenance-and-output-analysis.md`。
+- Verification：仅静态源码追踪与 Markdown 内容检查；未连接数据库、未调用 BarTender 服务、未写打印目录、未执行真实打印或构建。Git commit：未创建。
+
+## 2026-09-08 WMS-HS BtwUpload/BtwExportImg 链路深挖
+
+- Scope：按用户指定只读追踪 `Learun.Application.TwoDevelopment/WMS` 内的接口配置、HTTP 客户端、模板同步、动态求值、预览和打印代码；未修改旧系统。
+- 结论：`BtwUpload`/`BtwExportImg` 是 `WMS_InterfaceConfig.InterfaceKey`，地址来自 `InterfaceAddress`；WMS 使用 RestSharp 发送 JSON，工程没有 Seagull/BarTender SDK引用或 `.btw` 打开/渲染代码，真实解析实现位于仓库外部服务。
+- 数据断点：全部 C# 引用中没有打印求值代码直接读取 `HS_LabelMapperMaint`；其生效与否依赖 `ValueType=2` 所选存储过程定义，当前仓库无法确认。
+- 风险证据：旧 HTTP 客户端无限超时、该调用形成空凭据 Basic Header、调用方未先检查 HTTP/空响应、字段以逗号字符串返回；外部模板发布与数据库事务不存在分布式原子性。
+- 文档：补充 `docs/legacy-label-maintenance-and-output-analysis.md` 第 14 节。未查询数据库、未访问接口地址、未检查外部服务器部署、未执行打印或构建。Git commit：未创建。
+
+## 2026-09-08 X02 建模与 BarTender API 实证
+
+- Scope：结合用户截图拆解 X02 的默认值、可选值、函数、手动四类配置；只读访问 10.8.10.2:8888 的 Swagger 和 `LoadFileds(X02.btw)`，未调用 UploadFile、ExportImgStream、CreateFile 或打印。
+- 实证：Swagger 标题为“WebApi测试文档”，公开自定义 `BarTender` Controller 的 `LoadFileds/ExportImgStream/ExportBtwStream/UploadFile/CreateFile`；模型为 `FileModel(Name,Content)`、`DataModel(Name,Params)`、`BaseResult`，与 WMS 调用契约一致，证明外层 API 是项目自建封装。
+- X02：`LoadFileds` 返回 `kehuxinghao,banben,shengchanriqi,zhouqi,shuliang,3,2,1,changneiliaohao,liushui`，与截图十行完全对应，确认建模字段来自 `.btw` Named Data Sources。
+- 函数机制：页面显示 `HS_LabelFunction.FuncNotes`，实际保存 `FuncName` 到 `FuncExpression`；打印时通过 `ExecuteByProc` 调存储过程，统一传 `@namedvalue/@delivery/@product/@masterpack/@resultData OUTPUT`。存储过程定义仍未取得，未声称具体 SQL 已确认。
+- 文档：补充 `docs/legacy-label-maintenance-and-output-analysis.md` 第 15 节。未连接数据库、未修改旧系统、未执行构建或真实打印。Git commit：未创建。
+
+## 2026-09-08 SwaggerWebApi BarTender服务源码确认
+
+- Source：用户补充 `D:\Code\WMS-HS\SwaggerWebApi` 后确认其为 10.8.10.2:8888 服务源码；核心文件为 `BarTenderController.cs` 与 `BarTenderHelper.cs`。
+- 技术：ASP.NET Web API / .NET Framework 4.7.2 / AnyCPU，引用 `Interop.BarTender.dll 11.2.1.1`，通过 COM Automation 的 `Application/Formats.Open/NamedSubStrings/SetNamedSubStringValue/ExportToFile` 解析和预览 `.btw`，不是旧 WMS进程内 SDK。
+- Upload：写 `C:\LabelTemplates\`，同名先删后写，再打开模板枚举 `NamedSubStrings.GetSubString(i).Name`，逗号返回；无版本、哈希、备份或原子替换。
+- Preview：注入 Hashtable同名值，导出临时 JPG、读取 byte[] 并删除；Web API JSON转换为 Base64供前端显示。
+- 风险：静态共享 COM Application/Format、异常路径缺少 finally、Quit后引用不重置、未显式释放 COM、路径穿越面、全局 Basic授权过滤器被注释、AnyCPU/COM位数、秒级任务文件名与非原子模板覆盖。
+- 文档：更新此前阶段性结论，并新增 `docs/legacy-label-maintenance-and-output-analysis.md` 第 16 节。只读分析，未修改或构建 SwaggerWebApi，未调用上传/创建/打印接口。Git commit：未创建。
+
+## 2026-09-08 DT 标签模板维护迁移第一阶段
+
+- Scope：在 `D:\com.delton.gz\Learun.Application.WebApi\Modules\WMS\DT_LabelTemplate` 新增 Models、Repository、Service、Nancy Module、托管 BarTender SDK 适配器和 SQL/样例工具；在 `D:\com.delton.gz\Learun.Application.Web\Areas\WMS\Views\DT_LabelTemplate` 新增 MVC Controller、左右布局页面、CSS、业务脚本和 WebApi 适配器，并登记到两个经典 `.csproj`。
+- Backend：实现模板 CRUD/BTW 上传下载、SDK Named Value 解析、字段同步、四类字段建模、函数目录、料号参数及事务 Excel upsert、人工测试值图片预览、OQC、SDK health。Repository 使用 ADO.NET typed parameters 和显式事务；SDK 操作进程内串行，每次使用独立临时 BTW、Engine 和 Format，并在 finally/using 中释放。
+- Schema：新增未执行候选 `001_DT_LabelTemplate.sql`，定义 `DT_LabelTemplate/Field/MaterialValue/Function` 和字段名称 TVP；旧空 `WMS_LabelTemplate` 不变。提供默认 dry-run 的三样例迁移工具和只清理新 DT 表样例的脚本。未执行任何业务数据库 DDL/DML。
+- Frontend：左侧模板查询/列表/版本/OQC及操作；右侧模板摘要和“字段建模/料号参数”页签；支持表内建模、料号参数维护与 Excel 导入、人工测试值预览弹窗和无选择空状态。
+- SDK compatibility correction：用户明确选择“降低 BarTender 版本以适配框架”。WebApi 保持 net461，工程引用改为 BarTender 2016 R7 Print SDK `11.0.x`，默认 `BarTenderSdkDir=C:\Program Files\Seagull\BarTender Suite\SDK\Assemblies`；增加 MSBuild 缺失门禁和运行时 major/minor 检查，拒绝误加载 2021/2022 SDK。x86/x64 SDK、构建平台和 IIS 应用池必须一致。
+- Verification：Learun Web Debug Build PASS；两个 JS `node --check` PASS；建表 SQL `SET PARSEONLY ON` PASS；迁移 PowerShell parser PASS；静态检查未发现 `dynamic`、`AddWithValue` 或 Nancy route 参数直传 Service。WebApi 新模块和 SDK 引用已真实登记进 `.csproj`；使用隔离的 2016 API 形状引用桩执行完整 Build PASS，证明新增 C# 与工程登记自洽，随后已删除桩并恢复 `bin` 为不含桩引用的宿主构建。本机没有真实 2016 SDK，正常 Build 按预期由 `ValidateBarTender2016Sdk` 明确阻止；不能把桩编译当成真实 SDK 验证。
+- SDK runtime：尚未在 BarTender 2016 R7 环境运行。安装并授权 2016 SDK 后，必须先完成真实编译，再让 `/sdk-health` 返回 `VersionCompatible=true, EngineStarted=true`，随后执行 X02 字段解析和三模板图片导出。
+- Not tested：数据库建表和样例导入、3 模板数量/SHA 对账、浏览器/Postman/IIS、真实旧存储过程求值、物理打印。详细部署与验收文档：`docs/dt-label-template-migration-phase1.md`。
+- Git：未创建提交；未触碰仓库中既有无关改动。
+
+## 2026-09-09 DT 标签 WebApi 4.7.2 / x64 升级
+
+- Scope：将 `D:\com.delton.gz\Learun.Application.WebApi` 从 .NET Framework 4.6.1/未固定位数升级为 .NET Framework 4.7.2/x64；切换 DT 标签适配器到本机 BarTender 2022 R8 Print SDK 11.3.x；未执行任何数据库 DDL/DML。
+- Project：Debug/Release 均设置 `PlatformTarget=x64`、`Prefer32Bit=false`，主工程及 `.csproj.user` 均设置 `Use64BitIISExpress=true`；默认 `BarTenderSdkDir=C:\Program Files\Seagull\BarTender 2022\SDK\Assemblies`。移除无活动调用的 x86 `Pechkin 0.5.8.1` 引用，保留公共 packages 文件避免影响其他项目。
+- Dependencies：显式引用 `System.ValueTuple 4.6.1/net47`（程序集 4.0.5.0）并更新 binding redirect；新增 `NPOI.OOXML 2.7.5.0` redirect。DT 标签 5 个 C# 文件和 3 个 SQL/PowerShell 内容文件已登记到经典 `.csproj`；SQL 未执行。
+- BarTender：运行时版本门禁从 11.0.x 改为 11.3.x；错误信息更新为 2022。Named Value 注入使用 11.3 可用的枚举判断和 `SetSubString`，不调用不存在的 `SubStrings.Contains`。
+- Build：正式 WebApi `.csproj` 使用真实 `Seagull.BarTender.Print 11.3.8.1` 的 Debug 和 Release 隔离 Rebuild 均 PASS，0 errors；只有大量既有编译 warning。两个最终程序集 CorFlags 均为 `PE32+ / 32BITREQ=0 / 32BITPREF=0`；输出含 ValueTuple 4.0.5.0、NPOI.OOXML 2.7.5.0，不含 Pechkin。
+- Runtime：64 位 Windows PowerShell 成功加载 SDK 11.3.8.1，但 `Engine.Start()` 约 47 秒后仍返回 COM `0x800706BA`。同期 Application 日志持续出现 `MSSQL$BARTENDER 18456`：`DELTON\953818` 无法打开 `Datastore`。BarTender/System/Licensing/Print Scheduler 和 SQL 服务均为 Running；需 Human 在 Administration Console 修复 System Database/权限，必要时执行 BarTender Repair，然后复测 `/api/wms-fg/label-templates/sdk-health`。
+- IIS：检测到本机同时存在 x86/x64 IIS Express 进程，未擅自终止。首次正式启动前需关闭当前解决方案对应实例并确认使用 `C:\Program Files\IIS Express\iisexpress.exe`；正式 IIS 设置 `Enable 32-Bit Applications=False`。
+- Not tested：真实 IIS/浏览器/Postman、登录/数据库/Excel/PDF 全回归、X02 上传解析、图片导出、并发预览、数据库建表和样例导入。详细执行说明：`docs/dt-label-webapi-net472-x64-upgrade.md`。
+- Git：未创建提交；保留工作区既有无关改动。
+
+## 2026-09-10 DT 标签新版详细对象数据源自动识别
+
+- Scope：为 `DT_LabelTemplate` 增加 BarTender Actions API详细元数据客户端、Named Data Source到对象数据库字段的精确引用图解析、System重新解析/诊断 API及前端状态展示；未执行任何数据库 DDL/DML，也未修改业务数据。
+- Backend：新增 `BarTenderMetadataClient`，使用 Windows Integrated Authentication向 `http://localhost:5159/api/actions` 提交 BTXML `GetFormatProperties IncludeObjectDataSources=true`，读取任务 `Response` 变量。REST失败时保留 Print SDK基础字段解析。只有唯一明确引用链才写 `BtwDatabaseFieldName`；歧义、仅Used字段集合和超过20字符限制均留空并返回原因。
+- Sync：上传/替换继续刷新技术元数据并保留同名字段业务配置；新增 `RefreshFieldMetadata` 事务方法供原文件重新解析，仅更新技术元数据和非空描述，不改变模板文件版本或OQC。
+- API：新增 System专用 `POST /api/wms-fg/label-templates/{id}/metadata/reparse` 和 `GET /api/wms-fg/label-templates/{id}/metadata-diagnostics`；非System返回HTTP 403。模板保存响应增加解析统计。`sdk-health` 增加 Actions API连通、认证和详细元数据版本状态。
+- Frontend：System显示“重新解析/解析详情/打印配置”；数据库字段显示 `FIELDxx`、`未解析` 或 `映射有歧义`，详情弹窗展示候选、来源、引用链和警告。普通用户不显示System操作。
+- Config/Build：增加 Actions API URL/开关/超时配置；SDK门禁允许11.3+基础功能并明确11.4.1+详细元数据要求，工程安装11.8后优先使用其 SDK目录。WebApi Debug/Release x64 Build PASS，产物 `PE32+ / 32BITREQ=0 / 32BITPREF=0`；Learun Web Debug Build PASS；前端两个 JS `node --check` PASS；静态扫描未发现 `dynamic`/`AddWithValue`。
+- Parser verification：脱敏结构夹具得到 `IDBar/Database/FIELD3/工号条形码/Exact`；双候选得到 `Ambiguous` 且不写字段；只有 `LastKnownSchema Field Used=true` 得到 `Unresolved`，没有位置推断。
+- Runtime gate：本机仍安装 BarTender 2022 R8 / SDK 11.3.8.1，5159端口和相关服务运行，但当前工具进程没有可用于HTTP Negotiate的凭据；下载目录没有11.8安装程序，许可升级权益未确认。因此没有安装11.8、没有取得真实新版 GetFormatProperties XML，也没有调用数据库重新解析接口。安装与真实BTW验收仍需人工完成。
+- Docs：更新 `docs/dt-label-btw-field-metadata.md`，明确配置、映射规则、脱敏夹具和真实XML待办。Git/SVN commit未创建；保留全部既有无关改动。
+
+## 2026-09-09 DT 标签正式打印链路
+
+- Scope：在 DT 标签模块实现正式 TXT 任务发送、四类字段最终求值、BTW 按 SHA-256 原子发布、RequestId 幂等、打印机配置/路径测试/历史 API，以及模板页普通打印和 System 专用配置报表；未改监听程序，未执行物理打印。
+- Schema：新增未执行候选 `Learun.Application.WebApi/Modules/WMS/DT_LabelTemplate/Sql/002_DT_LabelPrinting.sql`，创建 `DT_LabelPrinter` 和 `DT_LabelPrintJob`。打印机软删除；历史保存模板/打印机/目录/字段/TXT快照且不级联删除。脚本使用 `SET XACT_ABORT ON` 和显式事务，本轮未连接或修改数据库。
+- Resolver：料号参数优先于四类字段；动态字段使用固定白名单和参数化 SQL；函数按启用目录及真实过程检查后调用旧五参数契约；手工字段按 Named Value 取请求值。最终字段按 SortNo 输出并拒绝 CR/LF。预览仍不执行函数。
+- Delivery：BTW 相同 SHA 跳过，不同内容先写临时文件后同目录替换；TXT 为 CRLF、UTF-8 无 BOM，先写 `.tmp` 后改名 `.txt`。`SENT` 仅表示文件已发送。相同 RequestId 返回原任务，不生成第二份。
+- API：全部接口统一使用 BaseApi 已有白名单前缀 `/api/wms-fg/label-templates`；新增普通 `/printers`、`/{id}/print`，以及仅 System 可用的 `/printer-configs*`、`/print-jobs*`。管理身份从 account Header 读取并按 System 忽略大小写判断；Body 不接受操作人。account Header 可被客户端伪造，正式上线前建议由可信代理/MVC覆盖或改为可验证 token，这是未关闭的权限风险。
+- Frontend：摘要区新增受 OQC/打印机状态控制的“打印”按钮；弹窗含打印机、料号、交货单、外箱号和手工字段。System 显示“打印配置”，提供配置/历史两个页签、路径测试和最终 JSON/TXT详情。新增 Controller/4 个视图资源已登记到 Web `.csproj`。
+- Verification：WebApi Debug、Release x64（工程 Platform=AnyCPU，实际 PlatformTarget=x64）Build PASS；Release 程序集为 `PE32+ / 32BITREQ=0 / 32BITPREF=0`；Learun Web Debug Build PASS；`Index.js` 与 `DTLabelTemplateApi.js` 的 `node --check` PASS；新模块静态扫描无 `dynamic`/`AddWithValue`。编译仅有项目既有 warning。
+- Not tested：未执行 migration 002、未调用数据库/API、未写任何打印共享目录、未运行监听程序、未做浏览器/Postman、未验证真实存储过程和实物标签。部署前必须先人工审批迁移及测试目录。
+- Docs：`docs/dt-label-formal-printing.md`；第一阶段迁移文档已链接本阶段说明。
+- Git：未创建提交；外部 Learun 目录不是当前 Git worktree，保留所有无关内容。
+
+## 2026-09-09 DT 标签 API Nancy 格式统一
+
+- Scope：仅重构 `DT_LabelTemplate/Modules/LabelTemplateModule.cs` 的 HTTP 适配层，仿照 `HuModule`、`HuLocationModule` 的 Nancy 写法；Service、Repository、数据库模型、SQL 和前端请求地址均未修改。
+- Routing：保留相对路由并统一使用 BaseApi 已有白名单前缀 `/api/wms-fg/label-templates`。每个 route 参数均严格使用 `object raw = args.xxx` 后 `Convert.ToString(raw)` 的两步转换；绑定 DTO 直接传 Service。
+- Product master：标签动态字段和料号存在性校验已从不存在的 `HS_Product/HS_ProductProperty` 切换到 `MD_ProdMaster`，固定筛选 `prodrev='02'`、`plantcode='1020'`；支持 `prodno/baseUnit/unitarea/UnitWeight/customerpn/customermodel/layer` 映射。
+- BTW field metadata：`LabelTemplateFieldDto`、SDK 解析、字段同步和前端字段建模已增加 `BtwSourceType/BtwDatabaseFieldName`。字段替换保留业务建模，只刷新可确认的 BTW 技术元数据；描述为空时保留旧值，数据库绑定消失时字段名清空。新增幂等但未执行的 `003_DT_LabelTemplateField_BtwMetadata.sql`，说明见 `docs/dt-label-btw-field-metadata.md`。
+- BTW metadata runtime check：2026-09-10 只读确认 `HelloWorldTrevor.btw` 含 `IDBar`，但实际 XML 探针仍在 `Engine.Start()` 被 COM `0x800706BA` 阻断，未取得 `SubStrings.XML/GetFormatProperties`，故 `IDBar/Database/FIELD3/工号条形码` 运行验收尚未通过，不能声称已验证。
+- BTW metadata verification：WebApi Debug/Release（.NET Framework 4.7.2、x64）编译通过，前端 `Index.js/DTLabelTemplateApi.js` Node 语法检查通过；模块静态检查未发现 `dynamic` 或 `AddWithValue`。反射调用 XML 解析器的合成契约测试得到 `IDBar/Database/FIELD3/工号条形码`，并验证描述缺失时保留旧值、数据库字段候选不唯一时留空。未执行 `003`，未上传/替换模板，事务 SQL 的业务配置保留和数据库字段清空仍需 COM 修复后做集成验证。
+- Response：普通接口统一使用 `Response.AsJson(ApiResult.Success/Fail)`，响应字段为 `Code/Message/Data`；前端 `Wms.Api.normalize` 已兼容大小写两种字段。BTW 和 Excel 下载成功仍返回附件流，异常返回统一 ApiResult。
+- Verification：完整 WebApi Debug 隔离 Rebuild PASS，0 errors；只有项目既有 warning。静态检查未发现 `dynamic`、`AddWithValue` 或 route 参数直接传 Service。未启动 IIS、未调用数据库、未执行 SQL，也未进行浏览器/Postman 联调。
+- Git：未创建提交；保留工作区既有无关改动。
+
+## 2026-09-10 DT 标签 TXT Print Command Script 协议改造
+
+- Scope：将 DT 标签正式打印 TXT 从 `[Remark]/[Bartender]/[NamedValues]` INI 格式替换为 `TrevorTest.txt` 的 BarTender Print Command Script；未修改前端、Nancy API、数据库结构或业务数据。
+- Mapping：`ResolvedLabelValue` 增加 `BtwDatabaseFieldName`。每个 Named Value 必须具有唯一非空数据库字段映射；缺失或重复时任务失败。字段名按不区分大小写的自然序输出，断档不补列；表头或值含 `|`/CR/LF 时拒绝发送。
+- Protocol：固定生成 `%BTW% /AF="..." /D="" /PRN="..." /R=3 /P /C=1`、`%END%`、字段表头和单条数据共四行。`/AF` 使用发布 BTW 路径，`/PRN` 使用物理打印机名称。TXT 使用 CRLF、UTF-8 BOM，继续先写 `.tmp` 后原子改名。
+- History：`TaskContent` 保存无 BOM 逻辑文本；`ResolvedValuesJson` 因模型扩展同时保存 Named Value、BTW 数据库字段、最终值、来源和 SortNo。操作人仍保存在打印历史，不再写入 TXT。
+- Verification：WebApi Debug/Release 均 Build PASS（工程 Platform=AnyCPU，`PlatformTarget=x64`）；Release 产物为 `PE32+ / 32BITREQ=0 / 32BITPREF=0`；隔离测试生成文件与 `D:\Projects\PK\L03\TrevorTest.txt` 逐字节一致，并通过自然排序、断档、空值、四类求值、料号覆盖、缺失/重复映射及竖线拒绝测试。模块静态扫描无 `dynamic`/`AddWithValue`。
+- Not tested：未连接数据库，未写入真实监听目录，未启动监听程序，未执行物理打印。Git/SVN commit 未创建；保留工作区既有无关改动。
+
+## 2026-09-10 DT 标签数据库字段手工保存修复
+
+- Scope：修复字段建模提交 `BtwDatabaseFieldName` 后 Repository 未落库的问题；未新增数据库字段、未执行 DDL/DML、未修改业务数据。
+- Save：所有可保存字段建模的用户均可提交非空数据库字段名；最长 20 字符，拒绝 `|`、CR、LF，并对最终有效映射执行不区分大小写的重复检查。空输入通过 `COALESCE(NULLIF(LTRIM(RTRIM(@DatabaseField)),N''),BtwDatabaseFieldName)` 保留原值。客户端提交的 `NamedValue/BtwSourceType` 不参与修改，保存字段和重置 OQC仍在同一事务。
+- Upload/replace：首次上传继续保存解析元数据；替换 BTW 时精确非空数据库字段覆盖原值，未解析或歧义保留人工映射，新字段未解析保持为空，删除字段仍按原规则级联清理料号参数。
+- API/UI：移除 System“重新解析”按钮、前端 API和 `POST /api/wms-fg/label-templates/{id}/metadata/reparse`。保留诊断 GET，但只从已保存字段生成“已保存/未解析”结果，不再启动 BarTender SDK/Actions API。保存成功仍重新加载模板及字段，以数据库返回值刷新界面。
+- Runtime boundary：未连接数据库，因此实际 UPDATE、事务回滚及 OQC 状态需后续在测试库通过 API/Postman 验证。
+- Verification：`Index.js`、`DTLabelTemplateApi.js` 的 `node --check` PASS；DT 标签 C# 静态扫描无 `dynamic`/`AddWithValue`，旧 reparse 路由、Service、Repository和前端引用均已清除。WebApi Debug/Release 未能在本轮完成：原 `bin/obj` 被运行中的 IIS/调试进程锁定，隔离构建随后确认本机及项目目录当前均找不到 `Seagull.BarTender.Print.dll`，触发工程既有 `ValidateBarTenderSdk` 门禁；未将此环境失败误报为编译通过。
+- Recommended test order：安装/恢复 64 位 BarTender Print SDK并通过 `/p:BarTenderSdkDir=...` 指向 Assemblies目录；停止调试宿主后依次 Rebuild Debug/Release；调用字段保存 API验证 `FIELD1/FIELD2/FIELD3` 回读、空输入保留、重复/超长/非法字符整批失败及 OQC取消；再上传精确/未解析两类新版BTW验证覆盖与保留语义。
+
+## 2026-09-11 DT 标签数据库字段未保存运行态排查
+
+- Root cause：Repository/Service 源码已包含手工保存修复，且两文件已登记在 WebApi `.csproj`；但源码时间分别为 2026-09-10 16:49/16:52，页面实际使用的 `bin/Learun.Application.WebApi.dll` 时间为 16:26，运行程序集早于修复。因此旧 API仍返回“字段建模保存成功”，实际只保存旧 UPDATE包含的描述和业务字段，不保存 `BtwDatabaseFieldName`。
+- Build blocker：本机现有 BarTender 11.11 Print SDK程序集目标为 .NET Framework 4.8；WebApi仍为 .NET Framework 4.7.2，MSBuild以 MSB3274/MSB3275拒绝引用并最终报 `Seagull/Engine/LabelFormatDocument` 类型缺失。故修复代码尚未生成可部署 DLL。
+- Recovery：排查中的 Rebuild在编译前清空了 WebApi `bin`，随后因上述框架门禁失败；已从既有 `artifacts/dt-label-webapi-net472-x64-audit/bin` 恢复 410 个运行依赖，并用 `obj/Release/Learun.Application.WebApi.dll`（2026-09-10 16:26）恢复主程序集。恢复版本仍不包含本次保存修复，只用于避免网站因缺失 bin立即不可运行。
+- Decision needed：要部署修复，需二选一：安装可供 .NET Framework 4.7.2引用的旧版 64 位 Print SDK后重建，或将 WebApi升级到 .NET Framework 4.8以匹配现有 BarTender 11.11 SDK。未在本轮擅自改变目标框架。
+- Safety：未连接数据库，未执行 DDL/DML，也未伪造字段保存结果。
+
+## 2026-09-11 DT.BarTenderApi 独立服务迁移
+
+- Architecture：在“03 二次开发模块”新增独立 `DT.BarTenderApi`（.NET Framework 4.8/x64），内置请求/响应 DTO，不新增 Contracts项目。主 `Learun.Application.WebApi`保持 .NET Framework 4.7.2/x64，只通过 HTTP调用 Bridge，无项目引用和 Seagull程序集引用。
+- Migrated SDK scope：原主 WebApi中的 `BarTenderLabelEngine`、`BarTenderMetadataClient/MetadataXmlParser`已迁移到 Bridge，继续负责 BTW基础字段、GetFormatProperties详细元数据、预览和健康检查；Bridge不访问 WMS数据库。SDK运行时版本固定校验 11.4。
+- Main API：新增 `BarTenderApiClient`实现原 `IBarTenderLabelEngine`契约；模板上传和预览的 Service编排、字段同步事务、OQC和打印链路不变。配置改为 `BarTenderApiEnabled/Url/Key/TimeoutSeconds`，源码默认禁用且密钥为空。
+- Bridge API：新增 `POST /api/bartender/templates/parse`、`POST /api/bartender/templates/preview`、`GET /api/bartender/health`；使用 `X-DT-BarTender-Key`，Bridge密钥为空时 fail closed。BTW只接受安全文件名和 Base64内容，主请求限制 20MB、Bridge HTTP限制 32MB。
+- Solution：Bridge显示在主解决方案“03 二次开发模块”，只配置 ActiveCfg且无 Build.0，默认生成解决方案不会触发 SDK门禁；另提供独立 `DT.BarTenderApi.sln`用于标签开发和发布。
+- Build：主 WebApi Debug/Release在未传 BarTenderSdkDir情况下均 PASS，证明普通开发环境不再需要 SDK。Bridge Debug/Release使用本机11.11 SDK完成结构性编译，但运行健康检查会按设计拒绝非11.4；正式11.4 SDK编译、真实 Engine、BTW解析和图片预览尚待安装11.4后验收。11.11结构性构建出现 Newtonsoft 11/13版本警告，需用目标11.4环境重新判定依赖版本。
+- Static：两个 csproj及配置 XML解析通过；主项目无 `Seagull.BarTender/BarTenderSdkDir/ValidateBarTenderSdk`；主解决方案无Bridge Build.0；新范围无 `dynamic/AddWithValue`。未连接数据库、未执行 DDL/DML、未调用真实Bridge或打印机。
+- SVN：未执行 add/commit。Bridge目录、主 csproj/solution/config和标签源码需在干净工作副本中选择性提交；排除 bin/obj/.vs/*.user、Seagull DLL、许可证和真实 API Key。部署说明见 `docs/dt-label-bartender-bridge.md`。
+## 2026-09-12 Learun WMS View folders FG_ prefix alignment
+
+- Renamed nine Learun view folders to `FG_AuditLog`, `FG_FinishedGoodsInboundRecords`, `FG_FinishedGoodsInventory`, `FG_HuDetail`, `FG_MasterData`, `FG_Monitoring`, `FG_SapOutboundPosting`, `FG_WeekCodeAudit`, and `FG_WMSFoundationDemo`.
+- Renamed the corresponding controller files and classes to `FG_*Controller`; public MVC routes now use `/WMS/FG_*/...`. Updated `.csproj`, all WMS page navigation, redirects, permission URL checks, frontend harnesses, and current documentation. Learun menu/module URLs stored outside source must be aligned by Human deployment configuration.
+- Updated all Razor asset references, 44 matching `Learun.Application.Web.csproj` Content entries, and the nine controllers to use explicit `~/Areas/WMS/Views/FG_*/...` view paths. Controller names and public routes were not renamed.
+- Updated affected frontend harness/document path references. Old physical folders and old runtime view-path references are zero; all project and Razor targets exist; syntax checks passed for all 22 moved JavaScript files.
+- Encoding: all 44 `.cshtml`/`.js`/`.css` files in the renamed folders, all modified controllers, the project file, harnesses, and documentation are UTF-8 with BOM. Text content and line-ending style were otherwise preserved.
+- Build: Learun Web build is currently blocked by pre-existing unrelated duplicate `GetDetailListNoCache` members in `DataItemIBLL`/`DataItemBLL`; a project-reference-disabled build is also blocked by 16 unrelated stale dependency API mismatches. No WMS rename-related compiler error was reported.
+- Database/API/business logic changes: none. Git commit: none.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`/WMS/HuDetail/Index?huCode={HUCode}` is the read-only full-detail page for a single handling unit. It explains the selected HU, its current ACTIVE packaging context, inventory facts, direct/effective location, and bounded history. It is not a Page 02 drawer and exposes no warehouse write action.
+`/WMS/FG_HuDetail/Index?huCode={HUCode}` is the read-only full-detail page for a single handling unit. It explains the selected HU, its current ACTIVE packaging context, inventory facts, direct/effective location, and bounded history. It is not a Page 02 drawer and exposes no warehouse write action.
 
 ## HU_DETAIL_EXISTING_APIS
 

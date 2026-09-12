@@ -1,4 +1,4 @@
-# Page 04 — Finished Goods Inbound Records / Exceptions V1
+﻿# Page 04 — Finished Goods Inbound Records / Exceptions V1
 
 ## Purpose
 
@@ -90,7 +90,7 @@ Therefore:
 - The child row shows box code, lifecycle status, material/revision, quantity/UOM, InnerPack count, WeekCode, exception summary, and effective location. It has loading, empty, and retry-safe error states; stale async responses are discarded after collapse or grid redraw.
 - Clicking a real Receipt row opens a read-only `Wms.SideDrawer`; page load, query, reset, paging, and grid rendering keep it closed.
 - Clicking the `+ / -` icon does not open the Drawer. Clicking a normal parent-row cell still opens it.
-- Clicking a box uses `learun.frameTab` to open `/WMS/HuDetail/Index?huCode=...` (Page 03). It does not stack another Drawer.
+- Clicking a box uses `learun.frameTab` to open `/WMS/FG_HuDetail/Index?huCode=...` (Page 03). It does not stack another Drawer.
 - Page 02's inventory preview has the same small “查看完整 HU 履历” frameTab entry.
 - The Drawer includes no retry, receive, reprocess, Release, Recalculate, move, edit, delete, or export action.
 

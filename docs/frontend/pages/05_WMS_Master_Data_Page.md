@@ -1,4 +1,4 @@
-# Page 05 — WMS Master Data Maintenance V1
+﻿# Page 05 — WMS Master Data Maintenance V1
 
 ## Purpose
 
@@ -93,7 +93,7 @@ Read-only runtime GETs found one Warehouse (`FG01`), three mappings (`1010/11C3`
 
 ## Human Runtime Test
 
-1. Open `/WMS/MasterData/Index`; confirm Warehouse alone loads initially.
+1. Open `/WMS/FG_MasterData/Index`; confirm Warehouse alone loads initially.
 2. Activate each remaining tab and confirm its first-load/lazy-load behavior.
 3. Open each Add/Edit modal and verify immutable keys are read-only during edit.
 4. Use dedicated non-production test records chosen by a human to test create, edit, disable and enable.

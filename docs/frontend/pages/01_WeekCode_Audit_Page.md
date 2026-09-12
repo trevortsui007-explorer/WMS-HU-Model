@@ -13,8 +13,8 @@ Page01 的正式交互为：
 
 ## 路由与 API
 
-- 页面：`/WMS/WeekCodeAudit/Index`
-- 结果 iframe：`/WMS/WeekCodeAudit/RecalculateResult`
+- 页面：`/WMS/FG_WeekCodeAudit/Index`
+- 结果 iframe：`/WMS/FG_WeekCodeAudit/RecalculateResult`
 - 查询：`GET /api/wms/weekcode/audit`
 - 重算：`POST /api/wms/weekcode/recalculate`
 

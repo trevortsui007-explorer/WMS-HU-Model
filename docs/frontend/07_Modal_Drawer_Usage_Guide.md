@@ -1,4 +1,4 @@
-# WMS Modal / Drawer 使用指南
+﻿# WMS Modal / Drawer 使用指南
 
 ## 1. 选择矩阵
 
@@ -41,7 +41,7 @@
 Wms.Modal.open({
     id: 'wms-edit-demo',
     title: '编辑示例',
-    url: Wms.Util.rootUrl('/WMS/WMSFoundationDemo/ModalDemo?id=' + id),
+    url: Wms.Util.rootUrl('/WMS/FG_WMSFoundationDemo/ModalDemo?id=' + id),
     width: '720px',
     height: '480px',
     onSuccess: function (result) {

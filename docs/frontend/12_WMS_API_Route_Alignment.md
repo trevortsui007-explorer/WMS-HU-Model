@@ -1,4 +1,4 @@
-# WMS API Runtime Route Alignment
+﻿# WMS API Runtime Route Alignment
 
 ## Scope
 
@@ -20,7 +20,7 @@ Evidence:
 
 - `Learun.Application.Web.csproj` sets `IISUrl` to `http://localhost:20471/`.
 - `.vs/LeaRun.Framework V7.05/config/applicationhost.config` site id 6 maps `/` to `D:\com.delton.gz\Learun.Application.Web` and binds `*:20471:localhost`.
-- The site was started from that exact applicationhost configuration. `GET /` returned HTTP 200; `GET /WMS/WeekCodeAudit/Index` returned the expected unauthenticated HTTP 302.
+- The site was started from that exact applicationhost configuration. `GET /` returned HTTP 200; `GET /WMS/FG_WeekCodeAudit/Index` returned the expected unauthenticated HTTP 302.
 - The project also retains older 20472 hints (`DevelopmentServerPort`, another applicationhost site, and `Serverurl`). That port was not listening during this test and is not treated as the active origin.
 
 ## WMS Origin
@@ -64,7 +64,7 @@ After implementation, Learun runtime restart approval was declined, so the updat
 - `WmsApiProxyController` inherits `MvcControllerBase`, reusing `[HandlerLogin(FilterMode.Enforce)]`.
 - `WmsProxyClient` forwards GET/POST to the configured origin without BLL, Service, Repository, database access or business DTO mapping.
 - `XmlConfig/system.config` contains the single downstream source `WmsServiceBaseUrl=https://localhost:44375`.
-- `WeekCodeAuditController` remains view-only and business JavaScript remains unchanged.
+- `FG_WeekCodeAuditController` remains view-only and business JavaScript remains unchanged.
 - No business JavaScript hard-codes port 52602.
 
 ```text

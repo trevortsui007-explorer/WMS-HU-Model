@@ -1,10 +1,10 @@
-# Page 06 — System / Interface Runtime Monitoring V1
+﻿# Page 06 — System / Interface Runtime Monitoring V1
 
 ## Purpose
 
 Page 06 is a read-only runtime and integration observability page for IT and administrators. It answers whether the WMS host, WmsDb, MesDb, Learun-to-WMS proxy path, successful inbound activity, and current business issue counts are available. It is not a business operation, retry, database administration, or data-repair page.
 
-- Learun route: `/WMS/Monitoring/Index`
+- Learun route: `/WMS/FG_Monitoring/Index`
 - Browser API contract: `/api/wms/*`
 - Refresh: manual only
 - Database access: WMS host repositories only; Learun never connects directly
@@ -88,9 +88,9 @@ The Current Issues tab is a summary and navigation surface, not a copy of the bu
 
 | Issue | Meaning | Target |
 |---|---|---|
-| WEEKCODE | Current Page 01 audit anomaly count | `/WMS/WeekCodeAudit/Index` |
-| HOLD | Current active Hold OUTER_BOX count | `/WMS/FinishedGoodsInventory/Index` |
-| INBOUND_WITH_EXCEPTION | Successful inbound Receipts currently associated with post-commit exception facts | `/WMS/FinishedGoodsInboundRecords/Index` |
+| WEEKCODE | Current Page 01 audit anomaly count | `/WMS/FG_WeekCodeAudit/Index` |
+| HOLD | Current active Hold OUTER_BOX count | `/WMS/FG_FinishedGoodsInventory/Index` |
+| INBOUND_WITH_EXCEPTION | Successful inbound Receipts currently associated with post-commit exception facts | `/WMS/FG_FinishedGoodsInboundRecords/Index` |
 
 Navigation uses `learun.frameTab`. The top successful-Receipt, Hold, and WeekCode metric cards use the same Page 04, Page 02, and Page 01 targets respectively.
 

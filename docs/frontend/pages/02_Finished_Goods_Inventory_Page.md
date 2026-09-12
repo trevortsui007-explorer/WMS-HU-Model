@@ -1,10 +1,10 @@
-# 成品库存 / HU 查询 V1
+﻿# 成品库存 / HU 查询 V1
 
 ## Purpose
 
 提供当前成品库存的统一只读查询入口。主表以 OUTER_BOX 为粒度，一次返回箱、物料、当前有效数量、有效货位、库存状态、Hold、周码摘要、父托盘和创建时间；用户真实单击箱行后再读取 HU Quick Preview。
 
-页面路由：`/WMS/FinishedGoodsInventory/Index`。
+页面路由：`/WMS/FG_FinishedGoodsInventory/Index`。
 
 ## Business Scope
 

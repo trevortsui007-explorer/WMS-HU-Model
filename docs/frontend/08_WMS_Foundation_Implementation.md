@@ -19,11 +19,11 @@ Web 项目 `D:\com.delton.gz\Learun.Application.Web`：
 - `Areas/WMS/Content/Foundation/Styles/wms-tokens.css`
 - `Areas/WMS/Content/Foundation/Styles/wms-components.css`
 - `Areas/WMS/Content/Foundation/Styles/wms-foundation-demo.css`
-- `Areas/WMS/Controllers/WMSFoundationDemoController.cs`
-- `Areas/WMS/Views/WMSFoundationDemo/Index.cshtml`
-- `Areas/WMS/Views/WMSFoundationDemo/Index.js`
-- `Areas/WMS/Views/WMSFoundationDemo/ModalDemo.cshtml`
-- `Areas/WMS/Views/WMSFoundationDemo/ModalDemo.js`
+- `Areas/WMS/Controllers/FG_WMSFoundationDemoController.cs`
+- `Areas/WMS/Views/FG_WMSFoundationDemo/Index.cshtml`
+- `Areas/WMS/Views/FG_WMSFoundationDemo/Index.js`
+- `Areas/WMS/Views/FG_WMSFoundationDemo/ModalDemo.cshtml`
+- `Areas/WMS/Views/FG_WMSFoundationDemo/ModalDemo.js`
 
 旧式 `Learun.Application.Web.csproj` 已显式登记新增 Controller、View、JS 和 CSS。
 
@@ -101,7 +101,7 @@ GET 和 form POST 复用 Learun async helper；JSON POST 因现有 helper 不提
 
 ## 9. Showcase
 
-入口：`/WMS/WMSFoundationDemo/Index`。
+入口：`/WMS/FG_WMSFoundationDemo/Index`。
 
 页面以 Learun `lr-layout`、55px toolbar、Bootstrap tabs/native buttons、原生 jfGrid 和 `_Form` 表单组合只读 Mock 场景；StatusTag、DetailPanel、Drawer 作为增量能力。Modal 的“保存”只更新宿主页内存中的 revision override；刷新页面即恢复，不写数据库。
 

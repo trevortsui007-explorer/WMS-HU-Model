@@ -1,4 +1,4 @@
-# WMS Frontend / Learun Database Connection Alignment
+﻿# WMS Frontend / Learun Database Connection Alignment
 
 日期：2026-08-22  
 性质：Investigation + SELECT-only runtime preflight
@@ -136,7 +136,7 @@ Database WMS_DEV
 
 ```text
 Browser
-→ Learun MVC Razor page /WMS/WeekCodeAudit/Index
+→ Learun MVC Razor page /WMS/FG_WeekCodeAudit/Index
 → WeekCodeAuditApi.js / Wms.Api
 → relative HTTP /api/wms/weekcode/audit or /recalculate
 → deployment same-origin route/reverse proxy
@@ -147,7 +147,7 @@ Browser
 → MES repositories using WMS Host MesDb
 ```
 
-`WeekCodeAuditController.Index()` 只返回 View；没有 proxy action、Repository 或 ConfigurationManager。页面 JS 没有 connection string、SqlConnection 或数据库 helper。
+`FG_WeekCodeAuditController.Index()` 只返回 View；没有 proxy action、Repository 或 ConfigurationManager。页面 JS 没有 connection string、SqlConnection 或数据库 helper。
 
 当前源码未包含把 Learun origin 的相对 `/api/wms/*` 转发到独立 WMS Host 的 proxy/reverse-proxy 配置。直接访问 WMS Host 的 52602 端口成功，但 Learun 页面同源 URL 的部署映射仍需 Human Runtime Review。
 

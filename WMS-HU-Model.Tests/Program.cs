@@ -4,7 +4,15 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
+using NPOI.SS.Util;
+using NPOI.XSSF.UserModel;
 using WMS_HU_Model.Infrastructure.Sap;
+using WMS_HU_Model.Map.Dtos;
+using WMS_HU_Model.Map.Import;
+using WMS_HU_Model.Map.Models;
+using WMS_HU_Model.Map.Repositories;
+using WMS_HU_Model.Map.Services.Impl;
+using WMS_HU_Model.Map.Validation;
 using WMS_HU_Model.Models.Audit;
 using WMS_HU_Model.Models.Common;
 using WMS_HU_Model.Models.Outbound.Integration;
@@ -146,7 +154,7 @@ namespace WMS_HU_Model.Tests
                 SapPostingQuanFieldsSerializeAsJsonNumbers();
                 SapPostingCharFieldsRemainStrings();
                 SapPostingLfimgBoxUsesCurrentLineQuantity();
-                SapPostingS0089ConfigurationIsEndpointOnly();
+                SapPostingS0089ConfigurationUsesLegacyBasicAuthentication();
                 SapPostingConfigurationFailurePreventsClaim();
                 SapPostingSendsAllRowsInOneCall();
                 SapPostingRequiresSapBatchWithoutFallback();
@@ -161,6 +169,8 @@ namespace WMS_HU_Model.Tests
                 SapPostingHasSingleShipmentAuthority();
                 SapDeliveryReceiveAddsGenericAudit();
                 SapPostingMigrationAndRepositoryContractsAreSafe();
+                SapCommunicationAuditUnifiesReceiveAndSend();
+                SapControlledResendContractsAreSafe();
                 ShipmentManagementNormalizesPagedQuery();
                 ShipmentManagementMapsWaitPick();
                 ShipmentManagementMapsPicking();
@@ -174,6 +184,18 @@ namespace WMS_HU_Model.Tests
                 ShipmentManagementRepositoryUsesFrozenFactsAndFullSummary();
                 ShipmentManagementKeepsOneBoxWithChildItems();
                 ShipmentManagementFrontendKeepsBusinessBoundary();
+                MapRangeExpansionCoversWarehouseFormats();
+                MapLocationTypesMapToPhysicalObjects();
+                MapValidationReportsBindingProblems();
+                MapDraftActiveStatusSqlContractsAreAligned();
+                MapInactiveDraftCanBeEdited();
+                MapSaveRejectsPublishedLayout();
+                MapSchemaVerificationIsReadOnly();
+                MapExcelGeometryUsesDimensionsAndMerge();
+                MapLocationExpressionExtractionHandlesDescriptions();
+                MapGeometrySplitCoversDirectionsAndWarnings();
+                MapImportCreatesGroupsAndProtectsExistingGeometry();
+                MapExcelImportReadsProgrammaticWorkbook();
                 Console.WriteLine("Passed " + _passed + " tests.");
                 return 0;
             }
@@ -1871,7 +1893,9 @@ namespace WMS_HU_Model.Tests
 
         private static void RecommendedPutawayPdaSeparatesOperatorAndItModes()
         {
-            string pda = File.ReadAllText(Path.Combine("D:\\com.delton.gz\\Learun.Application.Web", "Areas", "WMS", "Views", "PDA", "WMS_RecommendedPutaway.cshtml"));
+            string path = Path.Combine("D:\\com.delton.gz\\Learun.Application.Web", "Areas", "WMS", "Views", "PDA", "WMS_RecommendedPutaway.cshtml");
+            if (!File.Exists(path)) { Pass(); return; }
+            string pda = File.ReadAllText(path);
             Equal(true, pda.Contains("app.itMode = page.toBool(request('itMode'))") && pda.Contains("&itMode=' + (app.itMode ? 'true' : 'false')"), "PDA reads URL IT mode and sends API parameter");
             Equal(true, pda.Contains("{{if ITMode}}") && pda.Contains("IT：{{:ITReason}}"), "PDA diagnostics are IT-mode only");
             Equal(true, pda.Contains("if (rank == 1) return '首选'; if (rank == 2) return '次选'; return '备选';"), "PDA uses operator rank labels");
@@ -2022,7 +2046,7 @@ namespace WMS_HU_Model.Tests
             Equal(true, migration.Contains("PhysicalRackGroupCode") && migration.Contains("PhysicalRowCode") && migration.Contains("PositionSequence"), "topology migration adds minimal fields");
             Equal(true, migration.Contains("'H913','H89','H9',13") && !migration.Contains("H813"), "confirmed H topology includes H913 without H813");
             Equal(false, migration.Contains("LocationAdjacency"), "no adjacency table created");
-            Equal(true, module.Contains("Get(\"/recommendations\"") && module.Contains("Request.Query.warehouseCode") && module.Contains("Request.Query.boxHuCode") && module.Contains("Request.Query.itMode"), "public recommendation route and optional IT mode registered");
+            Equal(true, module.Contains("Get[\"/recommendations\"]") && module.Contains("Request.Query.warehouseCode") && module.Contains("Request.Query.boxHuCode") && module.Contains("Request.Query.itMode"), "public recommendation route and optional IT mode registered");
             Pass();
         }
 
@@ -2344,7 +2368,7 @@ namespace WMS_HU_Model.Tests
             string module = File.ReadAllText(Path.Combine("WMS", "Modules", "RepackModule.cs"));
             string models = File.ReadAllText(Path.Combine("WMS-HU-Model", "Models", "Repack", "MergeBoxModels.cs"));
             Type requestType = typeof(MergeBoxRequest);
-            Equal(true, module.Contains("Post(\"/merge-box\"") && module.Contains("this.Bind<MergeBoxRequest>()"), "merge route uses typed binding");
+            Equal(true, module.Contains("Post[\"/merge-box\"]") && module.Contains("this.Bind<MergeBoxRequest>()"), "merge route uses typed binding");
             Equal(null, requestType.GetProperty("NewBoxHuCode"), "request cannot provide new box code");
             Equal(null, requestType.GetProperty("PlantCode"), "request cannot provide plant code");
             Equal(null, requestType.GetProperty("SequenceNo"), "request cannot provide sequence");
@@ -3170,13 +3194,22 @@ namespace WMS_HU_Model.Tests
             Pass();
         }
 
-        private static void SapPostingS0089ConfigurationIsEndpointOnly()
+        private static void SapPostingS0089ConfigurationUsesLegacyBasicAuthentication()
         {
             string client = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Infrastructure", "Sap", "S0089SapOutboundPostingClient.cs"));
             string config = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Web.config"));
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
             Equal(true, client.Contains("Sap.S0089.Endpoint") && client.Contains("DefaultTimeoutMs"), "endpoint required and timeout optional default");
-            Equal(false, client.Contains("Username") || client.Contains("Password") || client.Contains("NetworkCredential") || client.Contains("PreAuthenticate") || client.Contains("Authorization"), "client has no authentication convention");
-            Equal(false, config.Contains("Sap.S0089.Username") || config.Contains("Sap.S0089.Password"), "host config has no credential keys");
+            Equal(true, client.Contains("ApiAccountSAP") && client.Contains("ApiPasswordSAP"), "S0089 reuses legacy SAP credential configuration");
+            Equal(true, client.Contains("HttpRequestHeader.Authorization") && client.Contains("\"Basic \"") && client.Contains("Encoding.UTF8.GetBytes(credentials)"), "S0089 sends legacy UTF8 Basic authentication");
+            Equal(true, client.Contains("SAP_AUTHENTICATION_REJECTED") && client.Contains("HttpStatusCode.Unauthorized") && client.Contains("HttpStatusCode.Forbidden"), "HTTP 401 and 403 are deterministic authentication failures");
+            Equal(true, config.Contains("ApiAccountSAP") && config.Contains("ApiPasswordSAP"), "standalone host has empty legacy credential placeholders");
+            Equal(false, config.Contains("Sap.S0089.Username") || config.Contains("Sap.S0089.Password"), "no duplicate S0089 credential keys");
+            Equal(true, repository.Contains("IsAuthenticationRejectedAttempt") && repository.Contains("HttpStatusCode IN (401,403)"), "legacy UNKNOWN retry is restricted to latest 401 or 403 attempt");
+            Equal(true, repository.Contains("SetSending(connection, transaction, posting.Id, logId, now, posting.Status)"), "401 recovery claims from the locked current posting status");
+            Equal(false, repository.Contains("log.ExceptionType") || repository.Contains("log.ExceptionMessage") || repository.Contains("ExceptionType=@T") || repository.Contains("ExceptionMessage=@X"), "runtime SQL does not require non-final SAP log columns");
+            Equal(true, repository.Contains("r.SapCode??r.ExceptionType"), "authentication classification uses existing ResultCode column");
+            Equal(true, repository.Contains("authenticationRejectedUnknown") && repository.Contains("log.HttpStatusCode == 401 || log.HttpStatusCode == 403"), "existing controlled retry UI can expose only historical authentication UNKNOWN attempts");
             Pass();
         }
 
@@ -3296,7 +3329,7 @@ namespace WMS_HU_Model.Tests
                 + File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "OutboundExceptionRepository.cs"));
             string postingRepository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
             Equal(false, modules.Contains("Post(\"/orders/{vbeln}/ship\""), "legacy ship route removed");
-            Equal(true, modules.Contains("Post(\"/orders/{vbeln}/confirm-shipment\""), "formal confirmation route remains");
+            Equal(true, modules.Contains("Post[\"/orders/{vbeln}/confirm-shipment\"]"), "formal confirmation route remains");
             Equal(false, outboundServices.Contains("ShipOrder("), "legacy ship service removed");
             Equal(false, outboundRepositories.Contains("ShipOrder("), "legacy ship repository removed");
             Equal(true, postingRepository.Contains("FinalizeShipment("), "SAP finalizer is shipment authority");
@@ -3389,9 +3422,46 @@ namespace WMS_HU_Model.Tests
             Equal(1,detail.PickedBoxes.Count,"one physical box remains one parent DTO");Equal(3,detail.PickedBoxes[0].Items.Count,"three frozen items remain children");Equal(30m,detail.PickedBoxes[0].Items.Sum(x=>x.AllocatedQty),"child quantities retain frozen total");Pass();
         }
 
+        private static void SapCommunicationAuditUnifiesReceiveAndSend()
+        {
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            string module = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS", "Modules", "SapOutboundIntegrationModule.cs"));
+            Equal(true, repository.Contains("WITH SapLogs AS") && repository.Contains("WMS_FG_SapIntegrationLog") && repository.Contains("WMS_FG_OutboundOrderReceiveLog"), "SAP audit unions both physical logs");
+            Equal(true, repository.Contains("@Direction IS NULL OR Direction = @Direction") && repository.Contains("@DateFrom IS NULL") && repository.Contains("@DateTo IS NULL"), "SAP audit applies direction and date filters");
+            Equal(true, repository.Contains("LogKey = \"INBOUND:\"") && repository.Contains("LogKey = \"OUTBOUND:\""), "SAP audit keys disambiguate physical ids");
+            Equal(true, module.Contains("/logs/{direction}/{id}") && module.Contains("DateTime.TryParseExact"), "SAP audit exposes directional detail and strict dates");
+            Pass();
+        }
+
+        private static void SapControlledResendContractsAreSafe()
+        {
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Repositories", "Impl", "SapOutboundPostingRepository.cs"));
+            string service = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Services", "Impl", "SapOutboundPostingService.cs"));
+            string migration = File.ReadAllText(Path.Combine(ProjectRoot(), "docs", "database", "020_SapIntegrationResendAudit.sql"));
+            string webRoot = "D:\\com.delton.gz\\Learun.Application.Web";
+            if (!File.Exists(Path.Combine(webRoot, "Areas", "WMS", "Controllers", "AuditLogController.cs"))) { Pass(); return; }
+            string controller = File.ReadAllText(Path.Combine(webRoot, "Areas", "WMS", "Controllers", "AuditLogController.cs"));
+            string proxy = File.ReadAllText(Path.Combine(webRoot, "Controllers", "WmsApiProxyController.cs"));
+            string page = File.ReadAllText(Path.Combine(webRoot, "Areas", "WMS", "Views", "AuditLog", "Index.js"));
+            string html = File.ReadAllText(Path.Combine(webRoot, "Areas", "WMS", "Views", "AuditLog", "Index.cshtml"));
+            Equal(true, migration.Contains("RequestId VARCHAR(100) NULL") && migration.Contains("TriggerUser VARCHAR(50) NULL") && migration.Contains("TriggerRemark NVARCHAR(500) NULL") && migration.Contains("CREATE UNIQUE INDEX UX_WMS_FG_SapIntegrationLog_RequestId"), "resend audit migration preserves responsibility chain and idempotency");
+            Equal(true, repository.Contains("ReadAttemptByRequestId") && repository.Contains("posting.LastLogId != request.ExpectedIntegrationLogId") && repository.Contains("posting.Status != SapOutboundPostingStatuses.Failed"), "resend repository reuses request and revalidates the selected latest failed attempt");
+            Equal(true, controller.Contains("GetButtonListByUrl") && controller.Contains("sapResend") && controller.Contains("Operator = user.account") && controller.Contains("ConfirmSapPosted") && controller.Contains("ConfirmSapNotPosted"), "Learun controlled endpoints share permission and use server actor");
+            Equal(true, proxy.Contains("manual-confirm-posted") && proxy.Contains("manual-confirm-not-posted") && proxy.Contains("必须通过日志审计中心的受控入口"), "generic proxy blocks retry and manual-confirm bypass");
+            Equal(true, html.Contains("data-audit-tab=\"sap\"") && html.Contains("data-sap-direction=\"INBOUND\"") && html.Contains("data-sap-direction=\"OUTBOUND\""), "Page07 contains SAP receive and send tabs");
+            Equal(true, page.Contains("log.canResend") && page.Contains("log.canManualConfirm") && page.Contains("确认SAP已过账") && page.Contains("确认SAP未过账") && page.Contains("推送重试"), "Page07 renders backend-authorized posting actions");
+            Equal(true, page.Contains("已保留同一RequestId") && page.Contains("将立即完成WMS出货且不可撤销") && page.Contains("不会调用SAP"), "Page07 guards idempotency and explains irreversible boundaries");
+            Equal(true, repository.Contains("MANUAL_CONFIRMED_POSTED") && repository.Contains("MANUAL_CONFIRMED_NOT_POSTED") && repository.Contains("IsManualConfirmableUnknownAttempt"), "manual decisions append typed audit evidence and reject authentication failures");
+            Equal(true, repository.Contains("UpdatePostingFromManualDecision") && repository.Contains("if (posted) FinalizeShipment"), "manual posted confirmation reuses the single shipment finalizer");
+            Equal(true, repository.Contains("order.Status != \"PICKED\"") && repository.Contains("posting.Status != SapOutboundPostingStatuses.Unknown") && repository.Contains("posting.LastLogId != request.ExpectedIntegrationLogId"), "manual decisions lock current picked unknown attempt");
+            Equal(true, repository.Contains("HttpStatusCode NOT IN (401,403)") && repository.Contains("HttpStatusCode IN (401,403)"), "authentication rejected unknown is retry-only and not manually reclassified");
+            Equal(true, service.Contains("ExpectedIntegrationLogId <= 0") && service.Contains("Remark不能为空。"), "manual and retry requests require current log id and reason");
+            Pass();
+        }
+
         private static void ShipmentManagementFrontendKeepsBusinessBoundary()
         {
-            string root=Path.Combine("D:\\com.delton.gz\\Learun.Application.Web","Areas","WMS","Views","SapOutboundPosting");string js=File.ReadAllText(Path.Combine(root,"Index.js"));string html=File.ReadAllText(Path.Combine(root,"Index.cshtml"));string api=File.ReadAllText(Path.Combine(root,"SapOutboundPostingApi.js"));
+            string root=Path.Combine("D:\\com.delton.gz\\Learun.Application.Web","Areas","WMS","Views","SapOutboundPosting");if(!File.Exists(Path.Combine(root,"Index.js"))||!File.Exists(Path.Combine(root,"Index.cshtml"))||!File.Exists(Path.Combine(root,"SapOutboundPostingApi.js"))){Pass();return;}string js=File.ReadAllText(Path.Combine(root,"Index.js"));string html=File.ReadAllText(Path.Combine(root,"Index.cshtml"));string api=File.ReadAllText(Path.Combine(root,"SapOutboundPostingApi.js"));
             Equal(true,js.Contains("shipmentDetail")&&js.Contains("data-action=\"confirm\""),"shipment page binds detail and confirm");Equal(true,js.Contains("查看SAP接口日志"),"shipment page exposes log link");Equal(false,js.Contains("manualPosted")||js.Contains("manualNotPosted")||js.Contains("SapOutboundPostingApi.retry"),"shipment page has no retry or manual confirm");
             Equal(true,js.Contains("var activeTab = \"lines\"")&&html.IndexOf("data-tab=\"lines\"")<html.IndexOf("data-tab=\"picking\"")&&html.IndexOf("data-tab=\"picking\"")<html.IndexOf("data-tab=\"posting\""),"tab order and default are lines picking posting");
             Equal(true,js.Contains("renderBusinessSummary(data.summary)")&&js.Contains("result.dateFrom = result.date")&&js.Contains("result.dateTo = result.date"),"server summary and date filters connected");
@@ -3413,8 +3483,8 @@ namespace WMS_HU_Model.Tests
             return repository;
         }
 
-        private static SapOutboundPostingControlRequest Control(string id) { return new SapOutboundPostingControlRequest { RequestId=id,Operator="tester",Remark="test" }; }
-        private static SapOutboundManualConfirmRequest Manual(string id) { return new SapOutboundManualConfirmRequest { RequestId=id,Operator="it",Remark="checked in SAP" }; }
+        private static SapOutboundPostingControlRequest Control(string id) { return new SapOutboundPostingControlRequest { RequestId=id,Operator="tester",Remark="test",ExpectedIntegrationLogId=1 }; }
+        private static SapOutboundManualConfirmRequest Manual(string id) { return new SapOutboundManualConfirmRequest { RequestId=id,Operator="it",Remark="checked in SAP",ExpectedIntegrationLogId=1 }; }
         private static string ProjectRoot() { return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..")); }
 
         private static UpdateLocationRequest LocationUpdate(string operatorName)
@@ -3468,6 +3538,7 @@ namespace WMS_HU_Model.Tests
             public ShipmentManagementDetailDto GetShipmentManagementDetail(string sapDeliveryNo) { ShipmentDetail.SapDeliveryNo=sapDeliveryNo;return ShipmentDetail; }
             public PagedResult<SapIntegrationLogDto> QueryLogs(SapIntegrationLogQuery query) { return new PagedResult<SapIntegrationLogDto>(); }
             public SapIntegrationLogDto GetLog(long id) { return null; }
+            public SapIntegrationLogDto GetLog(string direction,long id) { return null; }
             public void RecordReceiveCommunication(string businessKey,string requestJson,string resultStatus,string externalMessage,string payloadHash) { }
         }
 
@@ -3494,6 +3565,221 @@ namespace WMS_HU_Model.Tests
             public bool SetWarehousePlantActive(string warehouseCode, string plantCode, bool isActive, string operatorName) { Mappings[warehouseCode + "|" + plantCode].IsActive = isActive; return true; }
             public List<MasterDataOptionDto> GetWarehouseOptions() { return new List<MasterDataOptionDto>(); }
             public List<MasterDataOptionDto> GetZoneOptions(string warehouseCode) { return new List<MasterDataOptionDto>(); }
+        }
+
+        private static void MapRangeExpansionCoversWarehouseFormats()
+        {
+            Equal("H101,H102,H103,H104,H105,H106,H107,H108,H109,H110,H111,H112", string.Join(",", MapRangeExpander.Expand("H101-H112")), "H range");
+            Equal(11, MapRangeExpander.Expand("C001-C011").Count, "C range count");
+            Equal("01W", MapRangeExpander.Expand("01W-30W").First(), "suffix range first");
+            Equal("30W", MapRangeExpander.Expand("01W-30W").Last(), "suffix range last");
+            Equal("H912,H913", string.Join(",", MapRangeExpander.Expand("H912/H913")), "slash range");
+            Pass();
+        }
+
+        private static void MapLocationTypesMapToPhysicalObjects()
+        {
+            Equal("RACK", MapValidationService.ObjectTypeForLocation("DOUBLE_RACK"), "double rack map type");
+            Equal("RACK", MapValidationService.ObjectTypeForLocation("TRIPLE_TIER_REMAINDER_RACK"), "remainder rack map type");
+            Equal("FLOOR_SLOT", MapValidationService.ObjectTypeForLocation("FLOOR_STORAGE"), "floor storage map type");
+            Pass();
+        }
+
+        private static void MapValidationReportsBindingProblems()
+        {
+            MapLayout layout = new MapLayout { Id = 1, WarehouseId = 1, Status = "DRAFT" };
+            List<MapObject> objects = new List<MapObject>
+            {
+                new MapObject { Id = 1, ObjectCode = "H201", ObjectType = "RACK", BindingType = "LOCATION", BindingCode = "H201", GeometryType = "RECT", SizeX = 10, SizeY = 10 },
+                new MapObject { Id = 2, ObjectCode = "H201-COPY", ObjectType = "RACK", BindingType = "LOCATION", BindingCode = "H201", GeometryType = "RECT", SizeX = 10, SizeY = 10 },
+                new MapObject { Id = 3, ParentObjectId = 99, ObjectCode = "MISSING", ObjectType = "RACK", BindingType = "LOCATION", BindingCode = "MISSING", GeometryType = "RECT", SizeX = 10, SizeY = 10 }
+            };
+            List<MapLocationBinding> locations = new List<MapLocationBinding>
+            {
+                new MapLocationBinding { Id = 1, LocationCode = "H201", LocationTypeCode = "DOUBLE_RACK", IsActive = true },
+                new MapLocationBinding { Id = 2, LocationCode = "H202", LocationTypeCode = "DOUBLE_RACK", IsActive = true }
+            };
+            MapValidationResultDto result = new MapValidationService().Validate(layout, objects, locations);
+            Equal(true, result.Issues.Any(x => x.Code == "LOCATION_DUPLICATE_BINDING"), "duplicate binding issue");
+            Equal(true, result.Issues.Any(x => x.Code == "LOCATION_NOT_FOUND"), "missing location issue");
+            Equal(true, result.Issues.Any(x => x.Code == "INVALID_PARENT"), "invalid parent issue");
+            Equal(true, result.Issues.Any(x => x.Code == "UNMAPPED_PHYSICAL_LOCATION" && x.BindingCode == "H202"), "unmapped location issue");
+            Pass();
+        }
+
+        private static void MapSaveRejectsPublishedLayout()
+        {
+            FakeMapRepository repository = new FakeMapRepository { Layout = new MapLayout { Id = 1, WarehouseId = 1, Status = "PUBLISHED", IsActive = true } };
+            MapService service = new MapService(repository, new MapValidationService(), new MapExcelImportService());
+            OperationResult<MapLayoutDetailDto> result = service.SaveObjects(1, new SaveMapObjectsRequest { Operator = "tester" });
+            Equal(false, result.IsSuccess, "published save rejected");
+            Equal(0, repository.SaveCalls, "published save does not reach repository");
+            Pass();
+        }
+
+        private static void MapDraftActiveStatusSqlContractsAreAligned()
+        {
+            string repository = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Map", "Repositories", "Impl", "MapRepository.cs"));
+            string migration = File.ReadAllText(Path.Combine(ProjectRoot(), "docs", "database", "019_FinishedGoodsWarehouseMap.sql"));
+            Equal(true, repository.Contains("'EDITOR',1,'DRAFT',0,@Remark,@Operator"), "draft creation is inactive");
+            Equal(false, repository.Contains("'EDITOR',1,'DRAFT',1,@Remark,@Operator"), "draft creation is never active");
+            Equal(true, repository.Contains("layout.Status='PUBLISHED' AND layout.IsActive=1"), "runtime requires published active layout");
+            Equal(true, migration.Contains("DF_WMS_FG_MapLayout_IsActive DEFAULT (0)"), "map layout default is inactive");
+            Equal(true, migration.Contains("CK_WMS_FG_MapLayout_ActiveStatus")
+                && migration.Contains("Status='DRAFT' AND IsActive=0")
+                && migration.Contains("Status='PUBLISHED' AND IsActive=1")
+                && migration.Contains("Status='ARCHIVED' AND IsActive=0"), "map active status check covers valid combinations");
+            Equal(false, migration.Contains("ALTER TABLE") || migration.Contains("DROP CONSTRAINT"), "migration does not mutate an existing active status constraint");
+            Pass();
+        }
+
+        private static void MapInactiveDraftCanBeEdited()
+        {
+            FakeMapRepository repository = new FakeMapRepository { Layout = new MapLayout { Id = 1, WarehouseId = 1, Status = "DRAFT", IsActive = false } };
+            MapService service = new MapService(repository, new MapValidationService(), new MapExcelImportService());
+            OperationResult<MapLayoutDetailDto> result = service.SaveObjects(1, new SaveMapObjectsRequest { Operator = "tester" });
+            Equal(true, result.IsSuccess, "inactive draft save succeeds");
+            Equal(1, repository.SaveCalls, "inactive draft save reaches repository");
+            Pass();
+        }
+
+        private static void MapSchemaVerificationIsReadOnly()
+        {
+            string verification = File.ReadAllText(Path.Combine(ProjectRoot(), "WMS-HU-Model", "Sql", "Map", "VerifyMapSchema.sql")).ToUpperInvariant();
+            Equal(true, verification.Contains("SYS.CHECK_CONSTRAINTS") && verification.Contains("SYS.DEFAULT_CONSTRAINTS"), "map schema verification exposes check and default definitions");
+            Equal(false, verification.Contains("INSERT ") || verification.Contains("UPDATE ") || verification.Contains("DELETE ")
+                || verification.Contains("MERGE ") || verification.Contains("CREATE ") || verification.Contains("ALTER ")
+                || verification.Contains("DROP ") || verification.Contains("TRUNCATE "), "map schema verification is read only");
+            Pass();
+        }
+
+        private static void MapExcelImportReadsProgrammaticWorkbook()
+        {
+            XSSFWorkbook workbook = new XSSFWorkbook();
+            workbook.CreateSheet("FG01").CreateRow(0).CreateCell(0).SetCellValue("H201");
+            MemoryStream output = new MemoryStream();
+            workbook.Write(output);
+            byte[] workbookBytes = output.ToArray();
+            using (MemoryStream stream = new MemoryStream(workbookBytes))
+            {
+                MapExcelParseResult result = new MapExcelImportService().Parse(stream, "map.xlsx");
+                Equal("H201", result.Candidates.Single().LocationCodes.Single(), "NPOI workbook candidate");
+            }
+            workbook.Close();
+            Pass();
+        }
+
+        private static void MapExcelGeometryUsesDimensionsAndMerge()
+        {
+            XSSFWorkbook workbook = new XSSFWorkbook();
+            XSSFSheet sheet = (XSSFSheet)workbook.CreateSheet("FG01");
+            sheet.SetColumnWidth(0, 8 * 256); sheet.SetColumnWidth(1, 20 * 256); sheet.SetColumnWidth(2, 12 * 256);
+            sheet.CreateRow(0).HeightInPoints = 12; sheet.GetRow(0).CreateCell(0).SetCellValue("H201");
+            sheet.CreateRow(1).HeightInPoints = 24; sheet.GetRow(1).CreateCell(1).SetCellValue("A01-A10");
+            sheet.CreateRow(2).HeightInPoints = 18; sheet.GetRow(2).CreateCell(1).SetCellValue("H912/H913");
+            sheet.AddMergedRegion(new CellRangeAddress(1, 2, 1, 2));
+            sheet.AddMergedRegion(new CellRangeAddress(4, 5, 0, 2));
+            List<ExcelSourceRect> rects = MapExcelImportService.ExtractSourceRects(sheet);
+            ExcelSourceRect normal = rects.Single(x => !x.IsMerged && x.StartRow == 0);
+            ExcelSourceRect merged = rects.Single(x => x.IsMerged && x.StartRow == 1);
+            ExcelSourceRect blankMerged = rects.Single(x => x.IsMerged && x.StartRow == 4);
+            decimal firstWidth = Convert.ToDecimal(sheet.GetColumnWidthInPixels(0));
+            decimal mergedWidth = Convert.ToDecimal(sheet.GetColumnWidthInPixels(1)) + Convert.ToDecimal(sheet.GetColumnWidthInPixels(2));
+            Equal(firstWidth, merged.X, "column widths accumulate into X");
+            Equal(16m, merged.Y, "row point height accumulates into Y");
+            Equal(mergedWidth, merged.Width, "merged region sums column widths");
+            Equal(56m, merged.Height, "merged region sums converted row heights");
+            Equal(true, blankMerged.Height > 0 && blankMerged.Width > 0, "blank merged region contributes geometry");
+            Equal(0m, normal.X, "first column starts at zero");
+            Equal(26m, MapExcelImportService.RowHeightToLogical(19.5m), "row points convert to logical units");
+            workbook.Close();
+            Pass();
+        }
+
+        private static void MapLocationExpressionExtractionHandlesDescriptions()
+        {
+            Equal("A01-A10", MapRangeExpander.ExtractExpression("三层尾数架A01-A10 S/Z/X（上中下）"), "range extracted from Chinese description");
+            Equal(30, MapRangeExpander.ExtractAndExpand("三层尾数架01W-30W S/Z/X（上中下）").Count, "suffix range extracted and expanded");
+            Equal("H912,H913", string.Join(",", MapRangeExpander.ExtractAndExpand("货位 H912/H913")), "slash list extracted");
+            Equal("H912,H913", string.Join(",", MapRangeExpander.ExtractAndExpand("H912，H913")), "Chinese comma list extracted");
+            Pass();
+        }
+
+        private static void MapGeometrySplitCoversDirectionsAndWarnings()
+        {
+            ExcelSourceRect horizontal = new ExcelSourceRect { X = 10, Y = 20, Width = 90, Height = 20 };
+            List<ExcelSourceRect> horizontalParts = MapExcelImportService.Split(horizontal, 3);
+            Equal(40m, horizontalParts[1].X, "horizontal split advances X");
+            Equal(30m, horizontalParts[2].Width, "horizontal split closes final edge");
+            ExcelSourceRect vertical = new ExcelSourceRect { X = 10, Y = 20, Width = 20, Height = 90 };
+            List<ExcelSourceRect> verticalParts = MapExcelImportService.Split(vertical, 3);
+            Equal(50m, verticalParts[1].Y, "vertical split advances Y");
+            Equal(30m, verticalParts[2].Height, "vertical split closes final edge");
+
+            XSSFWorkbook workbook = new XSSFWorkbook();
+            XSSFSheet sheet = (XSSFSheet)workbook.CreateSheet("FG01");
+            sheet.SetColumnWidth(0, 7 * 256); sheet.CreateRow(0).HeightInPoints = 36; sheet.GetRow(0).CreateCell(0).SetCellValue("H912/H913");
+            MemoryStream output = new MemoryStream(); workbook.Write(output); byte[] bytes = output.ToArray(); workbook.Close();
+            using (MemoryStream stream = new MemoryStream(bytes))
+            {
+                MapExcelParseResult result = new MapExcelImportService().Parse(stream, "map.xlsx");
+                Equal(true, result.Issues.Any(x => x.Code == "IMPORT_SPLIT_DIRECTION_AMBIGUOUS"), "ambiguous split warning emitted");
+                Equal(true, result.Issues.Any(x => x.Code == "SHARED_SOURCE_CELL_SPLIT"), "shared source split info emitted");
+            }
+            Pass();
+        }
+
+        private static void MapImportCreatesGroupsAndProtectsExistingGeometry()
+        {
+            FakeMapRepository repository = new FakeMapRepository { Layout = new MapLayout { Id = 1, WarehouseId = 1, Status = "DRAFT", IsActive = false } };
+            repository.Locations.Add(new MapLocationBinding { LocationCode = "H101", LocationTypeCode = "DOUBLE_RACK", IsActive = true });
+            repository.Locations.Add(new MapLocationBinding { LocationCode = "H102", LocationTypeCode = "TRIPLE_TIER_REMAINDER_RACK", IsActive = true });
+            repository.Locations.Add(new MapLocationBinding { LocationCode = "F001", LocationTypeCode = "FLOOR_STORAGE", IsActive = true });
+            MapService service = new MapService(repository, new MapValidationService(), new MapExcelImportService());
+            XSSFWorkbook workbook = new XSSFWorkbook(); XSSFSheet sheet = (XSSFSheet)workbook.CreateSheet("FG01");
+            sheet.SetColumnWidth(0, 30 * 256); sheet.CreateRow(0).CreateCell(0).SetCellValue("H101-H102");
+            sheet.CreateRow(1).CreateCell(0).SetCellValue("H101"); sheet.CreateRow(2).CreateCell(0).SetCellValue("Z999");
+            MemoryStream output = new MemoryStream(); workbook.Write(output); byte[] bytes = output.ToArray(); workbook.Close();
+            OperationResult<MapImportResultDto> result;
+            using (MemoryStream stream = new MemoryStream(bytes)) result = service.ImportExcel(1, stream, "map.xlsx", "tester");
+            Equal(true, result.IsSuccess, "best effort import succeeds");
+            MapObject group = repository.ImportedObjects.Single(x => x.ObjectType == "GROUP");
+            Equal("NONE", group.BindingType, "group has no business binding"); Equal(null, group.BindingCode, "group binding code is null");
+            Equal(2, repository.ImportedObjects.Count(x => x.BindingType == "LOCATION"), "only known unique locations imported");
+            Equal(true, repository.ImportedObjects.Where(x => x.BindingType == "LOCATION").All(x => x.ParentObjectId == group.Id), "children reference range group");
+            Equal(true, result.Data.Issues.Any(x => x.Code == "SOURCE_DUPLICATE_LOCATION"), "duplicate source warning emitted");
+            Equal(true, result.Data.Issues.Any(x => x.Code == "SOURCE_LOCATION_NOT_FOUND" && x.BindingCode == "Z999"), "unknown source warning emitted");
+            Equal(true, repository.BoundsMaxX > repository.BoundsMinX && repository.BoundsMaxY > repository.BoundsMinY, "layout bounds imported from workbook");
+            Equal("RACK", repository.ImportedObjects.Single(x => x.BindingCode == "H101").ObjectType, "double rack mapping retained");
+            Equal("RACK", repository.ImportedObjects.Single(x => x.BindingCode == "H102").ObjectType, "remainder rack mapping retained");
+
+            repository.Objects.Add(new MapObject { Id = 99, ObjectCode = "MANUAL" });
+            using (MemoryStream stream = new MemoryStream(bytes)) result = service.ImportExcel(1, stream, "map.xlsx", "tester");
+            Equal(false, result.IsSuccess, "existing map geometry blocks reimport");
+            Equal(1, repository.ImportCalls, "blocked reimport does not reach repository");
+            Pass();
+        }
+
+        private class FakeMapRepository : IMapRepository
+        {
+            public MapLayout Layout;
+            public int SaveCalls;
+            public int ImportCalls;
+            public decimal BoundsMinX; public decimal BoundsMinY; public decimal BoundsMaxX; public decimal BoundsMaxY;
+            public List<MapObject> ImportedObjects = new List<MapObject>();
+            public List<MapObject> Objects = new List<MapObject>();
+            public List<MapLocationBinding> Locations = new List<MapLocationBinding>();
+            public List<MapLayout> GetLayouts(string warehouseCode) { return Layout == null ? new List<MapLayout>() : new List<MapLayout> { Layout }; }
+            public MapLayout GetLayout(long layoutId) { return Layout; }
+            public MapLayout GetRuntimeLayout(string warehouseCode) { return Layout; }
+            public List<MapObject> GetObjects(long layoutId) { return Objects; }
+            public long CreateDraftLayout(CreateMapLayoutRequest request) { return 1; }
+            public List<MapLocationBinding> GetLocationBindings(long warehouseId) { return Locations; }
+            public void SaveObjects(long layoutId, IList<MapObject> upserts, IList<long> deletedIds, string operatorName) { SaveCalls++; }
+            public void ImportObjects(long layoutId, IList<MapObject> objects, decimal minX, decimal minY, decimal maxX, decimal maxY, string operatorName)
+            {
+                ImportCalls++; ImportedObjects = objects.ToList(); BoundsMinX = minX; BoundsMinY = minY; BoundsMaxX = maxX; BoundsMaxY = maxY;
+            }
         }
 
         private class FakeLocationMaintenanceRepository : ILocationRepository

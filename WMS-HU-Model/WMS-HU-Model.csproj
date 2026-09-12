@@ -44,6 +44,21 @@
       <HintPath>..\packages\Dapper.2.1.79\lib\net461\Dapper.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="NPOI">
+      <HintPath>..\packages\NPOI.2.3.0\lib\net40\NPOI.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OOXML">
+      <HintPath>..\packages\NPOI.2.3.0\lib\net40\NPOI.OOXML.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OpenXml4Net">
+      <HintPath>..\packages\NPOI.2.3.0\lib\net40\NPOI.OpenXml4Net.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OpenXmlFormats">
+      <HintPath>..\packages\NPOI.2.3.0\lib\net40\NPOI.OpenXmlFormats.dll</HintPath>
+    </Reference>
+    <Reference Include="ICSharpCode.SharpZipLib">
+      <HintPath>..\packages\SharpZipLib.0.86.0\lib\20\ICSharpCode.SharpZipLib.dll</HintPath>
+    </Reference>
     <Reference Include="Nancy, Version=2.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Nancy.2.0.0\lib\net452\Nancy.dll</HintPath>
     </Reference>
@@ -76,6 +91,15 @@
     <Compile Include="Infrastructure\Sap\SapOutboundPayloadSerializer.cs" />
     <Compile Include="Models\Common\ApiResult.cs" />
     <Compile Include="Models\Common\OperationResult.cs" />
+    <Compile Include="Map\Dtos\MapDtos.cs" />
+    <Compile Include="Map\Import\MapExcelImportService.cs" />
+    <Compile Include="Map\Import\MapRangeExpander.cs" />
+    <Compile Include="Map\Models\MapModels.cs" />
+    <Compile Include="Map\Repositories\IMapRepository.cs" />
+    <Compile Include="Map\Repositories\Impl\MapRepository.cs" />
+    <Compile Include="Map\Services\IMapService.cs" />
+    <Compile Include="Map\Services\Impl\MapService.cs" />
+    <Compile Include="Map\Validation\MapValidationService.cs" />
     <Compile Include="Models\Inbound\FinishedGoodsInboundModels.cs" />
     <Compile Include="Models\Inbound\FinishedGoodsInboundReadModels.cs" />
     <Compile Include="Models\Inventory\FinishedGoodsInventoryModels.cs" />

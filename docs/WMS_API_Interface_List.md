@@ -256,9 +256,9 @@ flowchart LR
 | `GET /api/wms/outbound/orders/{vbeln}/shipping-state` | 返回 OutboundStatus、SapPostingStatus、PickedBoxCount/Qty、LastSapCode/Message、CanConfirmShipment、CanRetry、RequiresITReview。 |
 | `POST /api/wms/outbound/orders/{vbeln}/confirm-shipment` | Body 仅 `RequestId`,`Operator`,`Remark?`；后端冻结 VBELN 全量快照并一次调用 S0089。SAP S 才 SHIPPED；E 保持 PICKED/FAILED；可能已到 SAP 但结果未知时为 UNKNOWN。 |
 | `POST /api/wms/outbound/orders/{vbeln}/ship` | **DEPRECATED_ALIAS**；请求兼容旧 ShipOutboundRequest，但委托 confirm-shipment，不再允许直接 PICKED→SHIPPED。 |
-| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-posted` | UNKNOWN 经 IT 外部核查后确认已过账；必须 RequestId/Operator/Remark，不调用 SAP，转 SUCCESS/SHIPPED/MANUAL_CONFIRM。 |
-| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-not-posted` | UNKNOWN 经 IT 核查确认未过账；保留原 UNKNOWN 证据并转 retry-eligible FAILED。 |
-| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/retry` | 仅上述 FAILED；新 RequestId、新 attempt，原 Posting/Detail/PayloadJson/PayloadHash 不变；无自动重试。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-posted` | Body 必须包含 `RequestId`,`Operator`,`Remark`,`ExpectedIntegrationLogId`。仅订单仍为 PICKED、Posting/所选最新日志均为 UNKNOWN 且 HTTP 非 401/403 时允许；不调用 SAP，追加 `MANUAL_CONFIRMED_POSTED/SUCCESS` 审计事件，并在同一 Serializable 事务中复用 Shipment Finalizer 转 SUCCESS/SHIPPED。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/manual-confirm-not-posted` | Body 同上且 Remark 必填；满足相同最新 UNKNOWN 约束时不调用 SAP，保留原 UNKNOWN 日志并追加 `MANUAL_CONFIRMED_NOT_POSTED/FAILED` 审计事件，只将 Posting 转为 retry-eligible FAILED，订单/HU 仍保持 PICKED。 |
+| `POST /api/wms/outbound/orders/{vbeln}/sap-posting/retry` | Body 必须包含 `RequestId`,`Operator`,`Remark`,`ExpectedIntegrationLogId`。FAILED 可使用新 RequestId 重试；兼容历史误分类时，仅允许当前最新 Attempt/IntegrationLog 为 HTTP 401/403 的 UNKNOWN 使用新 RequestId 重试。两种情况均复用原 Posting/Detail/PayloadJson/PayloadHash 并创建新 attempt；其他 UNKNOWN 禁止盲目重试。 |
 | `GET /api/wms/outbound/shipping-orders` | 出货管理分页查询，支持 SAPDeliveryNo、OutboundStatus、PostingStatus。 |
 | `GET /api/wms/integration/sap/logs` / `logs/{id}` | 通用 SAP 通信日志列表/详情；列表不返回大 JSON，详情返回 Request/Response、异常与 PayloadHash。 |
 
@@ -275,9 +275,11 @@ SAP字段固定：聚合=`VBELN`；`POSNR=OutboundOrderLine.SAPItemNo`；`MATNR=
 
 SAP CHARG 生成规则固定：`SAP_CHARG_RULE_SOURCE=Legacy PK_BoxTOSAP_API semantics`；`SAP_BATCH_MEANING=SAP CHARG snapshot`；`CHARG_INPUTS=PlantCode + PK_Packmaster.PackID + source production OrderType classification`；`SPECIAL_ORDER_TYPES=ZP02,ZP05,ZP06,ZP08`；`INTERNAL_BATCH_FALLBACK=FALSE`。普通规则为 1010→`A + RIGHT('00000000'+PackID,9)`、其他厂→B；特殊规则为 1010→`AY + RIGHT('00000000'+PackID,8)`、其他厂→BY。特殊分类只来自 PackID 对应 `PK_PackLot.LotNo → PP_LotCard.OrderType` 的任一命中，不使用 outbound LFART/PSTYV。MES 正式入库要求每个 Packmaster 至少一个有效 source LotNo：去重后按最小 `LotSeq ASC, LotNo ASC` 排序，以英文逗号无空格拼接写入 `WMS_FG_HU_Item.LotNo`；缺失返回 `MES_LOTNO_INVALID:`，拼接后超过 500 字符返回 `MES_LOTNO_TOO_LONG:`，禁止截断。PackID 以 `WMS_HU_Identifier.IdentifierType=MES_PACK_ID` 保存，生成的 SAP CHARG 写入 `WMS_HU_Item.SAPBatchNo`。开发期所有入库快照统一使用当前 `FGI_V3` 固定字段 Hash；不保留 FGI_V1/FGI_V2 选择分支。Formal Pick 原样冻结完整 LotNo/SAPBatchNo 到 PickDetailItem，S0089 只读冻结的 SAPBatchNo。S0089 不增加 UMCHA。
 
-发送前必须验证 WMS Host 配置 `Sap.S0089.Endpoint`；S0089 不使用账号密码或 Basic Authorization。`Sap.S0089.TimeoutMs` 是可选技术参数，未配置时使用 100000ms。Endpoint 无效或已配置的 TimeoutMs 非正整数时，不创建 Posting、SENDING 或 IntegrationLog attempt，也不分类 UNKNOWN。请求快照/claim 在 Serializable Transaction A 完成，网络调用在事务外，Transaction B 以当前 attempt ownership 完成。
+发送前必须验证 WMS Host 配置 `Sap.S0089.Endpoint`、`ApiAccountSAP`、`ApiPasswordSAP`；S0089 复用旧 `NetHelper("SAP")` 的 UTF-8 Basic Authentication 约定，但继续使用强类型 S0089 Client。`Sap.S0089.TimeoutMs` 是可选技术参数，未配置时使用 100000ms。任一必需项缺失、Endpoint 无效或已配置的 TimeoutMs 非正整数时，不创建 Posting、SENDING 或 IntegrationLog attempt，也不分类 UNKNOWN。凭据与 Authorization 不进入日志、异常或 DTO。HTTP 401/403 直接归类 FAILED（`ResultCode=SAP_AUTHENTICATION_REJECTED`），使用现有 `ResultMessage/HttpStatusCode/ResponseJson` 审计，不依赖额外 Exception 物理列，且不尝试按 SAP 业务 JSON 解析；timeout/reset/空响应/畸形业务响应仍为 UNKNOWN。请求快照/claim 在 Serializable Transaction A 完成，网络调用在事务外，Transaction B 以当前 attempt ownership 完成。
 
 Phase 1 无 SAP 状态查询和自动 retry。安全模型为 `LEARUN_UI_AUTHORIZATION_ONLY`，`DIRECT_WMS_IT_RECOVERY_API_SERVER_AUTH=FALSE`；Operator 是 UI/application convention 值，不是服务端认证身份。能直接访问 WMS Host 的调用方可绕过 Learun 权限，因此部署必须限制到可信内部网络。
+
+Learun SAP 日志抽屉的“确认SAP已过账”“确认SAP未过账”“推送重试”共用按钮权限 `sapResend`；Learun Controller 再次校验权限并以登录会话账户覆盖 Operator。通用 WMS Proxy 阻断三个恢复 Route，防止绕过页面代理。日志详情中的 `CanManualConfirm`、`CanResend` 及不可操作原因均由 WMS 后端按最新状态计算，前端不自行推断。人工判定不可撤销地依赖操作人员已在 SAP 外部核实的事实。
 
 ## WeekCode Audit
 

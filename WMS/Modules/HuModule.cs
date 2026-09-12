@@ -1,4 +1,5 @@
-﻿using System;
+using Learun.Application.WebApi;
+using System;
 using Nancy;
 using Nancy.ModelBinding;
 using WMS_HU_Model.Models.Common;
@@ -8,20 +9,20 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class HuModule : NancyModule
+    public class HuModule : BaseApi
     {
         private readonly IHuService _service;
         private readonly IHuHoldService _holdService;
 
         public HuModule()
-            : base("/api/wms/hus")
+            : base("/api/wms-fg/hus")
         {
             _service =
                 new HuService(
                     new HuRepository());
             _holdService = new HuHoldService(new HuHoldRepository());
 
-            Post("/{huCode}/hold", args =>
+            Post["/{huCode}/hold"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -30,9 +31,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/{huCode}/release", args =>
+            Post["/{huCode}/release"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -41,11 +42,11 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
             #region 查询 HU
 
-            Get("/{huCode}", args =>
+            Get["/{huCode}"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -67,13 +68,13 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
 
             #endregion
 
             #region 创建 HU
 
-            Post("/", _ =>
+            Post["/"] = _ =>
             {
                 CreateHuRequest request = this.Bind<CreateHuRequest>();
 
@@ -92,13 +93,13 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
             #endregion
 
             #region 建立 HU 关系
 
-            Post("/attach", _ =>
+            Post["/attach"] = _ =>
             {
                 AttachHuRequest request = this.Bind<AttachHuRequest>();
 
@@ -117,13 +118,13 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
             #endregion
 
             #region 增加库存明细
 
-            Post("/{huCode}/items", args =>
+            Post["/{huCode}/items"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -149,13 +150,13 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
             #endregion
 
             #region 查询 HU 树
 
-            Get("/{huCode}/tree", args =>
+            Get["/{huCode}/tree"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -177,7 +178,7 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
 
             #endregion
         }

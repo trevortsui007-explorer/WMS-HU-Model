@@ -1,4 +1,5 @@
-﻿using Nancy;
+using Learun.Application.WebApi;
+using Nancy;
 using Nancy.ModelBinding;
 using System;
 using System.Collections.Generic;
@@ -9,19 +10,19 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class LocationModule : NancyModule
+    public class LocationModule : BaseApi
     {
         private readonly ILocationService _service;
 
         public LocationModule()
-            : base("/api/wms/locations")
+            : base("/api/wms-fg/locations")
         {
             _service =
                 new LocationService(
                     new LocationRepository());
 
             // 查询货位列表
-            Get("/", _ =>
+            Get["/"] = _ =>
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -35,9 +36,9 @@ namespace WMS.Modules
 
                 return Response.AsJson(
                     ApiResult.Success(list));
-            });
+            };
 
-            Get("/maintenance", _ =>
+            Get["/maintenance"] = _ =>
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -53,10 +54,10 @@ namespace WMS.Modules
                     LocationTypeCode = locationTypeCode, MasterStatus = masterStatus
                 });
                 return Response.AsJson(ApiResult.Success(list));
-            });
+            };
 
             // 查询单个货位
-            Get("/{warehouseCode}/{locationCode}", args =>
+            Get["/{warehouseCode}/{locationCode}"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
 
@@ -85,10 +86,10 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
 
             // 新增货位
-            Post("/", _ =>
+            Post["/"] = _ =>
             {
                 CreateLocationRequest request = this.Bind<CreateLocationRequest>();
 
@@ -105,10 +106,10 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
             // 修改货位
-            Put("/{warehouseCode}/{locationCode}", args =>
+            Put["/{warehouseCode}/{locationCode}"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
 
@@ -141,9 +142,9 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
-            Post("/{warehouseCode}/{locationCode}/update", args =>
+            Post["/{warehouseCode}/{locationCode}/update"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -154,9 +155,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
 
-            Post("/{warehouseCode}/{locationCode}/enable", args =>
+            Post["/{warehouseCode}/{locationCode}/enable"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -167,8 +168,8 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
-            Post("/{warehouseCode}/{locationCode}/disable", args =>
+            };
+            Post["/{warehouseCode}/{locationCode}/disable"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -179,7 +180,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
         }
     }
 }

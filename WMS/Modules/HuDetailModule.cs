@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using System.Collections.Generic;
 using Nancy;
@@ -8,7 +9,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class HuDetailModule : NancyModule
+    public class HuDetailModule : BaseApi
     {
         private readonly IHuDetailService _service;
 
@@ -18,11 +19,11 @@ namespace WMS.Modules
         }
 
         internal HuDetailModule(IHuDetailService service)
-            : base("/api/wms/hus")
+            : base("/api/wms-fg/hus")
         {
             _service = service;
 
-            Get("/{huCode}/detail", args =>
+            Get["/{huCode}/detail"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -30,9 +31,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
 
-            Get("/{huCode}/operations", args =>
+            Get["/{huCode}/operations"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -41,9 +42,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
 
-            Get("/{huCode}/holds", args =>
+            Get["/{huCode}/holds"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -52,7 +53,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
         }
 
         private int ReadTop()

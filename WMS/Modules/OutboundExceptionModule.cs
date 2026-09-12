@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using Nancy;
 using Nancy.ModelBinding;
 using System;
@@ -10,16 +11,16 @@ using WMS_HU_Model.Services;
 using WMS.Infrastructure.Sap;
 
 namespace WMS.Modules
-{    public class OutboundExceptionModule : NancyModule
+{    public class OutboundExceptionModule : BaseApi
     {
         private readonly IOutboundExceptionService _exceptionService;
 
         public OutboundExceptionModule()
-            : base("/api/wms/outbound")
+            : base("/api/wms-fg/outbound")
         {
             _exceptionService = new OutboundExceptionService(new OutboundExceptionRepository());
 
-            Post("/pick-details/{detailId}/return", args =>
+            Post["/pick-details/{detailId}/return"] = args =>
             {
                 object rawDetailId = args.detailId;
                 long detailId;
@@ -31,9 +32,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/returned/{huCode}/putaway", args =>
+            Post["/returned/{huCode}/putaway"] = args =>
             {
                 object rawHuCode = args.huCode;
                 string huCode = Convert.ToString(rawHuCode);
@@ -42,9 +43,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/pick-batches/{pickBatchNo}/replace", args =>
+            Post["/pick-batches/{pickBatchNo}/replace"] = args =>
             {
                 object rawPickBatchNo = args.pickBatchNo;
                 string pickBatchNo = Convert.ToString(rawPickBatchNo);
@@ -55,7 +56,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
         }
     }
 }

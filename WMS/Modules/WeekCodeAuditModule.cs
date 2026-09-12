@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Common;
@@ -7,7 +8,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class WeekCodeAuditModule : NancyModule
+    public class WeekCodeAuditModule : BaseApi
     {
         private readonly IWeekCodeAuditService _service;
 
@@ -17,10 +18,10 @@ namespace WMS.Modules
         }
 
         internal WeekCodeAuditModule(IWeekCodeAuditService service)
-            : base("/api/wms/weekcode")
+            : base("/api/wms-fg/weekcode")
         {
             _service = service;
-            Get("/audit", _ =>
+            Get["/audit"] = _ =>
             {
                 WeekCodeAuditQuery query;
                 string error;
@@ -30,7 +31,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
         }
 
         private bool TryBuildQuery(out WeekCodeAuditQuery query, out string error)

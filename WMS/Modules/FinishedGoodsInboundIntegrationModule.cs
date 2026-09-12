@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using Nancy.ModelBinding;
@@ -8,7 +9,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class FinishedGoodsInboundIntegrationModule : NancyModule
+    public class FinishedGoodsInboundIntegrationModule : BaseApi
     {
         private readonly IFinishedGoodsInboundService _service;
 
@@ -20,11 +21,11 @@ namespace WMS.Modules
         }
 
         internal FinishedGoodsInboundIntegrationModule(IFinishedGoodsInboundService service)
-            : base("/api/wms/integration/finished-goods")
+            : base("/api/wms-fg/integration/finished-goods")
         {
             _service = service;
 
-            Post("/inbound", _ =>
+            Post["/inbound"] = _ =>
             {
                 try
                 {
@@ -46,7 +47,7 @@ namespace WMS.Modules
                         ApiResult.Fail("Finished goods inbound处理失败。", 500),
                         HttpStatusCode.InternalServerError);
                 }
-            });
+            };
         }
     }
 }

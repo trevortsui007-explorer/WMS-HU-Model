@@ -1,4 +1,5 @@
-﻿using System;
+using Learun.Application.WebApi;
+using System;
 using System.Data.SqlClient;
 using Nancy;
 using WMS_HU_Model.Infrastructure.Database;
@@ -6,12 +7,12 @@ using WMS_HU_Model.Models.Common;
 
 namespace WMS.Modules
 {
-    public class HealthModule : NancyModule
+    public class HealthModule : BaseApi
     {
         public HealthModule()
-            : base("/api")
+            : base("/api/wms-fg")
         {
-            Get("/health", _ =>
+            Get["/health"] = _ =>
             {
                 return Response.AsJson(
                     ApiResult.Success(new
@@ -22,9 +23,9 @@ namespace WMS.Modules
                         Time = DateTime.Now
                     })
                 );
-            });
+            };
 
-            Get("/health/db", _ =>
+            Get["/health/db"] = _ =>
             {
                 try
                 {
@@ -79,7 +80,7 @@ SELECT
                         )
                     );
                 }
-            });
+            };
         }
     }
 }

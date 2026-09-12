@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Common;
@@ -6,7 +7,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class MonitoringModule : NancyModule
+    public class MonitoringModule : BaseApi
     {
         private readonly IMonitoringService _service;
 
@@ -19,18 +20,18 @@ namespace WMS.Modules
         }
 
         internal MonitoringModule(IMonitoringService service)
-            : base("/api/wms/monitoring")
+            : base("/api/wms-fg/monitoring")
         {
             _service = service;
-            Get("/overview", _ => Response.AsJson(ApiResult.Success(_service.GetOverview())));
-            Get("/activity", _ =>
+            Get["/overview"] = _ => Response.AsJson(ApiResult.Success(_service.GetOverview()));
+            Get["/activity"] = _ =>
             {
                 object rawDays = Request.Query.days;
                 string daysText = Convert.ToString(rawDays);
                 int days;
                 if (!int.TryParse(daysText, out days)) days = 7;
                 return Response.AsJson(ApiResult.Success(_service.GetActivity(days)));
-            });
+            };
         }
     }
 }

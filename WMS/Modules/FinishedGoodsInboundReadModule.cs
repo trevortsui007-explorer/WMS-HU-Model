@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Common;
@@ -7,7 +8,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class FinishedGoodsInboundReadModule : NancyModule
+    public class FinishedGoodsInboundReadModule : BaseApi
     {
         private readonly IFinishedGoodsInboundReadService _service;
 
@@ -17,20 +18,20 @@ namespace WMS.Modules
         }
 
         internal FinishedGoodsInboundReadModule(IFinishedGoodsInboundReadService service)
-            : base("/api/wms/inbound/finished-goods/receipts")
+            : base("/api/wms-fg/inbound/finished-goods/receipts")
         {
             _service = service;
 
-            Get("/", _ =>
+            Get["/"] = _ =>
             {
                 FinishedGoodsInboundRecordQuery query = ReadQuery();
                 OperationResult<FinishedGoodsInboundRecordResultDto> result = _service.Query(query);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
 
-            Get("/{receiptId}", args =>
+            Get["/{receiptId}"] = args =>
             {
                 object rawReceiptId = args.receiptId;
                 string receiptIdText = Convert.ToString(rawReceiptId);
@@ -41,7 +42,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
         }
 
         private FinishedGoodsInboundRecordQuery ReadQuery()

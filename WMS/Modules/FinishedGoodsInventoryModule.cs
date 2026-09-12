@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Common;
@@ -7,7 +8,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class FinishedGoodsInventoryModule : NancyModule
+    public class FinishedGoodsInventoryModule : BaseApi
     {
         private readonly IFinishedGoodsInventoryService _service;
 
@@ -17,11 +18,11 @@ namespace WMS.Modules
         }
 
         internal FinishedGoodsInventoryModule(IFinishedGoodsInventoryService service)
-            : base("/api/wms/inventory/finished-goods")
+            : base("/api/wms-fg/inventory/finished-goods")
         {
             _service = service;
 
-            Get("/", _ =>
+            Get["/"] = _ =>
             {
                 FinishedGoodsInventoryQuery query;
                 string error;
@@ -32,9 +33,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
 
-            Get("/{boxCode}/preview", args =>
+            Get["/{boxCode}/preview"] = args =>
             {
                 object rawBoxCode = args.boxCode;
                 string boxCode = Convert.ToString(rawBoxCode);
@@ -42,7 +43,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 404), HttpStatusCode.NotFound);
-            });
+            };
         }
 
         private bool TryBuildQuery(out FinishedGoodsInventoryQuery query, out string error)

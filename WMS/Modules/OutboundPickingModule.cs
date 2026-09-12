@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using Nancy;
 using Nancy.ModelBinding;
 using System;
@@ -10,17 +11,17 @@ using WMS_HU_Model.Services;
 using WMS.Infrastructure.Sap;
 
 namespace WMS.Modules
-{    public class OutboundPickingModule : NancyModule
+{    public class OutboundPickingModule : BaseApi
     {
         private readonly IOutboundPickingService _pickingService;
 
         public OutboundPickingModule()
-            : base("/api/wms/outbound")
+            : base("/api/wms-fg/outbound")
         {
             IOutboundOrderRepository orderRepository = new OutboundOrderRepository();
             _pickingService = new OutboundPickingService(new OutboundPickingRepository(), orderRepository, new HuIdentifierService(new HuIdentifierRepository()));
 
-            Post("/orders/{vbeln}/preview", args =>
+            Post["/orders/{vbeln}/preview"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -28,9 +29,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/orders/{vbeln}/start-picking", args =>
+            Post["/orders/{vbeln}/start-picking"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -39,9 +40,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/allocations/{allocationNo}/release", args =>
+            Post["/allocations/{allocationNo}/release"] = args =>
             {
                 object rawAllocationNo = args.allocationNo;
                 string allocationNo = Convert.ToString(rawAllocationNo);
@@ -50,9 +51,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/pick-batches/{pickBatchNo}/scan", args =>
+            Post["/pick-batches/{pickBatchNo}/scan"] = args =>
             {
                 object rawPickBatchNo = args.pickBatchNo;
                 string pickBatchNo = Convert.ToString(rawPickBatchNo);
@@ -61,7 +62,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
         }
     }
 }

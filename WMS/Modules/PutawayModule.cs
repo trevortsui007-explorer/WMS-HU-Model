@@ -1,4 +1,5 @@
-﻿using System;
+using Learun.Application.WebApi;
+using System;
 using Nancy;
 using Nancy.ModelBinding;
 using WMS_HU_Model.Models.Common;
@@ -8,13 +9,13 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class PutawayModule : NancyModule
+    public class PutawayModule : BaseApi
     {
         private readonly IPutawayService _service;
         private readonly IPutawayRecommendationService _recommendationService;
 
         public PutawayModule()
-            : base("/api/wms/putaway")
+            : base("/api/wms-fg/putaway")
         {
             IHuRepository huRepository = new HuRepository();
 
@@ -35,7 +36,7 @@ namespace WMS.Modules
 
             _recommendationService = new PutawayRecommendationService(new PutawayRecommendationRepository());
 
-            Get("/recommendations", _ =>
+            Get["/recommendations"] = _ =>
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 object rawBoxHuCode = Request.Query.boxHuCode;
@@ -49,12 +50,12 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
             //----------------------------------------------------
             // 扫描托盘
             //----------------------------------------------------
-            Get("/pallet/{palletHuCode}", args =>
+            Get["/pallet/{palletHuCode}"] = args =>
             {
                 object rawValue = args.palletHuCode;
 
@@ -78,9 +79,9 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
 
-            Get("/pallet/by-box/{boxHuCode}", args =>
+            Get["/pallet/by-box/{boxHuCode}"] = args =>
             {
                 object rawValue = args.boxHuCode;
                 string boxHuCode = Convert.ToString(rawValue);
@@ -88,12 +89,12 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
             //----------------------------------------------------
             // 扫描外箱并上架
             //----------------------------------------------------
-            Post("/box", _ =>
+            Post["/box"] = _ =>
             {
                 PutawayBoxRequest request = this.Bind<PutawayBoxRequest>();
 
@@ -114,16 +115,16 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
-            Post("/pallet", _ =>
+            Post["/pallet"] = _ =>
             {
                 WholePalletPutawayRequest request = this.Bind<WholePalletPutawayRequest>();
                 OperationResult<WholePalletPutawayResultDto> result = _service.PutawayPallet(request);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
         }
     }
 }

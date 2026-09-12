@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using Nancy;
 using Nancy.ModelBinding;
 using System;
@@ -10,25 +11,25 @@ using WMS_HU_Model.Services;
 using WMS.Infrastructure.Sap;
 
 namespace WMS.Modules
-{    public class OutboundOrderModule : NancyModule
+{    public class OutboundOrderModule : BaseApi
     {
         private readonly IOutboundOrderService _orderService;
 
         public OutboundOrderModule()
-            : base("/api/wms/outbound")
+            : base("/api/wms-fg/outbound")
         {
             _orderService = new OutboundOrderService(new OutboundOrderRepository());
 
-            Get("/orders", _ =>
+            Get["/orders"] = _ =>
             {
                 OutboundOrderQuery query = this.Bind<OutboundOrderQuery>();
                 OperationResult<List<OutboundOrderDto>> result = _orderService.GetOrders(query);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Get("/orders/{vbeln}", args =>
+            Get["/orders/{vbeln}"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -36,9 +37,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Get("/orders/{vbeln}/picking-state", args =>
+            Get["/orders/{vbeln}/picking-state"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -46,9 +47,9 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
 
-            Post("/orders/{vbeln}/void", args =>
+            Post["/orders/{vbeln}/void"] = args =>
             {
                 object rawVbeln = args.vbeln;
                 string vbeln = Convert.ToString(rawVbeln);
@@ -57,7 +58,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data, result.Message))
                     : Response.AsJson(ApiResult.Fail(result.Message));
-            });
+            };
         }
     }
 }

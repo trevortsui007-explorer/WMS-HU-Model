@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using Nancy.ModelBinding;
@@ -8,7 +9,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class MasterDataMaintenanceModule : NancyModule
+    public class MasterDataMaintenanceModule : BaseApi
     {
         private readonly IMasterDataMaintenanceService _service;
 
@@ -18,18 +19,18 @@ namespace WMS.Modules
         }
 
         internal MasterDataMaintenanceModule(IMasterDataMaintenanceService service)
-            : base("/api/wms/master-data")
+            : base("/api/wms-fg/master-data")
         {
             _service = service;
 
-            Get("/options", _ =>
+            Get["/options"] = _ =>
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
                 return Response.AsJson(ApiResult.Success(_service.GetOptions(warehouseCode)));
-            });
+            };
 
-            Get("/warehouses", _ =>
+            Get["/warehouses"] = _ =>
             {
                 object rawCode = Request.Query.warehouseCode;
                 string code = Convert.ToString(rawCode);
@@ -41,35 +42,35 @@ namespace WMS.Modules
                 {
                     WarehouseCode = code, WarehouseName = name, IsActive = NullableBool(isActiveText)
                 })));
-            });
+            };
 
-            Get("/warehouses/{warehouseCode}", args =>
+            Get["/warehouses/{warehouseCode}"] = args =>
             {
                 object rawCode = args.warehouseCode;
                 string code = Convert.ToString(rawCode);
                 OperationResult<WarehouseDto> result = _service.GetWarehouse(code);
                 return Json(result, HttpStatusCode.NotFound);
-            });
+            };
 
-            Post("/warehouses", _ => Json(_service.CreateWarehouse(this.Bind<WarehouseCreateRequest>()), HttpStatusCode.BadRequest));
-            Post("/warehouses/{warehouseCode}/update", args =>
+            Post["/warehouses"] = _ => Json(_service.CreateWarehouse(this.Bind<WarehouseCreateRequest>()), HttpStatusCode.BadRequest);
+            Post["/warehouses/{warehouseCode}/update"] = args =>
             {
                 object rawCode = args.warehouseCode;
                 string code = Convert.ToString(rawCode);
                 return Json(_service.UpdateWarehouse(code, this.Bind<WarehouseUpdateRequest>()), HttpStatusCode.BadRequest);
-            });
-            Post("/warehouses/{warehouseCode}/enable", args =>
+            };
+            Post["/warehouses/{warehouseCode}/enable"] = args =>
             {
                 object rawCode = args.warehouseCode;
                 return WarehouseStatus(rawCode, true);
-            });
-            Post("/warehouses/{warehouseCode}/disable", args =>
+            };
+            Post["/warehouses/{warehouseCode}/disable"] = args =>
             {
                 object rawCode = args.warehouseCode;
                 return WarehouseStatus(rawCode, false);
-            });
+            };
 
-            Get("/warehouse-plants", _ =>
+            Get["/warehouse-plants"] = _ =>
             {
                 object rawWarehouseCode = Request.Query.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -81,38 +82,38 @@ namespace WMS.Modules
                 {
                     WarehouseCode = warehouseCode, PlantCode = plantCode, IsActive = NullableBool(isActiveText)
                 })));
-            });
+            };
 
-            Get("/warehouse-plants/{warehouseCode}/{plantCode}", args =>
+            Get["/warehouse-plants/{warehouseCode}/{plantCode}"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
                 object rawPlantCode = args.plantCode;
                 string plantCode = Convert.ToString(rawPlantCode);
                 return Json(_service.GetWarehousePlant(warehouseCode, plantCode), HttpStatusCode.NotFound);
-            });
+            };
 
-            Post("/warehouse-plants", _ => Json(_service.CreateWarehousePlant(this.Bind<WarehousePlantCreateRequest>()), HttpStatusCode.BadRequest));
-            Post("/warehouse-plants/{warehouseCode}/{plantCode}/update", args =>
+            Post["/warehouse-plants"] = _ => Json(_service.CreateWarehousePlant(this.Bind<WarehousePlantCreateRequest>()), HttpStatusCode.BadRequest);
+            Post["/warehouse-plants/{warehouseCode}/{plantCode}/update"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
                 object rawPlantCode = args.plantCode;
                 string plantCode = Convert.ToString(rawPlantCode);
                 return Json(_service.UpdateWarehousePlant(warehouseCode, plantCode, this.Bind<WarehousePlantUpdateRequest>()), HttpStatusCode.BadRequest);
-            });
-            Post("/warehouse-plants/{warehouseCode}/{plantCode}/enable", args =>
+            };
+            Post["/warehouse-plants/{warehouseCode}/{plantCode}/enable"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 object rawPlantCode = args.plantCode;
                 return WarehousePlantStatus(rawWarehouseCode, rawPlantCode, true);
-            });
-            Post("/warehouse-plants/{warehouseCode}/{plantCode}/disable", args =>
+            };
+            Post["/warehouse-plants/{warehouseCode}/{plantCode}/disable"] = args =>
             {
                 object rawWarehouseCode = args.warehouseCode;
                 object rawPlantCode = args.plantCode;
                 return WarehousePlantStatus(rawWarehouseCode, rawPlantCode, false);
-            });
+            };
         }
 
         private Response WarehouseStatus(object rawCode, bool isActive)

@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Common;
@@ -7,7 +8,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class InventoryQueryModule : NancyModule
+    public class InventoryQueryModule : BaseApi
     {
         private readonly IInventoryQueryService _service;
 
@@ -20,11 +21,11 @@ namespace WMS.Modules
         }
 
         internal InventoryQueryModule(IInventoryQueryService service)
-            : base("/api/wms/inventory")
+            : base("/api/wms-fg/inventory")
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
 
-            Get("/lookup", _ =>
+            Get["/lookup"] = _ =>
             {
                 object rawWarehouseCode = Request.Query["warehouseCode"];
                 string warehouseCode = Convert.ToString(rawWarehouseCode);
@@ -35,7 +36,7 @@ namespace WMS.Modules
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
-            });
+            };
         }
     }
 }

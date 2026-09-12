@@ -1,4 +1,5 @@
-﻿using System;
+using Learun.Application.WebApi;
+using System;
 using System.Collections.Generic;
 using Nancy;
 using Nancy.ModelBinding;
@@ -9,12 +10,12 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class HuLocationModule : NancyModule
+    public class HuLocationModule : BaseApi
     {
         private readonly IHuLocationService _service;
 
         public HuLocationModule()
-            : base("/api/wms/hus")
+            : base("/api/wms-fg/hus")
         {
             IHuRepository huRepository = new HuRepository();
 
@@ -29,7 +30,7 @@ namespace WMS.Modules
                     locationRepository,
                     huLocationRepository);
 
-            Get("/{huCode}/location", args =>
+            Get["/{huCode}/location"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -51,9 +52,9 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
 
-            Post("/{huCode}/move", args =>
+            Post["/{huCode}/move"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -79,9 +80,9 @@ namespace WMS.Modules
                     ApiResult.Success(
                         result.Data,
                         result.Message));
-            });
+            };
 
-            Get("/{huCode}/moves", args =>
+            Get["/{huCode}/moves"] = args =>
             {
                 object rawHuCode = args.huCode;
 
@@ -122,7 +123,7 @@ namespace WMS.Modules
                 return Response.AsJson(
                     ApiResult.Success(
                         result.Data));
-            });
+            };
         }
     }
 }

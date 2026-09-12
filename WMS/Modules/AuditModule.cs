@@ -1,3 +1,4 @@
+using Learun.Application.WebApi;
 using System;
 using Nancy;
 using WMS_HU_Model.Models.Audit;
@@ -7,7 +8,7 @@ using WMS_HU_Model.Services;
 
 namespace WMS.Modules
 {
-    public class AuditModule : NancyModule
+    public class AuditModule : BaseApi
     {
         private readonly IAuditService _service;
 
@@ -17,31 +18,31 @@ namespace WMS.Modules
         }
 
         internal AuditModule(IAuditService service)
-            : base("/api/wms/audit")
+            : base("/api/wms-fg/audit")
         {
             _service = service;
 
-            Get("/operations", _ => Respond(_service.QueryOperations(new OperationAuditQuery
+            Get["/operations"] = _ => Respond(_service.QueryOperations(new OperationAuditQuery
             {
                 DateFrom = Read("dateFrom"), DateTo = Read("dateTo"), HuCode = Read("huCode"), RequestId = Read("requestId"),
                 Operator = Read("operator"), OperationType = Read("operationType"), Page = ReadInt("page"), PageSize = ReadInt("pageSize")
-            })));
+            }));
 
-            Get("/moves", _ => Respond(_service.QueryMoves(new MoveAuditQuery
+            Get["/moves"] = _ => Respond(_service.QueryMoves(new MoveAuditQuery
             {
                 DateFrom = Read("dateFrom"), DateTo = Read("dateTo"), HuCode = Read("huCode"), RequestId = Read("requestId"),
                 Operator = Read("operator"), MoveType = Read("moveType"), Page = ReadInt("page"), PageSize = ReadInt("pageSize")
-            })));
+            }));
 
-            Get("/holds", _ => Respond(_service.QueryHolds(new HoldAuditQuery
+            Get["/holds"] = _ => Respond(_service.QueryHolds(new HoldAuditQuery
             {
                 DateFrom = Read("dateFrom"), DateTo = Read("dateTo"), HuCode = Read("huCode"), RequestId = Read("requestId"),
                 Operator = Read("operator"), HoldReason = Read("holdReason"), Status = Read("status"), Page = ReadInt("page"), PageSize = ReadInt("pageSize")
-            })));
+            }));
 
-            Get("/request-trace", _ => Respond(_service.GetRequestTrace(Read("requestId"))));
+            Get["/request-trace"] = _ => Respond(_service.GetRequestTrace(Read("requestId")));
 
-            Get("/capabilities", _ => Response.AsJson(ApiResult.Success(_service.GetCapabilities())));
+            Get["/capabilities"] = _ => Response.AsJson(ApiResult.Success(_service.GetCapabilities()));
         }
 
         private Response Respond<T>(OperationResult<T> result)

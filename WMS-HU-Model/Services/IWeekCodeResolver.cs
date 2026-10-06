@@ -1,0 +1,12 @@
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.WeekCode;
+
+namespace WMS_HU_Model.Services
+{
+    public interface IWeekCodeResolver
+    {
+        OperationResult<WeekCodeSnapshot> Resolve(WeekCodeResolveContext context);
+        OperationResult<WeekCodeSnapshot> Resolve(string materialCode, string materialRevision, string dateCode);
+        OperationResult<WeekCodeSnapshot> Resolve(string dateCode, string ruleValue, System.DateTime? anchorTime);
+    }
+}

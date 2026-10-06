@@ -1,0 +1,92 @@
+using Learun.Application.WebApi;
+using System;
+using Nancy;
+using WMS_HU_Model.Models.Common;
+using WMS_HU_Model.Models.WeekCode;
+using WMS_HU_Model.Repositories;
+using WMS_HU_Model.Services;
+
+namespace WMS.Modules
+{
+    public class WeekCodeAuditModule : BaseApi
+    {
+        private readonly IWeekCodeAuditService _service;
+
+        public WeekCodeAuditModule()
+            : this(new WeekCodeAuditService(new WeekCodeAuditRepository(), new MesFinishedGoodsInboundRepository()))
+        {
+        }
+
+        internal WeekCodeAuditModule(IWeekCodeAuditService service)
+            : base("/api/wms-fg/weekcode")
+        {
+            _service = service;
+            Get["/audit"] = _ =>
+            {
+                WeekCodeAuditQuery query;
+                string error;
+                if (!TryBuildQuery(out query, out error))
+                    return Response.AsJson(ApiResult.Fail(error, 400), HttpStatusCode.BadRequest);
+                OperationResult<WeekCodeAuditResultDto> result = _service.Query(query);
+                return result.IsSuccess
+                    ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
+                    : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);
+            };
+        }
+
+        private bool TryBuildQuery(out WeekCodeAuditQuery query, out string error)
+        {
+            object rawPlantCode = Request.Query.plantCode;
+            string plantCode = Convert.ToString(rawPlantCode);
+            object rawMaterialCode = Request.Query.materialCode;
+            string materialCode = Convert.ToString(rawMaterialCode);
+            object rawMaterialRevision = Request.Query.materialRevision;
+            string materialRevision = Convert.ToString(rawMaterialRevision);
+            object rawAnomalyType = Request.Query.anomalyType;
+            string anomalyType = Convert.ToString(rawAnomalyType);
+            object rawRiskLevel = Request.Query.riskLevel;
+            string riskLevel = Convert.ToString(rawRiskLevel);
+            object rawIsHold = Request.Query.isHold;
+            string isHold = Convert.ToString(rawIsHold);
+            object rawPage = Request.Query.page;
+            string page = Convert.ToString(rawPage);
+            object rawPageSize = Request.Query.pageSize;
+            string pageSize = Convert.ToString(rawPageSize);
+            bool? parsedIsHold;
+            int parsedPage;
+            int parsedPageSize;
+            if (!TryBoolean(isHold, out parsedIsHold))
+            {
+                query = null; error = "isHold必须为true或false。"; return false;
+            }
+            if (!TryInteger(page, out parsedPage) || !TryInteger(pageSize, out parsedPageSize))
+            {
+                query = null; error = "page和pageSize必须为整数。"; return false;
+            }
+            query = new WeekCodeAuditQuery
+            {
+                PlantCode = plantCode, MaterialCode = materialCode, MaterialRevision = materialRevision,
+                AnomalyType = anomalyType, RiskLevel = riskLevel, IsHold = parsedIsHold,
+                Page = parsedPage, PageSize = parsedPageSize
+            };
+            error = null;
+            return true;
+        }
+
+        private static bool TryBoolean(string value, out bool? result)
+        {
+            result = null;
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            bool parsed;
+            if (!bool.TryParse(value, out parsed)) return false;
+            result = parsed;
+            return true;
+        }
+
+        private static bool TryInteger(string value, out int result)
+        {
+            result = 0;
+            return string.IsNullOrWhiteSpace(value) || int.TryParse(value, out result);
+        }
+    }
+}

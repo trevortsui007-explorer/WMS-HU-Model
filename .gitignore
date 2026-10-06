@@ -1,0 +1,15 @@
+# Local IDE state
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Generated build output
+[Bb]in/
+[Oo]bj/
+packages/
+TestResults/
+*.log
+*.tmp
+Thumbs.db
+Desktop.ini

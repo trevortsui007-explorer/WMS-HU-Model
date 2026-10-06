@@ -1,0 +1,86 @@
+using Learun.Application.WebApi;
+using System;
+using System.Data.SqlClient;
+using Nancy;
+using WMS_HU_Model.Infrastructure.Database;
+using WMS_HU_Model.Models.Common;
+
+namespace WMS.Modules
+{
+    public class HealthModule : BaseApi
+    {
+        public HealthModule()
+            : base("/api/wms-fg")
+        {
+            Get["/health"] = _ =>
+            {
+                return Response.AsJson(
+                    ApiResult.Success(new
+                    {
+                        Service = "WMS",
+                        Status = "Running",
+                        Framework = ".NET Framework 4.7.2",
+                        Time = DateTime.Now
+                    })
+                );
+            };
+
+            Get["/health/db"] = _ =>
+            {
+                try
+                {
+                    using (var conn = DbConnectionFactory.Create())
+                    {
+                        conn.Open();
+
+                        const string sql = @"
+SELECT
+    ServerName   = @@SERVERNAME,
+    DatabaseName = DB_NAME(),
+    DatabaseTime = GETDATE();
+";
+
+                        using (var command = new SqlCommand(sql, conn))
+                        using (var reader = command.ExecuteReader())
+                        {
+                            reader.Read();
+
+                            var data = new
+                            {
+                                Connected = true,
+                                ServerName =
+                                    reader["ServerName"] == DBNull.Value
+                                        ? null
+                                        : reader["ServerName"].ToString(),
+
+                                DatabaseName =
+                                    reader["DatabaseName"].ToString(),
+
+                                DatabaseTime =
+                                    Convert.ToDateTime(
+                                        reader["DatabaseTime"]
+                                    )
+                            };
+
+                            return Response.AsJson(
+                                ApiResult.Success(
+                                    data,
+                                    "数据库连接成功"
+                                )
+                            );
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return Response.AsJson(
+                        ApiResult.Fail(
+                            "数据库连接失败：" + ex.Message,
+                            500
+                        )
+                    );
+                }
+            };
+        }
+    }
+}

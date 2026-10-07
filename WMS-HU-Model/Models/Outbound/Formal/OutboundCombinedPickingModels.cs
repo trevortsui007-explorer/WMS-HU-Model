@@ -20,6 +20,10 @@ namespace WMS_HU_Model.Models.Outbound.Formal
         public bool CanRelease { get; set; }
         public bool IsDuplicate { get; set; }
         public decimal RequiredQty { get; set; }
+        public decimal GiftQtyPcs { get; set; }
+        public string MdProdRevSnapshot { get; set; }
+        public int? PcsPerSetQtySnapshot { get; set; }
+        public int? PcsPerPnlQtySnapshot { get; set; }
         public decimal AvailableQty { get; set; }
         public OutboundPrepickGroup Recommendation { get; set; }
         public List<OutboundOrderDto> Orders { get; set; } = new List<OutboundOrderDto>();

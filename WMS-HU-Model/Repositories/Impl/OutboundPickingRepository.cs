@@ -1225,6 +1225,7 @@ WHERE o.SAPDeliveryNo = @SAPDeliveryNo;";
 SELECT
     Id, OutboundOrderId, SAPItemNo, ProdNo AS MaterialCode, CustomerMaterialCode, NULL AS MaterialRevision,
     RequiredQty, CAST(0 AS DECIMAL(18,4)) AS SpareQty, CAST(0 AS DECIMAL(18,4)) AS SAPGiftQty, GiftQty, EffectiveRequiredQty,
+    GiftRuleApplied, MdProdRevSnapshot, PcsPerSetQtySnapshot, PcsPerPnlQtySnapshot,
     Uom, NULL AS PlantCode, NULL AS SAPStorageLocation, AllocatedQty,
     EffectivePickedQty, CAST(0 AS DECIMAL(18,4)) AS ShippedQty, LineStatus
 FROM dbo.WMS_FG_OutboundOrderLine WITH (UPDLOCK, HOLDLOCK, ROWLOCK)

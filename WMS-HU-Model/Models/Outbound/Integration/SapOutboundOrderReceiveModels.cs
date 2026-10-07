@@ -64,6 +64,10 @@ namespace WMS_HU_Model.Models.Outbound.Integration
         public string SAPItemNo { get; set; }
         public string ProdNo { get; set; }
         public decimal RequiredQty { get; set; }
+        public decimal GiftQty { get; set; }
+        public string MdProdRevSnapshot { get; set; }
+        public int? PcsPerSetQtySnapshot { get; set; }
+        public int? PcsPerPnlQtySnapshot { get; set; }
         public string Uom { get; set; }
         public string SourceOrderNo { get; set; }
         public string SourceOrderItem { get; set; }

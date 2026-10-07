@@ -66,6 +66,7 @@ WHERE a.AllocationStatus IN ('ACTIVE','PICKING','COMPLETED') AND (a.OutboundOrde
             var lines = result.Orders.SelectMany(x => x.Lines).ToList();
             if (lines.Count == 0 || lines.Select(x => BuildGroupKey(x.MaterialCode, x.Uom)).Distinct().Count() != 1)
                 throw new InvalidOperationException("本次锁定必须同料号、同单位。");
+            SetCombinedGift(result, lines);
             var candidates = GetAllocationCandidatesInternal(conn, tran, first, lines[0].MaterialCode, lines[0].Uom);
             if (candidates.Count > 100) throw new InvalidOperationException("候选过多，暂无法生成推荐。");
             foreach (var candidate in candidates)
@@ -121,10 +122,13 @@ WHERE RequestId=@RequestId", new { request.RequestId }, tran);
                     string token = Guid.NewGuid().ToString("N").ToUpperInvariant();
                     string no = "OA" + token;
                     long id = conn.ExecuteScalar<long>(@"INSERT dbo.WMS_FG_OutboundAllocation
-(AllocationNo,OutboundOrderId,RequestId,AllocationStatus,AllocateDt,AllocateBy,ExpireDt,Remark,AllocationMode,LockSource)
-OUTPUT INSERTED.Id VALUES(@No,@OrderId,@RequestId,'ACTIVE',SYSDATETIME(),@Operator,NULL,@Remark,@Mode,'WEB')",
+(AllocationNo,OutboundOrderId,RequestId,AllocationStatus,AllocateDt,AllocateBy,ExpireDt,Remark,AllocationMode,LockSource,
+ GiftQtyPcs,MdProdRevSnapshot,PcsPerSetQtySnapshot,PcsPerPnlQtySnapshot)
+OUTPUT INSERTED.Id VALUES(@No,@OrderId,@RequestId,'ACTIVE',SYSDATETIME(),@Operator,NULL,@Remark,@Mode,'WEB',
+ @GiftQtyPcs,@MdProdRevSnapshot,@PcsPerSetQtySnapshot,@PcsPerPnlQtySnapshot)",
                         new { No=no, OrderId=plan.Orders.Count==1 ? (long?)plan.Orders[0].Id : null,
-                            request.RequestId, request.Operator, request.Remark, Mode=plan.AllocationMode }, tran);
+                            request.RequestId, request.Operator, request.Remark, Mode=plan.AllocationMode,
+                            plan.GiftQtyPcs,plan.MdProdRevSnapshot,plan.PcsPerSetQtySnapshot,plan.PcsPerPnlQtySnapshot }, tran);
                     var selected = plan.Boxes.Where(x => x.Selected).OrderBy(x=>x.WeekSortKey).ThenBy(x=>x.BoxHuId).ToList();
                     var group = new PlannedGroup { MaterialCode=selected[0].MaterialCode, Uom=selected[0].Uom, RequiredQty=plan.RequiredQty };
                     long batchId = InsertPickBatch(conn, tran, "PB"+token, id, group,
@@ -171,10 +175,13 @@ LastEditBy=@Operator,LastEditDt=SYSDATETIME() WHERE Id=@Id AND OrderStatus='WAIT
         private static OutboundCombinedDto ReadCombined(SqlConnection conn,SqlTransaction tran,string allocationNo)
         {
             var header=conn.QueryFirstOrDefault<CombinedHeader>(@"SELECT Id,AllocationNo,AllocationMode,LockSource,AllocationStatus,
+GiftQtyPcs,MdProdRevSnapshot,PcsPerSetQtySnapshot,PcsPerPnlQtySnapshot,
 FirstPickDt FROM dbo.WMS_FG_OutboundAllocation WHERE AllocationNo=@allocationNo",new { allocationNo },tran);
             if(header==null) throw new InvalidOperationException("锁定任务不存在。");
             var result=new OutboundCombinedDto { AllocationNo=header.AllocationNo,AllocationMode=header.AllocationMode,
                 LockSource=header.LockSource,AllocationStatus=header.AllocationStatus,
+                GiftQtyPcs=header.GiftQtyPcs,MdProdRevSnapshot=header.MdProdRevSnapshot,
+                PcsPerSetQtySnapshot=header.PcsPerSetQtySnapshot,PcsPerPnlQtySnapshot=header.PcsPerPnlQtySnapshot,
                 CanRelease=header.AllocationStatus=="ACTIVE" && !header.FirstPickDt.HasValue,ResultType="SELECTED" };
             var nos=conn.Query<string>("SELECT SAPDeliveryNo FROM dbo.WMS_FG_OutboundOrder WHERE Id IN ("+MemberOrdersSql+") ORDER BY SAPDeliveryNo",
                 new { AllocationId=header.Id },tran).ToList();
@@ -200,7 +207,29 @@ WHERE i.PickDetailId=@Id ORDER BY o.SAPDeliveryNo,l.SAPItemNo,i.HUItemId",new { 
             return result;
         }
         private class CombinedHeader { public long Id {get;set;} public string AllocationNo {get;set;}
-            public string AllocationMode {get;set;} public string LockSource {get;set;} public string AllocationStatus {get;set;} public DateTime? FirstPickDt {get;set;} }
+            public string AllocationMode {get;set;} public string LockSource {get;set;} public string AllocationStatus {get;set;}
+            public decimal GiftQtyPcs {get;set;} public string MdProdRevSnapshot {get;set;}
+            public int? PcsPerSetQtySnapshot {get;set;} public int? PcsPerPnlQtySnapshot {get;set;}
+            public DateTime? FirstPickDt {get;set;} }
+
+        private static void SetCombinedGift(OutboundCombinedDto result, List<OutboundOrderLineDto> lines)
+        {
+            if (lines.All(x => !x.GiftRuleApplied)) return;
+            if (lines.Any(x => !x.GiftRuleApplied))
+                throw new InvalidOperationException("历史单与新规则单不能联合锁定，请分别处理。");
+            var first = lines[0];
+            if (lines.Any(x => x.PcsPerSetQtySnapshot != first.PcsPerSetQtySnapshot
+                || x.PcsPerPnlQtySnapshot != first.PcsPerPnlQtySnapshot
+                || x.MdProdRevSnapshot != first.MdProdRevSnapshot))
+                throw new InvalidOperationException("联合单MD换算快照不一致，请联系IT查明原因。");
+            result.MdProdRevSnapshot = first.MdProdRevSnapshot;
+            result.PcsPerSetQtySnapshot = first.PcsPerSetQtySnapshot;
+            result.PcsPerPnlQtySnapshot = first.PcsPerPnlQtySnapshot;
+            if (!first.PcsPerSetQtySnapshot.HasValue || first.PcsPerSetQtySnapshot.Value <= 1) return;
+            decimal totalPcs = lines.Sum(x => OutboundGiftRule.ToPcs(x.RequiredQty, x.Uom,
+                x.PcsPerSetQtySnapshot, x.PcsPerPnlQtySnapshot));
+            result.GiftQtyPcs = OutboundGiftRule.GiftPcs(totalPcs, first.PcsPerSetQtySnapshot);
+        }
         private class CombinedDetailRow : OutboundCombinedBoxDto { public long Id {get;set;} }
 
         private static List<ScanItemAllocation> ReadFrozenShares(SqlConnection conn,SqlTransaction tran,long detailId,List<ScanItemRow> items)

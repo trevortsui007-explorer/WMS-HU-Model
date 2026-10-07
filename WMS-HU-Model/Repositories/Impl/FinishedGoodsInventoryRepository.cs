@@ -48,7 +48,10 @@ WHERE dl.Id IS NOT NULL
        INNER JOIN dbo.WMS_FG_HU mp ON mp.Id = mr.ChildHUId
            AND mp.HUType = 'INNER_PACK' AND mp.LifecycleStatus = 'ACTIVE'
        INNER JOIN dbo.WMS_FG_HU_Item mi ON mi.HUId = mp.Id AND mi.IsActive = 1
-       WHERE mr.ParentHUId = b.Id AND mr.IsActive = 1 AND mi.ProdNo = @MaterialCode))
+       WHERE mr.ParentHUId = b.Id AND mr.IsActive = 1 AND
+         (mi.ProdNo = @MaterialCode
+          OR (LEN(@MaterialCode)=5 AND LEFT(@MaterialCode,1)<>'*' AND LEFT(mi.ProdNo,5)=@MaterialCode)
+          OR (LEN(@MaterialCode)=4 AND LEFT(@MaterialCode,1)='*' AND SUBSTRING(mi.ProdNo,3,3)=SUBSTRING(@MaterialCode,2,3)))))
   AND (@MaterialRevision IS NULL OR EXISTS
       (SELECT 1 FROM dbo.WMS_FG_HU_Relation rr
        INNER JOIN dbo.WMS_FG_HU rp ON rp.Id = rr.ChildHUId
@@ -98,7 +101,9 @@ SELECT DISTINCT b.Id AS BoxHuId, b.HUCode AS BoxCode, b.PlantCode,
        item.Id AS ItemId, item.ProdNo AS MaterialCode, ISNULL(item.ProdRev,'') AS MaterialRevision,
        item.Qty, item.Uom, dl.LocationCode AS EffectiveLocationCode
 " + CurrentInventoryFromWhereSql + @"
- AND (@MaterialCode IS NULL OR item.ProdNo=@MaterialCode)
+ AND (@MaterialCode IS NULL OR item.ProdNo=@MaterialCode
+      OR (LEN(@MaterialCode)=5 AND LEFT(@MaterialCode,1)<>'*' AND LEFT(item.ProdNo,5)=@MaterialCode)
+      OR (LEN(@MaterialCode)=4 AND LEFT(@MaterialCode,1)='*' AND SUBSTRING(item.ProdNo,3,3)=SUBSTRING(@MaterialCode,2,3)))
  AND (@MaterialRevision IS NULL OR ISNULL(item.ProdRev,'')=@MaterialRevision)
  AND (@InnerPackCode IS NULL OR pack.HUCode LIKE '%' + @InnerPackCode + '%')
  AND (@StockStatus IS NULL OR item.StockStatus=@StockStatus)

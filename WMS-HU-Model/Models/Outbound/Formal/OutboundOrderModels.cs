@@ -229,6 +229,10 @@ namespace WMS_HU_Model.Models.Outbound.Formal
         public decimal SpareQty { get; set; }
         public decimal SAPGiftQty { get; set; }
         public decimal GiftQty { get; set; }
+        public bool GiftRuleApplied { get; set; }
+        public string MdProdRevSnapshot { get; set; }
+        public int? PcsPerSetQtySnapshot { get; set; }
+        public int? PcsPerPnlQtySnapshot { get; set; }
         public decimal EffectiveRequiredQty { get; set; }
         public string Uom { get; set; }
         public string PlantCode { get; set; }

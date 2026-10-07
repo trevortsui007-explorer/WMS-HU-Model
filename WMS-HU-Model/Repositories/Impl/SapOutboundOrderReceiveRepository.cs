@@ -6,6 +6,7 @@ using System.Linq;
 using Dapper;
 using WMS_HU_Model.Infrastructure.Database;
 using WMS_HU_Model.Models.Outbound.Integration;
+using WMS_HU_Model.Rules;
 
 namespace WMS_HU_Model.Repositories
 {
@@ -106,6 +107,13 @@ WHERE wp.PlantCode = @PlantCode
                         tran.Commit();
                         return new SapOutboundOrderReceiveAttemptResult { IsSuccess = false, Message = message };
                     }
+                    string giftError = SetGiftSnapshots(conn, tran, command);
+                    if (giftError != null)
+                    {
+                        InsertLog(conn, tran, command.SAPDeliveryNo, null, command.PayloadHash, command.RawJson, "REJECTED", "GIFT_RULE", giftError);
+                        tran.Commit();
+                        return new SapOutboundOrderReceiveAttemptResult { IsSuccess = false, Message = giftError };
+                    }
                     DateTime now = DateTime.Now;
                     long orderId = conn.ExecuteScalar<long>(@"
 INSERT INTO dbo.WMS_FG_OutboundOrder
@@ -142,12 +150,14 @@ VALUES
 INSERT INTO dbo.WMS_FG_OutboundOrderLine
 (
     OutboundOrderId, SAPItemNo, ProdNo, RequiredQty, GiftQty, EffectiveRequiredQty,
+    GiftRuleApplied, MdProdRevSnapshot, PcsPerSetQtySnapshot, PcsPerPnlQtySnapshot,
     Uom, SourceOrderNo, SourceOrderItem, CustomerPO, CustomerMaterialCode, AllocatedQty,
     EffectivePickedQty, LineStatus, CreateDt
 )
 VALUES
 (
-    @OutboundOrderId, @SAPItemNo, @ProdNo, @RequiredQty, 0, @RequiredQty,
+    @OutboundOrderId, @SAPItemNo, @ProdNo, @RequiredQty, @GiftQty, @RequiredQty,
+    1, @MdProdRevSnapshot, @PcsPerSetQtySnapshot, @PcsPerPnlQtySnapshot,
     @Uom, @SourceOrderNo, @SourceOrderItem, @CustomerPO, @CustomerMaterialCode, 0,
     0, 'WAIT_PICK', @Now
 );",
@@ -157,6 +167,10 @@ VALUES
                                 line.SAPItemNo,
                                 line.ProdNo,
                                 line.RequiredQty,
+                                line.GiftQty,
+                                line.MdProdRevSnapshot,
+                                line.PcsPerSetQtySnapshot,
+                                line.PcsPerPnlQtySnapshot,
                                 line.Uom,
                                 line.SourceOrderNo,
                                 line.SourceOrderItem,
@@ -184,6 +198,47 @@ VALUES
                     };
                 }
             }
+        }
+
+        private static string SetGiftSnapshots(SqlConnection conn, SqlTransaction tran, SapOutboundOrderReceiveCommand command)
+        {
+            foreach (var group in command.Lines.GroupBy(x => x.ProdNo, StringComparer.Ordinal))
+            {
+                var md = conn.Query<GiftMasterRow>(@"
+SELECT prodrev AS ProdRev, pcspersetqty AS PcsPerSetQty, pcsperpnlqty AS PcsPerPnlQty
+FROM dbo.MD_ProdMaster
+WHERE plantcode=@PlantCode AND prodno=@ProdNo AND islastrev=1
+  AND status='on' AND ISNULL(isdeleted,0)=0;",
+                    new { command.PlantCode, ProdNo = group.Key }, tran).AsList();
+                if (md.Count != 1)
+                    return "厂别" + command.PlantCode + "料号" + group.Key + "找不到唯一的MD最新有效版本，请联系IT查明原因。";
+                var master = md[0];
+                decimal totalPcs = 0;
+                try
+                {
+                    foreach (var line in group)
+                    {
+                        line.MdProdRevSnapshot = master.ProdRev;
+                        line.PcsPerSetQtySnapshot = master.PcsPerSetQty;
+                        line.PcsPerPnlQtySnapshot = master.PcsPerPnlQty;
+                        if (master.PcsPerSetQty.HasValue && master.PcsPerSetQty.Value > 1)
+                            totalPcs += OutboundGiftRule.ToPcs(line.RequiredQty, line.Uom, master.PcsPerSetQty, master.PcsPerPnlQty);
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return "料号" + group.Key + "赠送数量计算失败：" + ex.Message;
+                }
+                group.OrderBy(x => x.SAPItemNo, StringComparer.Ordinal).Last().GiftQty = OutboundGiftRule.GiftPcs(totalPcs, master.PcsPerSetQty);
+            }
+            return null;
+        }
+
+        private sealed class GiftMasterRow
+        {
+            public string ProdRev { get; set; }
+            public int? PcsPerSetQty { get; set; }
+            public int? PcsPerPnlQty { get; set; }
         }
 
         private static ExistingOrderRow ReadExisting(SqlConnection conn, SqlTransaction tran, string sapDeliveryNo)

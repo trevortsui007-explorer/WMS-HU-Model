@@ -32,7 +32,9 @@ namespace WMS.Modules
                 object rawCode = Request.Query["code"];
                 string code = Convert.ToString(rawCode);
 
-                OperationResult<InventoryLookupDto> result = _service.Lookup(warehouseCode, code);
+                object rawPlant = Request.Query["plantCode"];
+                string plantCode = Convert.ToString(rawPlant);
+                OperationResult<InventoryLookupDto> result = _service.Lookup(warehouseCode, code, plantCode);
                 return result.IsSuccess
                     ? Response.AsJson(ApiResult.Success(result.Data), HttpStatusCode.OK)
                     : Response.AsJson(ApiResult.Fail(result.Message, 400), HttpStatusCode.BadRequest);

@@ -7,6 +7,7 @@ namespace WMS_HU_Model.Repositories
     public interface IInventoryQueryRepository
     {
         List<string> GetMappedWarehouses(string plantCode);
+        FinishedGoodsInventoryResultDto GetMaterialInventory(string materialCode);
         InventoryLookupLocationRecord GetLocation(string warehouseCode, string locationCode);
         InventoryLookupLocationRecord FindLocation(string locationCode);
         HuDto GetHu(long huId);

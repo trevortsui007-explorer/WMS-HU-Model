@@ -5,6 +5,6 @@ namespace WMS_HU_Model.Services
 {
     public interface IInventoryQueryService
     {
-        OperationResult<InventoryLookupDto> Lookup(string warehouseCode, string code);
+        OperationResult<InventoryLookupDto> Lookup(string warehouseCode, string code, string plantCode = null);
     }
 }

@@ -11,6 +11,13 @@ namespace WMS_HU_Model.Repositories
 {
     public class InventoryQueryRepository : IInventoryQueryRepository
     {
+        public FinishedGoodsInventoryResultDto GetMaterialInventory(string materialCode)
+        {
+            // Reuse the Web inventory predicates, ordering, quantities and effective location.
+            return new FinishedGoodsInventoryRepository().Query(new FinishedGoodsInventoryQuery {
+                MaterialCode=materialCode, Page=1, PageSize=int.MaxValue
+            });
+        }
         public List<string> GetMappedWarehouses(string plantCode)
         {
             var warehouses = new List<string>();

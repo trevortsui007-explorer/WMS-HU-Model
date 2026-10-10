@@ -4,6 +4,7 @@ namespace WMS_HU_Model.Models.Inventory
 {
     public abstract class InventoryLookupDto
     {
+        public string PlantCode { get; set; }
         public string QueryCode { get; set; }
         public string ResultType { get; set; }
         public string WarehouseCode { get; set; }
@@ -59,6 +60,10 @@ namespace WMS_HU_Model.Models.Inventory
 
     public class InventoryLocationItemDto
     {
+        public string PlantCode { get; set; }
+        public string Uom { get; set; }
+        public string LocationCode { get; set; }
+        public string WarehouseCode { get; set; }
         public string BoxCode { get; set; }
         public string MaterialCode { get; set; }
         public string MaterialRevision { get; set; }

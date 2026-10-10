@@ -25,29 +25,39 @@ namespace WMS_HU_Model.Services
             _effectiveLocationResolver = effectiveLocationResolver ?? throw new ArgumentNullException(nameof(effectiveLocationResolver));
         }
 
-        public OperationResult<InventoryLookupDto> Lookup(string warehouseCode, string code)
+        public OperationResult<InventoryLookupDto> Lookup(string warehouseCode, string code, string plantCode = null)
         {
             warehouseCode = Trim(warehouseCode);
             code = Trim(code);
             if (code == null) return OperationResult<InventoryLookupDto>.Fail("code不能为空。");
             if (warehouseCode != null && warehouseCode.Length > 30) return OperationResult<InventoryLookupDto>.Fail("warehouseCode长度不能超过30。");
             if (code.Length > 200) return OperationResult<InventoryLookupDto>.Fail("code长度不能超过200。");
+            plantCode=Trim(plantCode);
+            string scopeWarehouse=warehouseCode;
+            if(scopeWarehouse==null && plantCode!=null) {
+                var mapped=_repository.GetMappedWarehouses(plantCode);
+                if(mapped.Count!=1) return OperationResult<InventoryLookupDto>.Fail("当前厂别需配置唯一启用的成品仓映射。");
+                scopeWarehouse=mapped[0];
+            }
 
-            InventoryLookupLocationRecord location = warehouseCode != null && code.Length <= 50 ? _repository.GetLocation(warehouseCode, code) : null;
+            InventoryLookupLocationRecord location = scopeWarehouse != null && code.Length <= 50 ? _repository.GetLocation(scopeWarehouse, code) : null;
             if (location != null) return BuildLocation(code, location);
 
             OperationResult<HuIdentityDto> identity = _identifierService.Resolve(code, null);
             if (!identity.IsSuccess)
             {
-                if (warehouseCode == null) return OperationResult<InventoryLookupDto>.Fail("请先扫描有效外箱，按厂别确定仓库。");
+                if (scopeWarehouse == null) return OperationResult<InventoryLookupDto>.Fail("请提供厂别或仓库，或先扫描有效外箱。");
                 if (identity.Message != null && identity.Message.IndexOf("多个HU", StringComparison.OrdinalIgnoreCase) >= 0)
                     return OperationResult<InventoryLookupDto>.Fail(identity.Message.Replace("箱码", "编码"));
 
                 InventoryLookupLocationRecord foreignLocation = code.Length <= 50 ? _repository.FindLocation(code) : null;
                 if (foreignLocation != null)
-                    return OperationResult<InventoryLookupDto>.Fail("货架[" + code + "]不属于仓库[" + warehouseCode + "]。");
+                    return OperationResult<InventoryLookupDto>.Fail("存放位置[" + code + "]不属于仓库[" + scopeWarehouse + "]。");
 
-                return OperationResult<InventoryLookupDto>.Fail("未找到货架、外箱或内包：" + code);
+                var material=BuildMaterial(code);
+                if(material!=null) return OperationResult<InventoryLookupDto>.Success(material);
+
+                return OperationResult<InventoryLookupDto>.Fail("未找到货架、外箱、内包或该料号库存：" + code);
             }
 
             HuDto hu = _repository.GetHu(identity.Data.HuId);
@@ -70,6 +80,20 @@ namespace WMS_HU_Model.Services
             return string.Equals(hu.HuType, "OUTER_BOX", StringComparison.OrdinalIgnoreCase)
                 ? BuildOuterBox(code, warehouseCode, hu, huLocation)
                 : BuildInnerPack(code, warehouseCode, hu, huLocation);
+        }
+
+        private InventoryLocationLookupDto BuildMaterial(string code)
+        {
+            var inventory=_repository.GetMaterialInventory(code);
+            if(inventory.Items.Count==0) return null;
+            var result=new InventoryLocationLookupDto { QueryCode=code,ResultType="MATERIAL",WarehouseCode="" };
+            result.Items=inventory.Items.Select(row=>new InventoryLocationItemDto {
+                BoxCode=row.BoxCode,MaterialCode=row.MaterialCode,MaterialRevision=row.MaterialRevision,
+                WeekDisplay=row.WeekCodeSummary,Qty=row.TotalQty,PackCount=row.InnerPackCount,
+                Status=row.StockStatus,IsHold=row.IsHold,LocationCode=row.EffectiveLocationCode,
+                WarehouseCode=row.WarehouseCode,PlantCode=row.PlantCode,Uom=row.Uom
+            }).ToList();
+            return result;
         }
 
         private OperationResult<InventoryLookupDto> BuildLocation(string queryCode, InventoryLookupLocationRecord location)
@@ -101,6 +125,8 @@ namespace WMS_HU_Model.Services
                 result.Items.Add(new InventoryLocationItemDto
                 {
                     BoxCode = boxFacts[0].BoxCode,
+                    LocationCode = location.LocationCode,
+                    WarehouseCode = location.WarehouseCode,
                     MaterialCode = Text(boxFacts[0].MaterialCode),
                     MaterialRevision = Text(boxFacts[0].MaterialRevision),
                     WeekDisplay = WeekDisplay(boxFacts),
@@ -128,6 +154,7 @@ namespace WMS_HU_Model.Services
             {
                 QueryCode = queryCode,
                 ResultType = "OUTER_BOX",
+                PlantCode = hu.PlantCode,
                 WarehouseCode = warehouseCode,
                 BoxCode = hu.HuCode,
                 HuStatus = hu.LifecycleStatus,
@@ -172,6 +199,7 @@ namespace WMS_HU_Model.Services
             {
                 QueryCode = queryCode,
                 ResultType = "INNER_PACK",
+                PlantCode = hu.PlantCode,
                 WarehouseCode = warehouseCode,
                 PackCode = hu.HuCode,
                 ParentBoxCode = Text(_repository.GetActiveParentBoxCode(hu.Id)),

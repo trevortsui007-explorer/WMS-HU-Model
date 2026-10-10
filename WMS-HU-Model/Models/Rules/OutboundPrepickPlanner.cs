@@ -10,6 +10,24 @@ namespace WMS_HU_Model.Rules
     {
         private const int CandidateLimit = 100;
         private const int SearchLimit = 200000;
+        // A missing/ambiguous actual revision disables SET preference for the whole group.
+        public static void SetPackConversion(OutboundPrepickGroup group, IEnumerable<OutboundOrderLineDto> lines,
+            IEnumerable<PrepickPackMaster> masters)
+        {
+            group.PcsPerSetQty = null;
+            var snapshots = lines.Select(x => x.PcsPerSetQtySnapshot).Distinct().ToList();
+            if (snapshots.Count != 1 || !snapshots[0].HasValue || snapshots[0].Value <= 0) return;
+            decimal size = snapshots[0].Value;
+            var packs = group.Boxes.Where(x => x.Eligible && !x.OwnReservation).SelectMany(x => x.InnerPacks).ToList();
+            if (packs.Count == 0) return;
+            foreach (var revision in packs.Select(x => x.MaterialRevision).Distinct()) {
+                if (string.IsNullOrWhiteSpace(revision)) return;
+                var matches = masters.Where(x => string.Equals(x.MaterialCode, group.MaterialCode, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(x.MaterialRevision, revision, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count != 1 || matches[0].PcsPerSetQty != size) return;
+            }
+            group.PcsPerSetQty = size;
+        }
         public void Build(OutboundPrepickGroup group)
         {
             foreach (var b in group.Boxes) {
@@ -65,7 +83,13 @@ namespace WMS_HU_Model.Rules
                     p.SuggestedQty=p.Qty; remaining-=p.Qty;
                 }
                 if (remaining>0) {
-                    var source=packs.First(x=>x.SuggestedQty==0 && x.Qty>remaining);
+                    var size=group.PcsPerSetQty;
+                    bool preferSet=size.HasValue && size.Value>0 && size.Value==decimal.Truncate(size.Value);
+                    var source=packs.Where(x=>x.SuggestedQty==0 && x.Qty>remaining)
+                        .OrderBy(x=>x.WeekSortKey)
+                        .ThenBy(x=>preferSet && (x.Qty-remaining)%size.Value==0 ? 0 : 1)
+                        .ThenBy(x=>preferSet && x.Qty%size.Value!=0 ? 0 : 1)
+                        .ThenBy(x=>x.Qty).ThenBy(x=>x.InnerHuId).First();
                     source.SuggestedQty=remaining;
                 }
                 Mark(boxes); group.PlanCode="SPLIT_INNER";

@@ -7,6 +7,15 @@ namespace WMS_HU_Model.Repositories
 {
     public class OutboundPrepickRepository : IOutboundPrepickRepository
     {
+        internal const string PackMasterSql = @"
+SELECT prodno MaterialCode,prodrev MaterialRevision,pcspersetqty PcsPerSetQty
+FROM dbo.MD_ProdMaster
+WHERE plantcode=@plantCode AND prodno IN @materials AND status='on' AND ISNULL(isdeleted,0)=0;";
+        public List<PrepickPackMaster> ReadPackMasters(string plantCode, string[] materials)
+        {
+            return materials.Length == 0 ? new List<PrepickPackMaster>()
+                : DbExecutor.Query<PrepickPackMaster>(PackMasterSql, new { plantCode, materials });
+        }
         public List<PrepickWarehouse> ReadWarehouses(string plantCode)
         {
             return DbExecutor.Query<PrepickWarehouse>(@"

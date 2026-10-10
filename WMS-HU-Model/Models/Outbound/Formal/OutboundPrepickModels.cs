@@ -14,6 +14,7 @@ namespace WMS_HU_Model.Models.Outbound.Formal
     }
     public class OutboundPrepickGroup
     {
+        public decimal? PcsPerSetQty { get; set; }
         public string MaterialCode { get; set; }
         public string Uom { get; set; }
         public decimal RequiredQty { get; set; }
@@ -56,6 +57,12 @@ namespace WMS_HU_Model.Models.Outbound.Formal
         public long WarehouseId { get; set; }
         public string WarehouseCode { get; set; }
         public string SAPStorageLocation { get; set; }
+    }
+    public class PrepickPackMaster
+    {
+        public string MaterialCode { get; set; }
+        public string MaterialRevision { get; set; }
+        public decimal? PcsPerSetQty { get; set; }
     }
     // Raw read model; never returned directly by the API.
     public class PrepickStockRow

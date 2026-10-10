@@ -52,6 +52,7 @@ namespace WMS_HU_Model.Services
                 return OperationResult<OutboundPrepickDto>.Success(result);
             }
             var stock=repository.ReadStock(order,map.WarehouseId);
+            var masters=repository.ReadPackMasters(order.PlantCode,order.Lines.Select(x=>x.MaterialCode).Distinct().ToArray());
             foreach(var lines in order.Lines.GroupBy(x=>new { Material=Key(x.MaterialCode),Unit=Key(x.Uom) })) {
                 var first=lines.First();
                 var group=new OutboundPrepickGroup { MaterialCode=first.MaterialCode,Uom=first.Uom,
@@ -83,6 +84,7 @@ namespace WMS_HU_Model.Services
                     group.Boxes.Add(box);
                 }
                 group.Boxes=group.Boxes.OrderBy(x=>x.WeekSortKey).ThenBy(x=>x.BoxHuId).ToList();
+                OutboundPrepickPlanner.SetPackConversion(group,lines,masters);
                 new OutboundPrepickPlanner().Build(group); result.Groups.Add(group);
             }
             // Do not present a new suggestion if formal picking started during this read.

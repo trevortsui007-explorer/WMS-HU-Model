@@ -92,6 +92,9 @@ WHERE a.AllocationStatus IN ('ACTIVE','PICKING','COMPLETED') AND (a.OutboundOrde
                     InnerPacks=b.Items.GroupBy(i=>i.InnerHuId).Select(g=>new OutboundPrepickPack { InnerHuId=g.Key,
                         Qty=g.Sum(i=>i.Qty),WeekSortKey=g.Min(i=>i.WeekSortKey),DateCode=string.Join("/",g.Select(i=>i.DateCode).Distinct()),
                         MaterialRevision=string.Join("/",g.Select(i=>i.MaterialRevision).Distinct()) }).ToList() }).ToList() };
+            var masters=conn.Query<PrepickPackMaster>(OutboundPrepickRepository.PackMasterSql,
+                new { plantCode=first.PlantCode, materials=new[] { lines[0].MaterialCode } },tran).ToList();
+            OutboundPrepickPlanner.SetPackConversion(result.Recommendation,lines,masters);
             new OutboundPrepickPlanner().Build(result.Recommendation);
             using (var sha = SHA256.Create())
                 result.PreviewVersion = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(result)))).Replace("-", "");

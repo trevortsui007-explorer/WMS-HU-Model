@@ -6,6 +6,7 @@ namespace WMS_HU_Model.Repositories
     {
         List<PrepickWarehouse> ReadWarehouses(string plantCode);
         bool HasWork(long orderId);
+        List<PrepickPackMaster> ReadPackMasters(string plantCode, string[] materials);
         List<PrepickStockRow> ReadStock(OutboundOrderDto order, long warehouseId);
     }
 }

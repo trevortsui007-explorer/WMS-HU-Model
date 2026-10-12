@@ -26,6 +26,11 @@ namespace WMS.Host.Modules.Map
         }
         private JObject Body()
         {
+            // Earlier model binding may have already consumed the request stream.
+            if (Request.Body.CanSeek)
+            {
+                Request.Body.Position = 0;
+            }
             using (var buffer = new MemoryStream())
             {
                 var bytes = new byte[8192]; int count;

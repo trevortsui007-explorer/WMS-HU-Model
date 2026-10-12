@@ -2,6 +2,10 @@
 
 This repository tracks the WMS-FG module embedded in the Learun release host.
 
+## Standalone development host
+
+The existing WMS/Modules remain Learun BaseApi modules. A separate net48 / Nancy 1.4.5 solution (shared map sources remain net461-compatible) now compiles WMS/Host.Modules and the shared business sources. See [README.standalone.md](README.standalone.md) and open WMS.Standalone.sln. Existing Learun modules remain unchanged; adding the new map modules requires explicit Compile entries and trusted identity/permission integration. The build/history notes below describe the imported release baseline.
+
 ## Baseline and History
 
 - Local baseline: eleven scoped commits containing repository documentation

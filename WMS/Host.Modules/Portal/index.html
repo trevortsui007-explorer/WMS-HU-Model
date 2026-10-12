@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WMS · API 接口目录</title>
+<style>
+:root{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:#243249;background:#f5f7fb;font-size:14px}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid #75a7ff;outline-offset:3px}aside{position:fixed;inset:0 auto 0 0;width:238px;background:#14233b;color:#c6d2e6;padding:32px 20px;overflow:auto}.brand{font-size:26px;font-weight:750;letter-spacing:2px;color:white}.brand small{display:block;font-size:11px;letter-spacing:3px;color:#90a5c4;margin-top:8px}.nav-label{font-size:11px;color:#8ea4c4;letter-spacing:2px;margin:40px 12px 14px}nav{display:grid;gap:5px}nav button{border:0;background:none;color:inherit;display:flex;justify-content:space-between;gap:8px;padding:12px;border-radius:7px;text-align:left}nav button:hover{background:#20334e}nav button.active{background:#2d5ee7;color:white}nav span{opacity:.7}.aside-note{font-size:12px;line-height:1.8;color:#90a5c4;margin:30px 12px}main{margin-left:238px;padding:38px 44px;max-width:1600px}.eyebrow{color:#577496;font-size:12px;letter-spacing:2px}.topline{display:flex;justify-content:space-between;gap:20px;align-items:center}.tag{padding:7px 11px;background:#e5edf9;color:#345b91;border-radius:5px;font-size:12px}h1{font-size:30px;letter-spacing:-1px;margin:14px 0 9px}header p{color:#65758b;line-height:1.8;margin:0}#stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:28px 0}.stat{background:white;border:1px solid #e1e7f0;border-radius:10px;padding:20px 24px}.stat strong{font-size:30px;display:block;color:#223d6a}.stat span{font-size:12px;color:#738199}.toolbar{display:flex;gap:12px;margin:25px 0 14px}.toolbar input{flex:1;min-width:120px}.toolbar input,.toolbar select{border:1px solid #d7dfeb;background:white;border-radius:7px;padding:12px;color:#243249}.toolbar input:focus{outline:2px solid #6491ed}#summary{color:#6f7d90;font-size:12px;margin:16px 0}section{background:white;border:1px solid #e0e7f0;border-radius:10px;margin:18px 0;overflow:hidden}section h2{font-size:16px;margin:0;padding:20px 22px;border-bottom:1px solid #e8edf5}section h2 small{font-weight:400;font-size:12px;color:#7b8799;margin-left:12px}.row{display:grid;grid-template-columns:64px minmax(0,1fr) 70px;gap:17px;align-items:center;padding:15px 22px;border-bottom:1px solid #eef1f6}.row:last-child{border:0}.row:hover{background:#fafcff}.method{font-size:11px;font-weight:750;text-align:center;border-radius:4px;padding:6px 0;background:#eee;color:#475569}.GET{background:#e6f5ef;color:#167451}.POST{background:#e9efff;color:#365ac6}.PUT{background:#fff1dc;color:#9a6819}.DELETE{background:#fdeaea;color:#b84343}code{font:13px Consolas,monospace;overflow-wrap:anywhere;color:#203750}.description{font-size:14px;color:#273d59;line-height:1.6;margin-bottom:6px}.module{font-size:11px;color:#8591a3;margin-top:5px}.copy{background:white;border:1px solid #dce4ef;color:#53647e;border-radius:5px;padding:6px;font-size:12px}.copy:hover{border-color:#477deb;color:#2d5ee7}.empty{padding:45px;text-align:center;color:#687991}#error{background:#fff0ef;color:#9d3232;padding:18px;border-radius:8px}#error button{margin-left:15px}.footer{font-size:12px;color:#8a97aa;line-height:1.9;margin:28px 0}.hidden{display:none!important}#toast{position:fixed;bottom:24px;right:25px;background:#21395c;color:white;padding:12px 20px;border-radius:8px;box-shadow:0 4px 15px #18294433}
+@media(max-width:800px){aside{position:static;width:100%;padding:20px}.brand small,.nav-label,.aside-note{display:none}nav{display:flex;overflow:auto;margin-top:18px}nav button{white-space:nowrap}main{margin:0;padding:24px 18px}.row{padding:14px 12px;gap:10px;grid-template-columns:55px minmax(0,1fr) 56px}.stat{padding:16px}h1{font-size:25px}.topline{align-items:flex-start}}
+</style></head>
+<body>
+<aside><div class="brand">WMS<span style="color:#779cff"> / </span>FG<small>API EXPLORER</small></div><div class="nav-label">功能目录</div><nav id="nav" aria-label="接口分类"></nav><div class="aside-note">独立开发服务<br>接口清单随已注册路由更新</div></aside>
+<main><header><div class="topline"><span class="eyebrow">DEVELOPER WORKSPACE</span><span class="tag">LOCAL · 独立宿主</span></div><h1>API 接口目录</h1><p>按业务功能浏览现有接口，快速查找请求方法与路径。</p></header>
+<div id="stats"><div class="stat"><strong id="total">—</strong><span>已注册业务接口</span></div><div class="stat"><strong id="groups">—</strong><span>业务功能分类</span></div><div class="stat"><strong id="modules">—</strong><span>接口模块</span></div></div>
+<div class="toolbar"><input id="search" type="search" aria-label="搜索接口" placeholder="搜索中文用途、路径、模块或功能名称…"><select id="method" aria-label="请求方法"><option value="">全部方法</option></select></div>
+<div id="summary" role="status" aria-live="polite">正在加载已注册接口…</div><div id="error" class="hidden" role="alert">接口清单加载失败。请确认服务运行后重试。<button id="retry">重新加载</button></div>
+<div id="content"></div><div class="footer">目录仅用于浏览和复制路径；不会自动执行接口。路径中的 {参数} 需替换为实际值，查询参数与请求体请参考对应 Module / DTO。<br><span id="version"></span></div>
+</main><div id="toast" class="hidden" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+const el=id=>document.getElementById(id);
+let routes=[],selected='',timer;
+const order=['地图布局与发布','主数据与货位','HU 管理','库存查询','入库与确认','上架与移库','拆包与重组','出库与拣货','SAP 集成与过账','周码管理','监控与审计','系统健康','其他接口'];
+const make=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+function categories(){return [...new Set(routes.map(r=>r.category))].sort((a,b)=>order.indexOf(a)-order.indexOf(b));}
+function navigation(){
+ el('nav').replaceChildren();
+ for(const name of ['',...categories()]){
+  const b=make('button',name||'全部接口',selected===name?'active':'');b.type='button';b.setAttribute('aria-pressed',String(selected===name));
+  b.append(make('span',String(routes.filter(r=>!name||r.category===name).length)));
+  b.onclick=()=>{selected=name;navigation();render();};el('nav').append(b);
+ }
+}
+async function copy(path){
+ try{await navigator.clipboard.writeText(path);el('toast').textContent='路径已复制';}
+ catch{el('toast').textContent='无法访问剪贴板，请选中路径后手动复制。';}
+ el('toast').classList.remove('hidden');clearTimeout(timer);timer=setTimeout(()=>el('toast').classList.add('hidden'),2400);
+}
+function render(){
+ const query=el('search').value.trim().toLowerCase(),method=el('method').value;
+ const filtered=routes.filter(r=>(!selected||r.category===selected)&&(!method||r.method===method)&&[r.path,r.module,r.category,r.description||""].some(v=>v.toLowerCase().includes(query)));
+ el('summary').textContent=(selected||'全部接口')+' · 显示 '+filtered.length+' / '+routes.length+' 个接口';
+ el('content').replaceChildren();
+ if(!filtered.length){el('content').append(make('div','没有匹配的接口，请调整搜索词或筛选条件。','empty'));return;}
+ for(const category of categories()){
+  const list=filtered.filter(r=>r.category===category);if(!list.length)continue;
+  const section=make('section'),heading=make('h2',category);heading.append(make('small',list.length+' 个接口'));section.append(heading);
+  for(const r of list){
+   const row=make('div',undefined,'row'),detail=make('div'),button=make('button','复制路径','copy');button.type='button';button.setAttribute('aria-label','复制 '+r.method+' '+r.path);button.onclick=()=>copy(r.path);
+   detail.append(make('div',r.description||'用途说明待补充','description'),make('code',r.path),make('div',r.module,'module'));row.append(make('span',r.method,'method '+r.method),detail,button);section.append(row);
+  }
+  el('content').append(section);
+ }
+}
+async function load(){
+ el('error').classList.add('hidden');el('summary').textContent='正在加载已注册接口…';
+ try{
+  const response=await fetch('/api-catalog',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);
+  const data=await response.json();if(!Array.isArray(data.routes))throw new Error('Invalid catalog');
+  routes=data.routes;el('total').textContent=routes.length;el('groups').textContent=categories().length;el('modules').textContent=new Set(routes.map(r=>r.module)).size;
+  el('version').textContent=data.framework+' · Nancy '+data.nancy;
+  el('method').replaceChildren(new Option('全部方法',''));for(const m of [...new Set(routes.map(r=>r.method))].sort())el('method').append(new Option(m,m));
+  navigation();render();
+ }catch{el('error').classList.remove('hidden');el('summary').textContent='未能加载接口目录';}
+}
+el('search').oninput=render;el('method').onchange=render;el('retry').onclick=load;load();
+</script></body></html>

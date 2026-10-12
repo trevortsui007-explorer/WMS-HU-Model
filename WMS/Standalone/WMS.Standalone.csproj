@@ -1,0 +1,862 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
+    <ProjectGuid>{9572AD37-A362-467A-A109-988AE04BB659}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>WMS.Standalone</RootNamespace>
+    <AssemblyName>WMS.Standalone</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>7.3</LangVersion>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <DebugSymbols>true</DebugSymbols>
+    <DefineConstants>TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <StartArguments>--development</StartArguments>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Net.Http" />
+    <PackageReference Include="Nancy" Version="1.4.5" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net461" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Nancy.Hosting.Self" Version="1.4.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.1" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Bootstrapper.cs" />
+    <None Include="App.config" />
+    <None Include="App.local.config.example" Condition="!Exists('App.local.config')">
+      <Link>App.local.config</Link>
+      <TargetPath>App.local.config</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="..\Host.Modules\Portal\index.html">
+      <LogicalName>WMS.Standalone.Portal.index.html</LogicalName>
+      <Link>Host.Modules\Portal\index.html</Link>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\Host.Modules\Portal\ApiDescriptions.zh-CN.json">
+      <LogicalName>WMS.Standalone.Portal.ApiDescriptions.zh-CN.json</LogicalName>
+      <WithCulture>false</WithCulture>
+      <Link>Host.Modules\Portal\ApiDescriptions.zh-CN.json</Link>
+    </EmbeddedResource>
+    <None Include="..\..\WMS-Map\Database\001_map_schema.down.sql">
+      <Link>WMS-Map\Database\001_map_schema.down.sql</Link>
+    </None>
+    <None Include="..\..\WMS-Map\Database\001_map_schema.sql">
+      <Link>WMS-Map\Database\001_map_schema.sql</Link>
+    </None>
+    <None Include="..\Host.Modules\Map\README.md">
+      <Link>Host.Modules\Map\README.md</Link>
+    </None>
+    <None Include="..\..\WMS-Map\README.md">
+      <Link>WMS-Map\README.md</Link>
+    </None>
+    <None Include="App.local.config" Condition="Exists('App.local.config')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Compile Include="..\..\WMS\Host.Modules\AuditModule.cs">
+      <Link>Host.Modules\AuditModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\FinishedGoodsInboundIntegrationModule.cs">
+      <Link>Host.Modules\FinishedGoodsInboundIntegrationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\FinishedGoodsInboundReadModule.cs">
+      <Link>Host.Modules\FinishedGoodsInboundReadModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\FinishedGoodsInventoryModule.cs">
+      <Link>Host.Modules\FinishedGoodsInventoryModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\HealthModule.cs">
+      <Link>Host.Modules\HealthModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\HuDetailModule.cs">
+      <Link>Host.Modules\HuDetailModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\HuLocationModule.cs">
+      <Link>Host.Modules\HuLocationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\HuModule.cs">
+      <Link>Host.Modules\HuModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\InboundConfirmModule.cs">
+      <Link>Host.Modules\InboundConfirmModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\InventoryQueryModule.cs">
+      <Link>Host.Modules\InventoryQueryModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\LocationModule.cs">
+      <Link>Host.Modules\LocationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\Map\MapLayoutModule.cs">
+      <Link>Host.Modules\Map\MapLayoutModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\MasterDataMaintenanceModule.cs">
+      <Link>Host.Modules\MasterDataMaintenanceModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\MesFinishedGoodsInboundIntegrationModule.cs">
+      <Link>Host.Modules\MesFinishedGoodsInboundIntegrationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\MonitoringModule.cs">
+      <Link>Host.Modules\MonitoringModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\OutboundExceptionModule.cs">
+      <Link>Host.Modules\OutboundExceptionModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\OutboundOrderModule.cs">
+      <Link>Host.Modules\OutboundOrderModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\OutboundPickingModule.cs">
+      <Link>Host.Modules\OutboundPickingModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\OutboundSapPostingModule.cs">
+      <Link>Host.Modules\OutboundSapPostingModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\Portal\ApiPortalModule.cs">
+      <Link>Host.Modules\Portal\ApiPortalModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\PutawayModule.cs">
+      <Link>Host.Modules\PutawayModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\RelocationModule.cs">
+      <Link>Host.Modules\RelocationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\RepackModule.cs">
+      <Link>Host.Modules\RepackModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\SapOutboundIntegrationModule.cs">
+      <Link>Host.Modules\SapOutboundIntegrationModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\WeekCodeAuditModule.cs">
+      <Link>Host.Modules\WeekCodeAuditModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Host.Modules\WeekCodeRecalculateModule.cs">
+      <Link>Host.Modules\WeekCodeRecalculateModule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Infrastructure\Map\MapIdentity.cs">
+      <Link>Infrastructure\Map\MapIdentity.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS\Infrastructure\Sap\S0089SapOutboundPostingClient.cs">
+      <Link>Infrastructure\Sap\S0089SapOutboundPostingClient.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\BusinessLogText.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\BusinessLogText.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\DbConnectionFactory.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\DbConnectionFactory.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\DbExecutor.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\DbExecutor.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\DbParameterValue.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\DbParameterValue.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\HuMoveLogWriter.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\HuMoveLogWriter.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Database\HuOperationLogWriter.cs">
+      <Link>WMS-HU-Model\Infrastructure\Database\HuOperationLogWriter.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Inbound\FinishedGoodsInboundSnapshotHasher.cs">
+      <Link>WMS-HU-Model\Infrastructure\Inbound\FinishedGoodsInboundSnapshotHasher.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Inbound\InboundMappingException.cs">
+      <Link>WMS-HU-Model\Infrastructure\Inbound\InboundMappingException.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Sap\SapOutboundPayloadSerializer.cs">
+      <Link>WMS-HU-Model\Infrastructure\Sap\SapOutboundPayloadSerializer.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Infrastructure\Sap\SapPayloadCanonicalizer.cs">
+      <Link>WMS-HU-Model\Infrastructure\Sap\SapPayloadCanonicalizer.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Audit\AuditModels.cs">
+      <Link>WMS-HU-Model\Models\Audit\AuditModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Common\ApiResult.cs">
+      <Link>WMS-HU-Model\Models\Common\ApiResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Common\OperationResult.cs">
+      <Link>WMS-HU-Model\Models\Common\OperationResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\AddHuItemRequest.cs">
+      <Link>WMS-HU-Model\Models\HU\AddHuItemRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\AttachHuRequest.cs">
+      <Link>WMS-HU-Model\Models\HU\AttachHuRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\CreateHuRequest.cs">
+      <Link>WMS-HU-Model\Models\HU\CreateHuRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuDetailModels.cs">
+      <Link>WMS-HU-Model\Models\HU\HuDetailModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuHoldModels.cs">
+      <Link>WMS-HU-Model\Models\HU\HuHoldModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuIdentityDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuIdentityDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuItemDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuItemDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuLocationDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuLocationDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuMoveCommand.cs">
+      <Link>WMS-HU-Model\Models\HU\HuMoveCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuMoveLogDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuMoveLogDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuMoveRequest.cs">
+      <Link>WMS-HU-Model\Models\HU\HuMoveRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuMoveResultDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuMoveResultDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuTreeFlatRow.cs">
+      <Link>WMS-HU-Model\Models\HU\HuTreeFlatRow.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\HuTreeNodeDto.cs">
+      <Link>WMS-HU-Model\Models\HU\HuTreeNodeDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\HU\MovePersistenceResult.cs">
+      <Link>WMS-HU-Model\Models\HU\MovePersistenceResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\FinishedGoodsInboundModels.cs">
+      <Link>WMS-HU-Model\Models\Inbound\FinishedGoodsInboundModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\FinishedGoodsInboundReadModels.cs">
+      <Link>WMS-HU-Model\Models\Inbound\FinishedGoodsInboundReadModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\FinishedGoodsInboundSnapshotValidator.cs">
+      <Link>WMS-HU-Model\Models\Inbound\FinishedGoodsInboundSnapshotValidator.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\InboundConfirmModels.cs">
+      <Link>WMS-HU-Model\Models\Inbound\InboundConfirmModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\MesFinishedGoodsInboundModels.cs">
+      <Link>WMS-HU-Model\Models\Inbound\MesFinishedGoodsInboundModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inbound\MesFinishedGoodsInboundTriggerModels.cs">
+      <Link>WMS-HU-Model\Models\Inbound\MesFinishedGoodsInboundTriggerModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inventory\FinishedGoodsInventoryModels.cs">
+      <Link>WMS-HU-Model\Models\Inventory\FinishedGoodsInventoryModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inventory\FinishedGoodsWipModels.cs">
+      <Link>WMS-HU-Model\Models\Inventory\FinishedGoodsWipModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Inventory\InventoryLookupModels.cs">
+      <Link>WMS-HU-Model\Models\Inventory\InventoryLookupModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\MasterData\CreateLocationRequest.cs">
+      <Link>WMS-HU-Model\Models\MasterData\CreateLocationRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\MasterData\LocationDto.cs">
+      <Link>WMS-HU-Model\Models\MasterData\LocationDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\MasterData\MasterDataMaintenanceModels.cs">
+      <Link>WMS-HU-Model\Models\MasterData\MasterDataMaintenanceModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\MasterData\UpdateLocationRequest.cs">
+      <Link>WMS-HU-Model\Models\MasterData\UpdateLocationRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Monitoring\MonitoringModels.cs">
+      <Link>WMS-HU-Model\Models\Monitoring\MonitoringModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundAllocationCandidateDto.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundAllocationCandidateDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundAllocationPlanDto.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundAllocationPlanDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundCombinedPickingModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundCombinedPickingModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundInnerPackCandidateDto.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundInnerPackCandidateDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundOrderModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundOrderModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundPickingStateModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundPickingStateModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Formal\OutboundPrepickModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Formal\OutboundPrepickModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Integration\SapOutboundOrderReceiveModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Integration\SapOutboundOrderReceiveModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Outbound\Integration\SapOutboundPostingModels.cs">
+      <Link>WMS-HU-Model\Models\Outbound\Integration\SapOutboundPostingModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\DirectReceivePutawayCommand.cs">
+      <Link>WMS-HU-Model\Models\Putaway\DirectReceivePutawayCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PalletPutawayStatusDto.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PalletPutawayStatusDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PutawayBoxRequest.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PutawayBoxRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PutawayCommand.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PutawayCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PutawayPersistenceResult.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PutawayPersistenceResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PutawayRecommendationModels.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PutawayRecommendationModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\PutawayResultDto.cs">
+      <Link>WMS-HU-Model\Models\Putaway\PutawayResultDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Putaway\WholePalletPutawayModels.cs">
+      <Link>WMS-HU-Model\Models\Putaway\WholePalletPutawayModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Relocation\RelocationModels.cs">
+      <Link>WMS-HU-Model\Models\Relocation\RelocationModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\BoxRepackStatusDto.cs">
+      <Link>WMS-HU-Model\Models\Repack\BoxRepackStatusDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\MergeBoxModels.cs">
+      <Link>WMS-HU-Model\Models\Repack\MergeBoxModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\PackInnerCommand.cs">
+      <Link>WMS-HU-Model\Models\Repack\PackInnerCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\PackInnerPersistenceResult.cs">
+      <Link>WMS-HU-Model\Models\Repack\PackInnerPersistenceResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\PackInnerRequest.cs">
+      <Link>WMS-HU-Model\Models\Repack\PackInnerRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\PackInnerResultDto.cs">
+      <Link>WMS-HU-Model\Models\Repack\PackInnerResultDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\TransferInnerCommand.cs">
+      <Link>WMS-HU-Model\Models\Repack\TransferInnerCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\TransferInnerPersistenceResult.cs">
+      <Link>WMS-HU-Model\Models\Repack\TransferInnerPersistenceResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\TransferInnerRequest.cs">
+      <Link>WMS-HU-Model\Models\Repack\TransferInnerRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\TransferInnerResultDto.cs">
+      <Link>WMS-HU-Model\Models\Repack\TransferInnerResultDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\UnpackBoxModels.cs">
+      <Link>WMS-HU-Model\Models\Repack\UnpackBoxModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\UnpackInnerCommand.cs">
+      <Link>WMS-HU-Model\Models\Repack\UnpackInnerCommand.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\UnpackInnerPersistenceResult.cs">
+      <Link>WMS-HU-Model\Models\Repack\UnpackInnerPersistenceResult.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\UnpackInnerRequest.cs">
+      <Link>WMS-HU-Model\Models\Repack\UnpackInnerRequest.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Repack\UnpackInnerResultDto.cs">
+      <Link>WMS-HU-Model\Models\Repack\UnpackInnerResultDto.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\CanonicalOuterBoxCode.cs">
+      <Link>WMS-HU-Model\Models\Rules\CanonicalOuterBoxCode.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\MergeBoxRules.cs">
+      <Link>WMS-HU-Model\Models\Rules\MergeBoxRules.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\OutboundAllocationPlanner.cs">
+      <Link>WMS-HU-Model\Models\Rules\OutboundAllocationPlanner.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\OutboundCombinedPlanner.cs">
+      <Link>WMS-HU-Model\Models\Rules\OutboundCombinedPlanner.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\OutboundGiftRule.cs">
+      <Link>WMS-HU-Model\Models\Rules\OutboundGiftRule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\Rules\OutboundPrepickPlanner.cs">
+      <Link>WMS-HU-Model\Models\Rules\OutboundPrepickPlanner.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\MesWeekCodeRuleModels.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\MesWeekCodeRuleModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\PackWeekcodeMaintenanceModels.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\PackWeekcodeMaintenanceModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\WeekCodeAuditModels.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\WeekCodeAuditModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\WeekCodeRecalculateModels.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\WeekCodeRecalculateModels.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\WeekCodeResolveContext.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\WeekCodeResolveContext.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Models\WeekCode\WeekCodeSnapshot.cs">
+      <Link>WMS-HU-Model\Models\WeekCode\WeekCodeSnapshot.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IAuditRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IAuditRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IEffectiveLocationResolver.cs">
+      <Link>WMS-HU-Model\Repositories\IEffectiveLocationResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IFinishedGoodsInboundReadRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IFinishedGoodsInboundReadRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IFinishedGoodsInboundRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IFinishedGoodsInboundRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IFinishedGoodsInventoryRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IFinishedGoodsInventoryRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IFinishedGoodsWipRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IFinishedGoodsWipRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IHuDetailRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IHuDetailRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IHuHoldRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IHuHoldRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IHuIdentifierRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IHuIdentifierRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IHuLocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IHuLocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IHuRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IHuRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IInboundConfirmRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IInboundConfirmRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IInventoryQueryRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IInventoryQueryRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\ILocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\ILocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IMasterDataMaintenanceRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IMasterDataMaintenanceRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IMesWeekCodeRuleRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IMesWeekCodeRuleRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IMonitoringRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IMonitoringRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\AuditRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\AuditRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\DirectReceivePutawayRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\DirectReceivePutawayRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\EffectiveLocationResolver.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\EffectiveLocationResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\FinishedGoodsInboundReadRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\FinishedGoodsInboundReadRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\FinishedGoodsInboundRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\FinishedGoodsInboundRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\FinishedGoodsInventoryRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\FinishedGoodsInventoryRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\FinishedGoodsWipRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\FinishedGoodsWipRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\HuDetailRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\HuDetailRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\HuHoldRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\HuHoldRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\HuIdentifierRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\HuIdentifierRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\HuLocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\HuLocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\HuRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\HuRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\InboundConfirmRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\InboundConfirmRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\InventoryQueryRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\InventoryQueryRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\LocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\LocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\MasterDataMaintenanceRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\MasterDataMaintenanceRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\MergeBoxRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\MergeBoxRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\MesFinishedGoodsInboundRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\MesFinishedGoodsInboundRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\MesWeekCodeRuleRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\MesWeekCodeRuleRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\MonitoringRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\MonitoringRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\OutboundExceptionRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\OutboundExceptionRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\OutboundOrderRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\OutboundOrderRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\OutboundPickingRepository.Combined.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\OutboundPickingRepository.Combined.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\OutboundPickingRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\OutboundPickingRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\OutboundPrepickRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\OutboundPrepickRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\PackWeekcodeMaintenanceRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\PackWeekcodeMaintenanceRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\PackWeekcodeRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\PackWeekcodeRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\PutawayIdempotencyReader.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\PutawayIdempotencyReader.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\PutawayRecommendationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\PutawayRecommendationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\PutawayRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\PutawayRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\RelocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\RelocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\RepackRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\RepackRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\SapOutboundOrderReceiveRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\SapOutboundOrderReceiveRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\SapOutboundPostingRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\SapOutboundPostingRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\WeekCodeAuditRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\WeekCodeAuditRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\WeekCodeRecalculateRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\WeekCodeRecalculateRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\Impl\WholeBoxUnpackRepository.cs">
+      <Link>WMS-HU-Model\Repositories\Impl\WholeBoxUnpackRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IOutboundExceptionRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IOutboundExceptionRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IOutboundOrderRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IOutboundOrderRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IOutboundPickingRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IOutboundPickingRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IOutboundPrepickRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IOutboundPrepickRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IPackWeekcodeMaintenanceRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IPackWeekcodeMaintenanceRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IPackWeekcodeRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IPackWeekcodeRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IPutawayRecommendationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IPutawayRecommendationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IPutawayRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IPutawayRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IRelocationRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IRelocationRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IRepackRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IRepackRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\ISapOutboundOrderReceiveRepository.cs">
+      <Link>WMS-HU-Model\Repositories\ISapOutboundOrderReceiveRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\ISapOutboundPostingRepository.cs">
+      <Link>WMS-HU-Model\Repositories\ISapOutboundPostingRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IWeekCodeAuditRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IWeekCodeAuditRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Repositories\IWeekCodeRecalculateRepository.cs">
+      <Link>WMS-HU-Model\Repositories\IWeekCodeRecalculateRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\AuditService.cs">
+      <Link>WMS-HU-Model\Services\AuditService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\FinishedGoodsInboundReadService.cs">
+      <Link>WMS-HU-Model\Services\FinishedGoodsInboundReadService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\FinishedGoodsInventoryService.cs">
+      <Link>WMS-HU-Model\Services\FinishedGoodsInventoryService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\FinishedGoodsWipService.cs">
+      <Link>WMS-HU-Model\Services\FinishedGoodsWipService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\HuDetailService.cs">
+      <Link>WMS-HU-Model\Services\HuDetailService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IAuditService.cs">
+      <Link>WMS-HU-Model\Services\IAuditService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IFinishedGoodsInboundReadService.cs">
+      <Link>WMS-HU-Model\Services\IFinishedGoodsInboundReadService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IFinishedGoodsInboundService.cs">
+      <Link>WMS-HU-Model\Services\IFinishedGoodsInboundService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IFinishedGoodsInventoryService.cs">
+      <Link>WMS-HU-Model\Services\IFinishedGoodsInventoryService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IFinishedGoodsWipService.cs">
+      <Link>WMS-HU-Model\Services\IFinishedGoodsWipService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IHuDetailService.cs">
+      <Link>WMS-HU-Model\Services\IHuDetailService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IHuHoldService.cs">
+      <Link>WMS-HU-Model\Services\IHuHoldService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IHuIdentifierService.cs">
+      <Link>WMS-HU-Model\Services\IHuIdentifierService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IHuLocationService.cs">
+      <Link>WMS-HU-Model\Services\IHuLocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IHuService.cs">
+      <Link>WMS-HU-Model\Services\IHuService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IInboundConfirmService.cs">
+      <Link>WMS-HU-Model\Services\IInboundConfirmService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IInventoryQueryService.cs">
+      <Link>WMS-HU-Model\Services\IInventoryQueryService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\ILocationService.cs">
+      <Link>WMS-HU-Model\Services\ILocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IMasterDataMaintenanceService.cs">
+      <Link>WMS-HU-Model\Services\IMasterDataMaintenanceService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IMesFinishedGoodsInboundOrchestrationService.cs">
+      <Link>WMS-HU-Model\Services\IMesFinishedGoodsInboundOrchestrationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IMesFinishedGoodsInboundRepository.cs">
+      <Link>WMS-HU-Model\Services\IMesFinishedGoodsInboundRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IMonitoringService.cs">
+      <Link>WMS-HU-Model\Services\IMonitoringService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\FinishedGoodsInboundService.cs">
+      <Link>WMS-HU-Model\Services\Impl\FinishedGoodsInboundService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\HuHoldService.cs">
+      <Link>WMS-HU-Model\Services\Impl\HuHoldService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\HuIdentifierService.cs">
+      <Link>WMS-HU-Model\Services\Impl\HuIdentifierService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\HuLocationService.cs">
+      <Link>WMS-HU-Model\Services\Impl\HuLocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\HuService.cs">
+      <Link>WMS-HU-Model\Services\Impl\HuService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\InboundConfirmService.cs">
+      <Link>WMS-HU-Model\Services\Impl\InboundConfirmService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\LocationService.cs">
+      <Link>WMS-HU-Model\Services\Impl\LocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\OutboundExceptionService.cs">
+      <Link>WMS-HU-Model\Services\Impl\OutboundExceptionService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\OutboundOrderService.cs">
+      <Link>WMS-HU-Model\Services\Impl\OutboundOrderService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\OutboundPickingService.cs">
+      <Link>WMS-HU-Model\Services\Impl\OutboundPickingService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\OutboundPrepickService.cs">
+      <Link>WMS-HU-Model\Services\Impl\OutboundPrepickService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\PutawayRecommendationService.cs">
+      <Link>WMS-HU-Model\Services\Impl\PutawayRecommendationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\PutawayService.cs">
+      <Link>WMS-HU-Model\Services\Impl\PutawayService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\RelocationService.cs">
+      <Link>WMS-HU-Model\Services\Impl\RelocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\RepackService.cs">
+      <Link>WMS-HU-Model\Services\Impl\RepackService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\SapChargResolver.cs">
+      <Link>WMS-HU-Model\Services\Impl\SapChargResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\SapOutboundOrderReceiveService.cs">
+      <Link>WMS-HU-Model\Services\Impl\SapOutboundOrderReceiveService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\SapOutboundPostingService.cs">
+      <Link>WMS-HU-Model\Services\Impl\SapOutboundPostingService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\UnavailableWeekCodeRuleProvider.cs">
+      <Link>WMS-HU-Model\Services\Impl\UnavailableWeekCodeRuleProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\Impl\WeekCodeResolver.cs">
+      <Link>WMS-HU-Model\Services\Impl\WeekCodeResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\InventoryQueryService.cs">
+      <Link>WMS-HU-Model\Services\InventoryQueryService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IOutboundExceptionService.cs">
+      <Link>WMS-HU-Model\Services\IOutboundExceptionService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IOutboundOrderService.cs">
+      <Link>WMS-HU-Model\Services\IOutboundOrderService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IOutboundPickingService.cs">
+      <Link>WMS-HU-Model\Services\IOutboundPickingService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IOutboundPrepickService.cs">
+      <Link>WMS-HU-Model\Services\IOutboundPrepickService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IPutawayRecommendationService.cs">
+      <Link>WMS-HU-Model\Services\IPutawayRecommendationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IPutawayService.cs">
+      <Link>WMS-HU-Model\Services\IPutawayService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IRelocationService.cs">
+      <Link>WMS-HU-Model\Services\IRelocationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IRepackService.cs">
+      <Link>WMS-HU-Model\Services\IRepackService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\ISapChargResolver.cs">
+      <Link>WMS-HU-Model\Services\ISapChargResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\ISapOutboundOrderReceiveService.cs">
+      <Link>WMS-HU-Model\Services\ISapOutboundOrderReceiveService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\ISapOutboundPostingClient.cs">
+      <Link>WMS-HU-Model\Services\ISapOutboundPostingClient.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\ISapOutboundPostingService.cs">
+      <Link>WMS-HU-Model\Services\ISapOutboundPostingService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IWeekCodeAuditService.cs">
+      <Link>WMS-HU-Model\Services\IWeekCodeAuditService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IWeekCodeRecalculateService.cs">
+      <Link>WMS-HU-Model\Services\IWeekCodeRecalculateService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IWeekCodeResolver.cs">
+      <Link>WMS-HU-Model\Services\IWeekCodeResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\IWeekCodeRuleProvider.cs">
+      <Link>WMS-HU-Model\Services\IWeekCodeRuleProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\MasterDataMaintenanceService.cs">
+      <Link>WMS-HU-Model\Services\MasterDataMaintenanceService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\MesFinishedGoodsInboundOrchestrationService.cs">
+      <Link>WMS-HU-Model\Services\MesFinishedGoodsInboundOrchestrationService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\MesFinishedGoodsInboundSnapshotBuilder.cs">
+      <Link>WMS-HU-Model\Services\MesFinishedGoodsInboundSnapshotBuilder.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\MesWeekCodeRuleProvider.cs">
+      <Link>WMS-HU-Model\Services\MesWeekCodeRuleProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\MonitoringService.cs">
+      <Link>WMS-HU-Model\Services\MonitoringService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\PackWeekcodeMaintenanceService.cs">
+      <Link>WMS-HU-Model\Services\PackWeekcodeMaintenanceService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\WeekCodeAuditService.cs">
+      <Link>WMS-HU-Model\Services\WeekCodeAuditService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-HU-Model\Services\WeekCodeRecalculateService.cs">
+      <Link>WMS-HU-Model\Services\WeekCodeRecalculateService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Models\Contracts.cs">
+      <Link>WMS-Map\Models\Contracts.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Services\DraftService.cs">
+      <Link>WMS-Map\Services\DraftService.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Services\LayoutRules.cs">
+      <Link>WMS-Map\Services\LayoutRules.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Repositories\MapLayoutRepository.cs">
+      <Link>WMS-Map\Repositories\MapLayoutRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Repositories\SqlLayoutDraftRepository.cs">
+      <Link>WMS-Map\Repositories\SqlLayoutDraftRepository.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Repositories\SqlLayoutInitializer.cs">
+      <Link>WMS-Map\Repositories\SqlLayoutInitializer.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Infrastructure\Database\SqlCommands.cs">
+      <Link>WMS-Map\Infrastructure\Database\SqlCommands.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Infrastructure\Database\SqlConnectionFactory.cs">
+      <Link>WMS-Map\Infrastructure\Database\SqlConnectionFactory.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Infrastructure\Database\SqlUnitOfWork.cs">
+      <Link>WMS-Map\Infrastructure\Database\SqlUnitOfWork.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Infrastructure\MapInfrastructure.cs">
+      <Link>WMS-Map\Infrastructure\MapInfrastructure.cs</Link>
+    </Compile>
+    <Compile Include="..\..\WMS-Map\Infrastructure\Wms\WmsHttpClient.cs">
+      <Link>WMS-Map\Infrastructure\Wms\WmsHttpClient.cs</Link>
+    </Compile>
+  </ItemGroup>
+  <Target Name="CheckHostModules" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\Build\Sync-HostModules.ps1&quot; -Check" />
+  </Target>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="CheckStandaloneItems" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\Build\Sync-StandaloneItems.ps1&quot; -Check" />
+  </Target>
+</Project>

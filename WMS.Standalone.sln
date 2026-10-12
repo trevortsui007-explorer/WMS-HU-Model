@@ -1,0 +1,21 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WMS.Standalone", "WMS\Standalone\WMS.Standalone.csproj", "{9572AD37-A362-467A-A109-988AE04BB659}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9572AD37-A362-467A-A109-988AE04BB659}.Debug|x86.ActiveCfg = Debug|x86
+		{9572AD37-A362-467A-A109-988AE04BB659}.Debug|x86.Build.0 = Debug|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7FD4D3B2-647F-4C0A-A061-1D5A9334F5D4}
+	EndGlobalSection
+EndGlobal

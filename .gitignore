@@ -13,3 +13,6 @@ TestResults/
 *.tmp
 Thumbs.db
 Desktop.ini
+
+# Standalone local database credentials
+/WMS/Standalone/App.local.config

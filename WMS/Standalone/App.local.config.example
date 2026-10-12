@@ -1,0 +1,4 @@
+<connectionStrings>
+  <clear />
+  <add name="BaseDb" providerName="System.Data.SqlClient" connectionString="" />
+</connectionStrings>
